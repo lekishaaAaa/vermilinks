@@ -304,35 +304,49 @@ async function sendOtpEmailToAdmin({ to, otp, expiresAt }) {
 
   const transportCandidates = [];
   if (smtpHost) {
-    transportCandidates.push({
-      mode: 'configured',
-      options: {
-        host: smtpHost,
-        port: parsedPort,
-        secure: parsedSecure,
-      },
-    });
-
     const isGmailHost = /gmail\.com$/i.test(smtpHost);
     if (isGmailHost) {
-      if (!(parsedPort === 465 && parsedSecure === true)) {
+      transportCandidates.push({
+        mode: 'gmail-host-587',
+        options: {
+          host: smtpHost,
+          port: 587,
+          secure: false,
+          requireTLS: true,
+          family: 4,
+        },
+      });
+
+      transportCandidates.push({
+        mode: 'gmail-host-465',
+        options: {
+          host: smtpHost,
+          port: 465,
+          secure: true,
+          family: 4,
+        },
+      });
+
+      if (!((parsedPort === 587 && parsedSecure === false) || (parsedPort === 465 && parsedSecure === true))) {
         transportCandidates.push({
-          mode: 'gmail-host-465',
+          mode: 'configured',
           options: {
             host: smtpHost,
-            port: 465,
-            secure: true,
+            port: parsedPort,
+            secure: parsedSecure,
+            family: 4,
           },
         });
       }
-      if (!(parsedPort === 587 && parsedSecure === false)) {
+    } else {
+      if (!(parsedPort === 465 && parsedSecure === true)) {
         transportCandidates.push({
-          mode: 'gmail-host-587',
+          mode: 'configured',
           options: {
             host: smtpHost,
-            port: 587,
-            secure: false,
-            requireTLS: true,
+            port: parsedPort,
+            secure: parsedSecure,
+            family: 4,
           },
         });
       }
@@ -343,6 +357,7 @@ async function sendOtpEmailToAdmin({ to, otp, expiresAt }) {
     mode: 'gmail-service',
     options: {
       service: process.env.EMAIL_SERVICE || 'gmail',
+      family: 4,
     },
   });
 
@@ -357,6 +372,9 @@ async function sendOtpEmailToAdmin({ to, otp, expiresAt }) {
       connectionTimeout: smtpConnectionTimeout,
       greetingTimeout: smtpGreetingTimeout,
       socketTimeout: smtpSocketTimeout,
+      tls: {
+        minVersion: 'TLSv1.2',
+      },
       auth: {
         user,
         pass,
