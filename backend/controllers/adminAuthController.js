@@ -30,6 +30,7 @@ const OTP_CLEANUP_TZ = process.env.ADMIN_OTP_CLEANUP_TZ || undefined;
 const REQUIRED_EMAIL_VARS = ['EMAIL_USER', 'EMAIL_PASS'];
 let emailEnvWarned = false;
 let smtpConfigLogged = false;
+let smtpEnvLogged = false;
 
 const resolveJwtSecret = (res) => {
   try {
@@ -60,6 +61,31 @@ function warnMissingEmailEnv(contextLabel) {
       missing,
     });
   }
+}
+
+function logSmtpConfigOnce(contextLabel) {
+  if (smtpEnvLogged) {
+    return;
+  }
+
+  smtpEnvLogged = true;
+
+  const host = process.env.EMAIL_HOST || process.env.SMTP_HOST || null;
+  const port = process.env.EMAIL_PORT || process.env.SMTP_PORT || null;
+  const secure = process.env.EMAIL_SECURE || process.env.SMTP_SECURE || null;
+  const user = process.env.EMAIL_USER || null;
+  const from = process.env.EMAIL_FROM || null;
+  const hasPass = Boolean(process.env.EMAIL_PASS && String(process.env.EMAIL_PASS).trim().length > 0);
+
+  console.log('SMTP CONFIG:', {
+    context: contextLabel || 'startup',
+    host,
+    port,
+    secure,
+    user,
+    from,
+    hasPass,
+  });
 }
 
 function normalizeEmail(value) {
@@ -232,12 +258,15 @@ function ensureOtpCleanupScheduler() {
 }
 
 ensureOtpCleanupScheduler();
+logSmtpConfigOnce('module_init');
+
 async function sendOtpEmailToAdmin({ to, otp, expiresAt }) {
   if (!to || !otp) {
     throw new Error('OTP recipient and code are required');
   }
 
   warnMissingEmailEnv('otp_delivery');
+  logSmtpConfigOnce('otp_delivery');
 
   const user = process.env.EMAIL_USER;
   const pass = process.env.EMAIL_PASS;
@@ -246,9 +275,9 @@ async function sendOtpEmailToAdmin({ to, otp, expiresAt }) {
     throw new Error('EMAIL_USER and EMAIL_PASS must be configured');
   }
 
-  const smtpHost = process.env.SMTP_HOST;
-  const smtpPortRaw = process.env.SMTP_PORT;
-  const smtpSecureRaw = process.env.EMAIL_SECURE;
+  const smtpHost = process.env.EMAIL_HOST || process.env.SMTP_HOST;
+  const smtpPortRaw = process.env.EMAIL_PORT || process.env.SMTP_PORT;
+  const smtpSecureRaw = process.env.EMAIL_SECURE || process.env.SMTP_SECURE;
   const smtpConnectionTimeoutRaw = process.env.SMTP_CONNECTION_TIMEOUT_MS;
   const smtpGreetingTimeoutRaw = process.env.SMTP_GREETING_TIMEOUT_MS;
   const smtpSocketTimeoutRaw = process.env.SMTP_SOCKET_TIMEOUT_MS;
@@ -347,12 +376,34 @@ async function sendOtpEmailToAdmin({ to, otp, expiresAt }) {
     }
 
     try {
-      const info = await transporter.sendMail({
+      await transporter.verify();
+      console.log('SMTP transport verified', {
+        mode: candidate.mode,
+        host: candidate.options.host || null,
+        port: candidate.options.port || null,
+        secure: candidate.options.secure || false,
+      });
+    } catch (verifyErr) {
+      lastError = verifyErr;
+      console.error('SMTP VERIFY FAILURE:');
+      console.error('MODE:', candidate.mode);
+      console.error('CODE:', verifyErr && verifyErr.code ? verifyErr.code : null);
+      console.error('RESPONSE:', verifyErr && verifyErr.response ? verifyErr.response : null);
+      console.error('MESSAGE:', verifyErr && verifyErr.message ? verifyErr.message : verifyErr);
+      console.error('STACK:', verifyErr && verifyErr.stack ? verifyErr.stack : null);
+      continue;
+    }
+
+    try {
+      const mailOptions = {
         from,
         to,
         subject: 'VermiLinks OTP Verification',
         text: `Your OTP code is: ${otp}\n\nThis code expires at ${expiresAt.toISOString()}.`,
-      });
+      };
+
+      const info = await transporter.sendMail(mailOptions);
+      console.log('OTP EMAIL SENT:', info && info.response ? info.response : null);
 
       console.info(`OTP sent successfully to ${to}`, {
         mode: candidate.mode,
@@ -361,6 +412,12 @@ async function sendOtpEmailToAdmin({ to, otp, expiresAt }) {
       return;
     } catch (sendErr) {
       lastError = sendErr;
+      console.error('SMTP FAILURE:');
+      console.error('MODE:', candidate.mode);
+      console.error('CODE:', sendErr && sendErr.code ? sendErr.code : null);
+      console.error('RESPONSE:', sendErr && sendErr.response ? sendErr.response : null);
+      console.error('MESSAGE:', sendErr && sendErr.message ? sendErr.message : sendErr);
+      console.error('STACK:', sendErr && sendErr.stack ? sendErr.stack : null);
       console.warn('OTP send attempt failed', {
         mode: candidate.mode,
         error: sendErr && sendErr.message ? sendErr.message : sendErr,
