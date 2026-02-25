@@ -1,7 +1,9 @@
 import api, { discoverApi } from './api';
 
 const FALLBACK_API_ROOT = 'https://vermilinks.onrender.com';
-const AUTH_REQUEST_TIMEOUT_MS = 45000;
+const AUTH_REQUEST_TIMEOUT_MS = 70000;
+
+const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
 
 function normalizeRoot(value?: string | null) {
   if (!value) return '';
@@ -35,6 +37,8 @@ async function postDirect<T>(path: string, payload: Record<string, unknown>, tim
 }
 
 async function callWithFallback<T>(runner: () => Promise<T>): Promise<T> {
+  const retryDelays = [1200, 2500];
+
   try {
     return await runner();
   } catch (error: any) {
@@ -48,7 +52,23 @@ async function callWithFallback<T>(runner: () => Promise<T>): Promise<T> {
     }
 
     api.defaults.baseURL = `${fallbackRoot}/api`;
-    return runner();
+
+    let lastError: any = error;
+    for (let attempt = 0; attempt <= retryDelays.length; attempt += 1) {
+      try {
+        if (attempt > 0) {
+          await sleep(retryDelays[attempt - 1]);
+        }
+        return await runner();
+      } catch (retryErr: any) {
+        lastError = retryErr;
+        if (!retryErr?.request || retryErr?.response) {
+          throw retryErr;
+        }
+      }
+    }
+
+    throw lastError;
   }
 }
 
@@ -177,6 +197,16 @@ export async function login(email: string, password: string): Promise<AdminLogin
     );
     return response.data;
   } catch (error: any) {
+    if (error?.request && !error?.response) {
+      try {
+        return await postDirect<AdminLoginResponse>('/admin/login', {
+          email: email.trim(),
+          password,
+        });
+      } catch {
+        // fall through to standard extractor
+      }
+    }
     extractMessage(error, 'Unable to sign in. Please try again.');
   }
 }
