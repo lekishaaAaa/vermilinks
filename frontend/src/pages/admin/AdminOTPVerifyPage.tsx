@@ -8,7 +8,6 @@ import { clearPendingOtpState, loadPendingOtpState, savePendingOtpState } from '
 
 interface LocationState {
   email?: string;
-  debugCode?: string | null;
   delivery?: string | null;
   expiresAt?: string | null;
 }
@@ -22,7 +21,6 @@ const AdminOTPVerifyPage: React.FC = () => {
   const initialEmail = locationState.email || storedOtpState?.email || '';
   const initialExpiresAt = locationState.expiresAt || storedOtpState?.expiresAt || null;
   const [email] = useState<string>(initialEmail);
-  const [debugCode, setDebugCode] = useState<string | null>(locationState.debugCode ?? storedOtpState?.debugCode ?? null);
   const [delivery, setDelivery] = useState<string | null>(locationState.delivery ?? storedOtpState?.delivery ?? null);
   const [otpExpiresAt, setOtpExpiresAt] = useState<string | null>(initialExpiresAt);
   const [otp, setOtp] = useState('');
@@ -145,12 +143,10 @@ const AdminOTPVerifyPage: React.FC = () => {
 
     try {
       const response = await resendOtp(formattedEmail);
-      const nextDebug = response?.data?.debugCode ?? null;
       const nextDelivery = response?.data?.delivery ?? null;
       const nextExpires = response?.data?.expiresAt ?? null;
       const rateLimit = response?.data?.rateLimit;
 
-      setDebugCode(nextDebug);
       setDelivery(nextDelivery);
       if (nextExpires) {
         setOtpExpiresAt(nextExpires);
@@ -160,7 +156,6 @@ const AdminOTPVerifyPage: React.FC = () => {
 
       savePendingOtpState({
         email: formattedEmail,
-        debugCode: nextDebug,
         delivery: nextDelivery,
         expiresAt: nextExpires,
       });
@@ -211,12 +206,7 @@ const AdminOTPVerifyPage: React.FC = () => {
                   {otpIsExpired ? 'Code expired. Please request a new one.' : `Code expires in ${formatCountdown(remainingMs)}.`}
                 </p>
               )}
-            {debugCode && (
-              <p className="mt-2 text-xs font-medium text-amber-600 dark:text-amber-300">
-                Email delivery failed in development; use debug code <span className="font-mono">{debugCode}</span> shown here.
-              </p>
-            )}
-            {delivery === 'email_failed' && !debugCode && (
+            {delivery === 'email_failed' && (
               <p className="mt-2 text-xs font-medium text-amber-600 dark:text-amber-300">
                 Email delivery failed. Check the backend logs for the one-time code.
               </p>

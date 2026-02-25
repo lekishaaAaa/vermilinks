@@ -39,19 +39,17 @@ const AdminLoginPage: React.FC = () => {
       const response = await loginAdmin(email, password);
 
       if (response?.data?.requires2FA) {
-        const debugCode = response?.data?.debugCode ?? null;
         const delivery = response?.data?.delivery ?? null;
         const expiresAt = response?.data?.expiresAt || null;
 
         savePendingOtpState({
           email: email.trim(),
-          debugCode,
           delivery,
           expiresAt,
         });
 
         navigate('/admin/verify-otp', {
-          state: { email: email.trim(), debugCode, delivery, expiresAt },
+          state: { email: email.trim(), delivery, expiresAt },
           replace: true,
         });
         return;

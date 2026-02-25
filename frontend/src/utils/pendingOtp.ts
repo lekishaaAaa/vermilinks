@@ -3,7 +3,6 @@ const STORAGE_KEY = 'vermilinks:pending-admin-otp';
 export interface PendingOtpState {
   email: string;
   expiresAt?: string | null;
-  debugCode?: string | null;
   delivery?: string | null;
   issuedAt?: string | null;
 }
@@ -37,7 +36,6 @@ export const savePendingOtpState = (state: PendingOtpState): void => {
   const payload: PendingOtpState = {
     email: state.email.trim().toLowerCase(),
     expiresAt: state.expiresAt ?? null,
-    debugCode: state.debugCode ?? null,
     delivery: state.delivery ?? null,
     issuedAt: state.issuedAt ?? new Date().toISOString(),
   };

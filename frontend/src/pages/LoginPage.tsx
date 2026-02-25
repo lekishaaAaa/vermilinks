@@ -109,7 +109,6 @@ const LoginPage: React.FC = () => {
         navigate('/admin/verify-otp', {
           state: {
             email: formData.email.trim(),
-            debugCode: result.debugCode || null,
             delivery: result.delivery || null,
             expiresAt: result.expiresAt || null,
           },

@@ -515,9 +515,6 @@ exports.login = async (req, res) => {
       await recordAudit('otp.issued', admin.email, { expiresAt: expiresAt.toISOString(), ip: requesterIp });
     } catch (e) {}
 
-    const isProduction = (process.env.NODE_ENV || 'development') === 'production';
-    const allowDebugOtpInProduction = (process.env.ALLOW_DEBUG_OTP_IN_PRODUCTION || '').toString().toLowerCase() === 'true';
-
     setImmediate(async () => {
       try {
         await sendOtpEmailToAdmin({ to: admin.email, otp, expiresAt });
@@ -541,11 +538,6 @@ exports.login = async (req, res) => {
         delivery: 'queued',
       },
     };
-
-    if (!isProduction || allowDebugOtpInProduction) {
-      responsePayload.data.debugCode = otp;
-      responsePayload.data.delivery = 'queued_debug';
-    }
 
     return res.json(responsePayload);
   } catch (err) {
@@ -838,9 +830,6 @@ exports.resendOtp = async (req, res) => {
       }
     });
 
-    const isProduction = (process.env.NODE_ENV || 'development') === 'production';
-    const allowDebugOtpInProduction = (process.env.ALLOW_DEBUG_OTP_IN_PRODUCTION || '').toString().toLowerCase() === 'true';
-
     const responsePayload = {
       success: true,
       message: 'A new verification code has been generated.',
@@ -849,11 +838,6 @@ exports.resendOtp = async (req, res) => {
         delivery: 'queued',
       },
     };
-
-    if (!isProduction || allowDebugOtpInProduction) {
-      responsePayload.data.debugCode = otp;
-      responsePayload.data.delivery = 'queued_debug';
-    }
 
     const attemptState = registerAttempt('resend', normalizedEmail, requesterIp);
     if (attemptState && attemptState.locked && !responsePayload.data.rateLimit) {
