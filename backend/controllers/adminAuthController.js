@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { fn, col, where, Op } = require('sequelize');
 const crypto = require('crypto');
+const https = require('https');
 const nodemailer = require('nodemailer');
 const cron = require('node-cron');
 const Admin = require('../models/Admin');
@@ -346,6 +347,7 @@ async function sendOtpEmailToAdmin({ to, otp, expiresAt }) {
   });
 
   const from = process.env.EMAIL_FROM || user;
+  const resendApiKey = (process.env.RESEND_API_KEY || '').toString().trim();
 
   let lastError = null;
   for (const candidate of transportCandidates) {
@@ -425,7 +427,75 @@ async function sendOtpEmailToAdmin({ to, otp, expiresAt }) {
     }
   }
 
+  if (resendApiKey) {
+    try {
+      await sendOtpEmailViaResend({ to, otp, expiresAt, from, apiKey: resendApiKey });
+      console.info(`OTP sent successfully to ${to}`, {
+        mode: 'resend-api',
+      });
+      return;
+    } catch (resendErr) {
+      lastError = resendErr;
+      console.error('RESEND FAILURE:');
+      console.error('CODE:', resendErr && resendErr.code ? resendErr.code : null);
+      console.error('MESSAGE:', resendErr && resendErr.message ? resendErr.message : resendErr);
+      console.error('STACK:', resendErr && resendErr.stack ? resendErr.stack : null);
+    }
+  }
+
   throw (lastError || new Error('All SMTP delivery attempts failed'));
+}
+
+function sendOtpEmailViaResend({ to, otp, expiresAt, from, apiKey }) {
+  const payload = JSON.stringify({
+    from,
+    to: [to],
+    subject: 'VermiLinks OTP Verification',
+    text: `Your OTP code is: ${otp}\n\nThis code expires at ${expiresAt.toISOString()}.`,
+  });
+
+  const options = {
+    hostname: 'api.resend.com',
+    path: '/emails',
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(payload),
+    },
+    timeout: 15000,
+  };
+
+  return new Promise((resolve, reject) => {
+    const request = https.request(options, (response) => {
+      let body = '';
+      response.on('data', (chunk) => {
+        body += chunk;
+      });
+      response.on('end', () => {
+        if (response.statusCode >= 200 && response.statusCode < 300) {
+          console.log('OTP EMAIL SENT:', body || null);
+          return resolve();
+        }
+
+        const error = new Error(`Resend request failed with status ${response.statusCode}`);
+        error.code = `RESEND_${response.statusCode}`;
+        error.response = body;
+        return reject(error);
+      });
+    });
+
+    request.on('timeout', () => {
+      request.destroy(new Error('Resend request timeout'));
+    });
+
+    request.on('error', (error) => {
+      reject(error);
+    });
+
+    request.write(payload);
+    request.end();
+  });
 }
 
 async function assignOtpToAdmin(admin, otp, expiresAt) {
