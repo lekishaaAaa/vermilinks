@@ -192,17 +192,24 @@ export async function discoverApi(options?: { candidates?: string[]; timeout?: n
   const timeout = options?.timeout ?? 2500;
   const candidates = options?.candidates ?? (() => {
     const envRoot = (process.env.REACT_APP_API_URL || '').toString();
-  const normalized = envRoot.replace(/(\/api)+\/?$/i, '').replace(/\/+$/,'');
+    const normalized = envRoot.replace(/(\/api)+\/?$/i, '').replace(/\/+$/,'');
+    const isBrowser = typeof window !== 'undefined';
+    const isLocalHost = isBrowser && /^(localhost|127\.0\.0\.1)$/i.test(window.location.hostname);
+    const allowLocalCandidates = process.env.NODE_ENV !== 'production' || isLocalHost;
     // include current configured base plus common dev ports
     const list = [] as string[];
     if (normalized) list.push(normalized);
     list.push('https://vermilinks.onrender.com');
-    list.push('http://127.0.0.1:5000');
-    list.push('http://127.0.0.1:8000');
-  list.push('http://127.0.0.1:10000');
-    list.push('http://localhost:5000');
-    list.push('http://localhost:8000');
-  list.push('http://localhost:10000');
+
+    if (allowLocalCandidates) {
+      list.push('http://127.0.0.1:5000');
+      list.push('http://127.0.0.1:8000');
+      list.push('http://127.0.0.1:10000');
+      list.push('http://localhost:5000');
+      list.push('http://localhost:8000');
+      list.push('http://localhost:10000');
+    }
+
     return Array.from(new Set(list));
   })();
 

@@ -8,6 +8,32 @@ function normalizeRoot(value?: string | null) {
   return value.replace(/\s+/g, '').replace(/\/?api$/i, '').replace(/\/$/, '');
 }
 
+async function postDirect<T>(path: string, payload: Record<string, unknown>, timeoutMs = AUTH_REQUEST_TIMEOUT_MS): Promise<T> {
+  const root = normalizeRoot(process.env.REACT_APP_API_URL) || normalizeRoot(FALLBACK_API_ROOT);
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(`${root}/api${path}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const message = (data as any)?.message || 'Request failed';
+      throw new Error(message);
+    }
+    return data as T;
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
 async function callWithFallback<T>(runner: () => Promise<T>): Promise<T> {
   try {
     return await runner();
@@ -124,7 +150,17 @@ function extractMessage(error: any, fallback: string): never {
 
 async function ensureApiBase() {
   try {
-    await discoverApi({ timeout: 1200 });
+    const envRoot = normalizeRoot(process.env.REACT_APP_API_URL);
+    const fallbackRoot = normalizeRoot(FALLBACK_API_ROOT);
+    const isProdBrowser =
+      typeof window !== 'undefined' &&
+      (process.env.NODE_ENV === 'production' || window.location.protocol === 'https:');
+
+    const candidates = isProdBrowser
+      ? Array.from(new Set([envRoot, fallbackRoot].filter(Boolean)))
+      : undefined;
+
+    await discoverApi({ timeout: isProdBrowser ? 2000 : 1200, candidates });
   } catch (e) {
     // discovery best-effort; ignore failures
   }
@@ -156,6 +192,16 @@ export async function verifyOtp(email: string, otp: string): Promise<AdminVerify
     );
     return response.data;
   } catch (error: any) {
+    if (error?.request && !error?.response) {
+      try {
+        return await postDirect<AdminVerifyOtpResponse>('/admin/verify-otp', {
+          email: email.trim(),
+          otp: otp.trim(),
+        });
+      } catch {
+        // fall through to standard extractor
+      }
+    }
     extractMessage(error, 'Unable to verify the code. Please try again.');
   }
 }
@@ -182,6 +228,15 @@ export async function resendOtp(email: string): Promise<AdminResendOtpResponse> 
     );
     return response.data;
   } catch (error: any) {
+    if (error?.request && !error?.response) {
+      try {
+        return await postDirect<AdminResendOtpResponse>('/admin/resend-otp', {
+          email: email.trim(),
+        });
+      } catch {
+        // fall through to standard extractor
+      }
+    }
     extractMessage(error, 'Unable to resend the verification code. Please try again.');
   }
 }
