@@ -106,6 +106,8 @@ const envSocketOrigins = (process.env.SOCKETIO_CORS_ORIGINS || process.env.CORS_
   .filter(Boolean);
 const allowedSocketOrigins = [
   'https://vermilinks-frontend.onrender.com',
+  'https://vermilinksfrontend.onrender.com',
+  'https://vermilinks-frontend-17l6.onrender.com',
   'http://localhost:3000',
 ];
 envSocketOrigins.forEach((origin) => {
@@ -366,6 +368,8 @@ app.use(compression());
 
 const allowedHttpOrigins = [
   'https://vermilinks-frontend.onrender.com',
+  'https://vermilinksfrontend.onrender.com',
+  'https://vermilinks-frontend-17l6.onrender.com',
   'http://localhost:3000',
 ];
 const envHttpOrigins = (process.env.CORS_ORIGINS || process.env.CORS_ORIGIN || '')
@@ -396,7 +400,7 @@ const resolveCorsOrigin = (origin, callback) => {
   if (allowedHttpOrigins.includes(origin)) {
     return callback(null, origin);
   }
-  return callback(new Error('CORS origin not allowed'), false);
+  return callback(null, false);
 };
 
 const httpCors = cors({
