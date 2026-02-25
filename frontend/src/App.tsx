@@ -49,15 +49,15 @@ function App() {
                 <Route path="/admin/verify-otp" element={<AdminOTPVerifyPage />} />
                 <Route path="/admin/forgot-password" element={<AdminForgotPasswordPage />} />
                 <Route path="/admin/reset-password" element={<AdminResetPasswordPage />} />
-                <Route path="/admin" element={<ProtectedRoute><Navigate to="/admin/dashboard" replace /></ProtectedRoute>} />
+                <Route path="/admin" element={<ProtectedRoute adminOnly><Navigate to="/admin/dashboard" replace /></ProtectedRoute>} />
                 {/* Explicit dashboard path kept for compatibility */}
-                <Route path="/admin/dashboard" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
-                <Route path="/admin/alerts" element={<ProtectedRoute><AlertsPage /></ProtectedRoute>} />
+                <Route path="/admin/dashboard" element={<ProtectedRoute adminOnly><AdminDashboard /></ProtectedRoute>} />
+                <Route path="/admin/alerts" element={<ProtectedRoute adminOnly><AlertsPage /></ProtectedRoute>} />
                 <Route path="/admin/sensor-logs" element={<ProtectedRoute adminOnly><SensorLogsPage /></ProtectedRoute>} />
-                <Route path="/admin/devices/:deviceId/ports" element={<ProtectedRoute><DevicePortsPage /></ProtectedRoute>} />
+                <Route path="/admin/devices/:deviceId/ports" element={<ProtectedRoute adminOnly><DevicePortsPage /></ProtectedRoute>} />
                 {/* dev-only debug route removed */}
-                <Route path="/logs" element={<ProtectedRoute><LogsPage /></ProtectedRoute>} />
-                <Route path="/thresholds" element={<ProtectedRoute><ThresholdsPage /></ProtectedRoute>} />
+                <Route path="/logs" element={<ProtectedRoute adminOnly><LogsPage /></ProtectedRoute>} />
+                <Route path="/thresholds" element={<ProtectedRoute adminOnly><ThresholdsPage /></ProtectedRoute>} />
                 <Route path="*" element={<Navigate to="/" />} />
                 </Routes>
                 <ToastContainer />

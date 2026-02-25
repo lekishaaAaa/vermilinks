@@ -100,7 +100,7 @@ Sensor telemetry grows quickly. Use the admin-only purge endpoint or the CLI hel
     -H "Content-Type: application/json" \
     -d '{
       "days": 30,
-      "deviceId": "vermilinks-homeassistant",
+      "deviceId": "vermilinks-esp32",
       "dryRun": true
     }'
   ```
@@ -123,14 +123,14 @@ Editing individual log rows should be handled sparingly at the database level (e
 4. Stop when done: `pm2 stop all`on<!-- Updated README for the Environmental Monitoring System (BeanToBin) -->
 # VermiLinks — Environmental Monitoring System
 
-**VermiLinks** (formerly BeanToBin) is a comprehensive IoT environmental monitoring platform designed for vermicomposting operations. It provides real-time sensor data collection, automated actuator control, Home Assistant integration, and a modern admin dashboard with secure authentication.
+**VermiLinks** (formerly BeanToBin) is a comprehensive IoT environmental monitoring platform designed for vermicomposting operations. It provides real-time sensor data collection, automated actuator control, and a modern admin dashboard with secure authentication.
 
 ## 🌟 Key Features
 
 ### Core Functionality
 - **Real-time Sensor Monitoring**: Temperature, humidity, soil moisture, pH, EC, NPK
 - **Automated Actuator Control**: Pump and solenoid valve management with safety interlocks
-- **Home Assistant Integration**: Webhook-based telemetry ingestion with HMAC authentication
+- **MQTT Telemetry Ingest**: Sensor data streamed directly from ESP32 devices
 - **Secure Admin Dashboard**: OTP-based authentication with JWT token management
 - **Data Export**: CSV reports with comprehensive sensor history
 - **Realtime Updates**: WebSocket-powered live data broadcasting
@@ -150,11 +150,11 @@ Editing individual log rows should be handled sparingly at the database level (e
 
 ### Hardware Integration
 - **ESP32 Support**: Complete firmware and configuration for environmental sensors
-- **Home Assistant Integration**: Webhook-based data ingestion with HMAC authentication
-- **MQTT Broker Support**: Optional MQTT connectivity for device telemetry
+- **Device Telemetry Ingest**: Sensor readings collected directly from ESP32 nodes
+- **MQTT Broker Support**: MQTT connectivity for device telemetry
 - **Alert Thresholds**: Configurable environmental monitoring thresholds
 
-See `docs/HARDWARE_INTEGRATION.md` for complete setup instructions including ESP32 configuration, Home Assistant webhook setup, and MQTT broker configuration.
+See the ESP32 firmware folders for device configuration details.
 
 ## 🚀 Quick Start
 
@@ -199,21 +199,18 @@ This script handles:
 ## 🏗️ System Architecture
 
 ```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Home Assistant │───▶│   VermiLinks    │───▶│   PostgreSQL    │
-│   (Telemetry)    │    │   Backend API   │    │   Database      │
-│                 │    │   • Express      │    │                 │
-│   ┌─────────────┐│    │   • Socket.IO    │    └─────────────────┘
-│   │ ESP32       ││    │   • Sequelize    │
-│   │ Sensors     ││    │   • JWT Auth     │    ┌─────────────────┐
-│   └─────────────┘│    │   • OTP Email    │    │   VermiLinks    │
-└─────────────────┘    └─────────────────┘    │   Frontend      │
-                              ▲              │   • React        │
-                              │              │   • TypeScript   │
-                       ┌─────────────────┐    │   • Tailwind     │
-                       │   ESP32 Devices │    └─────────────────┘
-                       │   (Legacy)      │
-                       └─────────────────┘
+┌───────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   ESP32 Nodes │───▶│   VermiLinks    │───▶│   PostgreSQL    │
+│   (Sensors)   │    │   Backend API   │    │   Database      │
+└───────────────┘    │   • Express      │    └─────────────────┘
+      │   • Socket.IO    │
+      │   • Sequelize    │    ┌─────────────────┐
+      │   • JWT + OTP    │    │   VermiLinks    │
+      └─────────────────┘    │   Frontend      │
+          ▲             │   • React        │
+          └────────────▶│   • TypeScript   │
+              │   • Tailwind     │
+              └─────────────────┘
 ```
 
 ### Technology Stack
@@ -225,66 +222,8 @@ This script handles:
 | **Frontend** | React + TypeScript | Admin dashboard & visualization |
 | **Authentication** | JWT + OTP (Nodemailer) | Secure admin access |
 | **Real-time** | Socket.IO | Live data broadcasting |
-| **External** | Home Assistant Webhooks | Sensor telemetry ingestion |
+| **External** | MQTT Broker | Sensor telemetry ingestion |
 | **Deployment** | Render/Docker | Production hosting |
-
-## 📊 Home Assistant Integration
-
-VermiLinks integrates seamlessly with Home Assistant for automated telemetry collection:
-
-### Setup Steps
-
-1. **Create Webhook in HA**:
-   ```yaml
-   # configuration.yaml
-   webhook:
-     - webhook_id: vermilinks_telemetry
-       name: VermiLinks Telemetry
-       url: https://your-backend.onrender.com/api/ha/webhook
-   ```
-
-2. **Create Automation**:
-   ```yaml
-   automation:
-     - alias: "Send VermiLinks Telemetry"
-       trigger:
-         - platform: time_pattern
-           minutes: "/5"  # Every 5 minutes
-       action:
-         - service: webhook.call
-           data:
-             webhook_id: vermilinks_telemetry
-             method: POST
-             headers:
-               Content-Type: application/json
-               X-HA-Signature: "{{ your_webhook_secret }}"
-             payload: >
-               {
-                 "deviceId": "vermilinks-homeassistant",
-                 "timestamp": "{{ now().isoformat() }}",
-                 "metrics": {
-                   "temperature": {{ states('sensor.temperature') }},
-                   "humidity": {{ states('sensor.humidity') }},
-                   "moisture": {{ states('sensor.moisture') }},
-                   "ph": {{ states('sensor.ph') }},
-                   "ec": {{ states('sensor.ec') }}
-                 }
-               }
-   ```
-
-3. **Configure Environment**:
-   ```bash
-   HOME_ASSISTANT_WEBHOOK_SECRET=your-secret-here
-   HOME_ASSISTANT_DEVICE_ID=vermilinks-homeassistant
-   HOME_ASSISTANT_HISTORY_DAYS=7
-   ```
-
-### Features
-- **HMAC Authentication**: Secure webhook validation
-- **Rate Limiting**: 30 requests/minute protection
-- **Data Retention**: Configurable history (default: 7 days)
-- **Realtime Broadcasting**: Live updates to all connected clients
-- **Error Handling**: Comprehensive logging and fallback mechanisms
 
 ## 🔐 Security Features
 
@@ -385,7 +324,6 @@ See `docs/DEPLOY.md` for detailed deployment guides.
 
 - **[Deployment Guide](docs/DEPLOY.md)**: Comprehensive deployment instructions
 - **[API Documentation](docs/README.DEV.md)**: Backend API reference
-- **[Home Assistant Setup](docs/HOME_ASSISTANT_SETUP.md)**: HA integration guide
 - **[Testing Guide](docs/HOW_TO_TEST_BACKEND.md)**: Testing procedures
 - **[System Validation](docs/SYSTEM_VALIDATION_REPORT.md)**: Architecture validation
 
@@ -427,18 +365,13 @@ pm2 logs
 # Run smoke test
 node scripts/smoke-test.js
 
-# Test HA webhook
-curl -X POST https://your-backend.onrender.com/api/ha/webhook \
-  -H "Content-Type: application/json" \
-  -H "X-HA-Signature: your-signature" \
-  -d '{"deviceId":"test","metrics":{"temperature":25}}'
 ```
 
 For additional help, check the troubleshooting sections in the deployment guide or create an issue in the repository.
 
 - `backend/` — Node/Express API, Sequelize models, routes
 - `frontend/` — React app (TypeScript), TailwindCSS, components and pages
-- `esp32/` — ESP32/Arduino sketches and ESPHome configurations for sensor polling, API integration, and MQTT connectivity
+- `esp32/` — ESP32 firmware (MQTT/HTTP) for sensors and actuators
 - `scripts/` — Migration & helper scripts (seeding, smoke-tests, simulators)
 - `docker-compose.yml` — Optional local stack (Postgres, etc.)
 - `README.md` — This file
@@ -447,7 +380,7 @@ For additional help, check the troubleshooting sections in the deployment guide 
 
 ## High-level Overview
 
-- Sensors (ESP32 + RS485) collect Temperature, Humidity, Soil Moisture and pH (where supported).
+- Sensors (ESP32) collect Temperature, Humidity, Soil Moisture and pH (where supported).
 - ESP32 devices POST sensor readings to the backend API; the backend stores and broadcasts data and raises alerts.
 - The frontend provides an Admin dashboard (role-based access) and public dashboards for visualization, charts, and exports.
 - A weather service (frontend-side) fetches Manila-only weather snapshots and produces realistic weather-derived sensor-like readings for correlation and analytics.
@@ -515,57 +448,19 @@ When a simulator is connected the actuator endpoints will return `forwarded: tru
 
 ## IoT integration guide
 
-### ESPHome MQTT Configuration (Recommended)
+### ESP32 firmware setup
 
-**Quick Setup:** Copy `esp32/knights_final.yaml`, replace the MQTT broker URL, and flash!
-
-See `esp32/QUICK_SETUP.md` for step-by-step instructions.
-
-For easier setup and MQTT connectivity, use the ESPHome configuration:
-
-1. **Install ESPHome:**
-   ```bash
-   pip install esphome
-   ```
-
-2. **Configure MQTT:**
-   - Copy `esp32/secrets.yaml` and update with your MQTT broker details
-   - Set `MQTT_BROKER_URL` in your Render backend environment variables
-
-3. **Flash Device:**
-   ```bash
-   esphome run esp32/knights_mqtt.yaml
-   ```
-
-This provides MQTT connectivity, water pump control, solenoid valves, and automatic sensor publishing. See `esp32/README.md` for complete setup instructions.
-
-### Arduino IDE Configuration (Alternative)
-
-If you prefer Arduino IDE development:
-
-- `WiFi.h` (bundled with the ESP32 core)
-- `WiFiClientSecure.h` and `HTTPClient.h`
-- `ArduinoJson` (install through the Arduino Library Manager)
-- *(Optional)* `SocketIoClient.h` — only needed if you switch the firmware back to a socket-first transport
-
-### Firmware upload checklist
-
-1. Open `esp32/environmental_monitor.ino` in the Arduino IDE.
-2. Install the ESP32 board definitions (Tools → Board → Boards Manager → *esp32* by Espressif).
-3. Select **ESP32 Dev Module**, set Flash size to 4 MB, and choose the COM port detected when the board is connected.
-4. Review `esp32/config.h` and confirm the production credentials:
-   - SSID `Knights_IOT`
-   - Password `smbcr-5540`
-   - Telemetry endpoint `https://vermilinks-backend.onrender.com/api/sensors`
-5. Click **Verify** then **Upload**. Keep the board powered during flashing.
+1. Use the firmware folders:
+  - `esp32/firmware_esp32a` (actuators + float sensor)
+  - `esp32/firmware_esp32b` (DHT22 + soil ADC + DS18B20)
+2. Update the `config.h` placeholders with your Wi-Fi and MQTT credentials.
+3. Build and flash using Arduino IDE or PlatformIO.
 
 ### Wiring reference
 
 - **Power**: 5 V adapter into the ESP32 *VIN* pin and GND shared with all peripherals.
-- **RS485/MAX485** (soil probe): RO → GPIO16, DI → GPIO17, RE/DE → GPIO18.
-- **Solenoid relays**: IN1 → GPIO25, IN2 → GPIO26, IN3 → GPIO27 (active-low expected).
-- **Float sensor**: connect to GPIO5 (board silk “D5/DB5”) with the other lead tied to GND; use the ESP32 internal pull-up.
-- **Optional battery monitor / analog sensors**: wire as needed and update the firmware stubs.
+- **ESP32A actuators**: Pump GPIO5; valves GPIO25/26/27; float sensor GPIO14 (active-high).
+- **ESP32B sensors**: DHT22 GPIO4; soil moisture ADC GPIO34; DS18B20 GPIO16.
 
 ### Field test plan
 
@@ -636,23 +531,23 @@ The repository includes a Render blueprint tuned for the ESP32-only VermiLinks s
 
 1. Commit and push your changes to the branch Render will track (recommended: `main`).
 2. In Render, choose **Blueprints → New Blueprint Instance** and select this repository.
-3. Confirm the generated resources match `render.yaml`:
+3. Confirm the generated resources match the Render config file:
   - `vermilinks-backend` (plan `free`, rootDir `backend`, health path `/api/health`).
   - `vermilinks-frontend` (plan `free`, rootDir `frontend`, publish path `build`).
   - `vermilinks-db` (plan `free`).
 4. Populate backend environment variables under **vermilinks-backend → Environment** (values mirror `backend/.env.example`):
-  - `JWT_SECRET=vermilinks_secret_2025`
+  - `JWT_SECRET=<strong-random-secret>`
   - `SMTP_HOST=smtp.gmail.com`
   - `SMTP_PORT=587`
-  - `EMAIL_USER=beantobin2025@gmail.com`
-  - `EMAIL_PASS=<Gmail app password>`
-  - `EMAIL_FROM="BeanToBin <beantobin2025@gmail.com>"`
+  - `EMAIL_USER=<smtp-user>`
+  - `EMAIL_PASS=<smtp-app-password>`
+  - `EMAIL_FROM="VermiLinks <no-reply@yourdomain.com>"`
   - `CORS_ORIGINS=https://vermilinks.com,https://www.vermilinks.com`
   - `SOCKETIO_CORS_ORIGINS=https://vermilinks.com,https://www.vermilinks.com`
   - `ESP32_URL=https://api.vermilinks.com/api/esp32`
   - `ESP32_COMMAND_TIMEOUT_MS=5000`
-  - `INIT_ADMIN_EMAIL=beantobin2025@gmail.com`
-  - `INIT_ADMIN_PASSWORD=Bean2bin2025`
+  - `INIT_ADMIN_EMAIL=<your-admin-email>`
+  - `INIT_ADMIN_PASSWORD=<your-admin-password>`
 5. Populate frontend variables under **vermilinks-frontend → Environment**:
   - `REACT_APP_API_URL=https://api.vermilinks.com/api`
   - `REACT_APP_WS_URL=wss://api.vermilinks.com`
@@ -663,14 +558,14 @@ The repository includes a Render blueprint tuned for the ESP32-only VermiLinks s
   npm run seed-admin
   ```
 
-7. Verify `https://api.vermilinks.com/api/health` returns `{ "status": "ok" }`, then log in at `https://vermilinks.com/admin/login` using `beantobin2025@gmail.com / Bean2bin2025`.
+7. Verify `https://api.vermilinks.com/api/health` returns `{ "status": "ok" }`, then log in at `https://vermilinks.com/admin/login` using your configured admin credentials.
 
 - Render automatically wires `DATABASE_URL` from `vermilinks-db`; no manual secret is needed for the connection string.
 - All resources stay on the free plan so the deployment runs at $0/month (services auto-sleep when idle).
 
 Recommended quick production flows:
 
-- Render: import the repo in the Render dashboard (we included `render.yaml`). Set `DATABASE_URL` and `JWT_SECRET` in the Render environment and deploy.
+- Render: import the repo in the Render dashboard (config file included). Set `DATABASE_URL` and `JWT_SECRET` in the Render environment and deploy.
 - VPS with Docker Compose: use `docker-compose.prod.yml` and `.env.production` on the server. See `DEPLOY.md` for step-by-step instructions in the repo.
 
 ---
@@ -680,7 +575,7 @@ Recommended quick production flows:
 - `start-all.ps1` — unified local start helper (PowerShell) for backend + frontend.
 - `scripts/smoke-test.js` — resilient smoke test that logs in (admin fallback), posts actuator commands and checks logs.
 - `backend/scripts/ws-device-sim.js` — WebSocket device simulator that registers and ACKs commands.
-- `scripts/render_deploy.ps1` — helper to import `render.yaml` using the Render CLI (keeps API key local).
+- `scripts/render_deploy.ps1` — helper to import the Render config using the Render CLI (keeps API key local).
 
 ---rnu
 

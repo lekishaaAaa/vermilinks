@@ -1,7 +1,9 @@
 "use strict";
 
+const { DataTypes } = require('sequelize');
+
 module.exports = {
-  up: async (sequelize, Sequelize) => {
+  up: async (sequelize) => {
     const queryInterface = sequelize.getQueryInterface();
     let definition = null;
     try {
@@ -29,13 +31,13 @@ module.exports = {
     };
 
     await addColumnIfMissing('created_at', {
-      type: Sequelize.DATE,
+      type: DataTypes.DATE,
       allowNull: false,
-      defaultValue: Sequelize.fn('NOW'),
+      defaultValue: sequelize.fn('NOW'),
     });
 
     await addColumnIfMissing('updated_at', {
-      type: Sequelize.DATE,
+      type: DataTypes.DATE,
       allowNull: true,
     });
   },

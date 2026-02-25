@@ -7,6 +7,7 @@ module.exports = {
   Actuator: require('./Actuator'),
   ActuatorLog: require('./ActuatorLog'),
   ActuatorState: require('./ActuatorState'),
+  PendingCommand: require('./PendingCommand'),
   DeviceEvent: require('./DeviceEvent'),
   SoilReading: require('./SoilReading'),
   Settings: require('./Settings'),

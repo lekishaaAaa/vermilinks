@@ -2,7 +2,7 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const Device = require('../models/Device');
 const SensorData = require('../models/SensorData');
-const SensorSnapshot = require('../models/SensorSnapshot');
+// SensorSnapshot reserved for future device snapshot usage.
 const { markDeviceOnline, resetOfflineTimer } = require('../services/deviceManager');
 const devicePortsService = require('../services/devicePortsService');
 const { auth, optionalAuth } = require('../middleware/auth');
@@ -24,7 +24,6 @@ const SENSOR_STALE_THRESHOLD_MS = Math.max(
   parseInt(process.env.SENSOR_STALE_THRESHOLD_MS || process.env.DEVICE_OFFLINE_TIMEOUT_MS || '60000', 10)
 );
 
-const resolveHomeAssistantDeviceId = () => (process.env.HOME_ASSISTANT_DEVICE_ID || process.env.PRIMARY_DEVICE_ID || '').toString().trim();
 
 const toPlainDevice = (record) => {
   if (!record) {
@@ -77,49 +76,7 @@ router.get('/', optionalAuth, async (req, res) => {
     const devices = await Device.findAll({ order: [['lastHeartbeat','DESC']] });
     const normalizedDevices = devices.map(toPlainDevice).filter(Boolean);
 
-    const homeAssistantDeviceId = resolveHomeAssistantDeviceId();
-    if (homeAssistantDeviceId) {
-      const idx = normalizedDevices.findIndex((device) => (device?.deviceId || '').toString() === homeAssistantDeviceId);
-      const existing = idx >= 0 ? normalizedDevices[idx] : null;
-      const needsSnapshot = !existing || !isDeviceFreshOnline(existing);
-
-      if (needsSnapshot) {
-        try {
-          const snapshot = await SensorSnapshot.findByPk(homeAssistantDeviceId, { raw: true });
-          if (snapshot && snapshot.timestamp) {
-            const snapshotMs = new Date(snapshot.timestamp).getTime();
-            const snapshotIso = new Date(snapshot.timestamp).toISOString();
-            const snapshotFresh = Number.isFinite(snapshotMs) && (Date.now() - snapshotMs) <= DEVICE_STATUS_TIMEOUT_MS;
-            if (snapshotFresh) {
-              const metadata = {
-                ...(existing && existing.metadata ? existing.metadata : {}),
-                synthetic: true,
-                source: 'home_assistant_snapshot',
-                lastSnapshotAt: snapshotIso,
-              };
-              if (existing) {
-                normalizedDevices[idx] = {
-                  ...existing,
-                  status: 'online',
-                  lastHeartbeat: snapshotIso,
-                  metadata,
-                };
-              } else {
-                normalizedDevices.unshift({
-                  id: null,
-                  deviceId: homeAssistantDeviceId,
-                  status: 'online',
-                  lastHeartbeat: snapshotIso,
-                  metadata,
-                });
-              }
-            }
-          }
-        } catch (snapshotErr) {
-          console.warn('devices: failed to evaluate Home Assistant snapshot presence', snapshotErr && snapshotErr.message ? snapshotErr.message : snapshotErr);
-        }
-      }
-    }
+    // Devices are reported directly by ESP32 nodes.
 
     res.json({ success: true, data: normalizedDevices });
   } catch (e) {

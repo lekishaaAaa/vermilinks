@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, Activity, ArrowLeft, ArrowRight, RefreshCw } from 'lucide-react';
 import RealtimeTelemetryPanel from '../components/RealtimeTelemetryPanel';
@@ -6,6 +6,7 @@ import DarkModeToggle from '../components/DarkModeToggle';
 import { useData } from '../contexts/DataContext';
 import DataSuppressedNotice from '../components/DataSuppressedNotice';
 import { DATA_SUPPRESSED, suppressionReason } from '../utils/dataSuppression';
+import { sensorService } from '../services/api';
 
 const formatTimestamp = (value?: string | null) => {
   if (!value) return 'Never';
@@ -31,6 +32,10 @@ const UserDashboard: React.FC = () => {
     telemetryDisabled,
   } = useData();
   const [refreshing, setRefreshing] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [dailySummary, setDailySummary] = useState<Record<string, number | string | null> | null>(null);
+  const [dailyLoading, setDailyLoading] = useState(false);
+  const [dailyError, setDailyError] = useState<string | null>(null);
 
   const condensedAlerts = useMemo(() => {
     if (recentAlerts?.length) {
@@ -55,6 +60,35 @@ const UserDashboard: React.FC = () => {
       setRefreshing(false);
     }
   };
+
+  useEffect(() => {
+    let mounted = true;
+    const loadDaily = async () => {
+      if (!selectedDate) {
+        return;
+      }
+      setDailyLoading(true);
+      setDailyError(null);
+      try {
+        const response = await sensorService.getDaily({ date: selectedDate });
+        const payload = response?.data?.data;
+        if (!mounted) return;
+        setDailySummary((payload && payload.stats) ? payload.stats : {});
+      } catch (error) {
+        if (!mounted) return;
+        setDailySummary(null);
+        setDailyError('Unable to load daily readings for the selected date.');
+      } finally {
+        if (mounted) {
+          setDailyLoading(false);
+        }
+      }
+    };
+    loadDaily();
+    return () => {
+      mounted = false;
+    };
+  }, [selectedDate]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-coffee-50 via-white to-primary-50 dark:from-gray-900 dark:via-gray-900 dark:to-gray-800">
@@ -118,6 +152,45 @@ const UserDashboard: React.FC = () => {
           refreshing={refreshing || isLoading}
           telemetryDisabled={telemetryDisabled}
         />
+
+        <section className="rounded-2xl border border-coffee-100 dark:border-gray-800 bg-white/80 dark:bg-gray-900/60 p-6 shadow-sm">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-sm uppercase tracking-wide text-primary-600 dark:text-primary-300 font-semibold">Daily readings</p>
+              <h2 className="text-2xl font-bold text-espresso-900 dark:text-white">Calendar-based summary</h2>
+            </div>
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(event) => setSelectedDate(event.target.value)}
+              className="rounded-lg border border-coffee-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-espresso-800 dark:text-gray-100"
+            />
+          </div>
+          {dailyLoading ? (
+            <p className="mt-4 text-sm text-espresso-500 dark:text-gray-400">Loading daily summary...</p>
+          ) : dailyError ? (
+            <p className="mt-4 text-sm text-red-600 dark:text-red-300">{dailyError}</p>
+          ) : (
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="rounded-xl border border-coffee-100 dark:border-gray-700 p-3">
+                <p className="text-xs text-espresso-500 dark:text-gray-400">Avg Temperature</p>
+                <p className="text-lg font-bold text-espresso-900 dark:text-white">{dailySummary?.avgTemperature ?? '-'}</p>
+              </div>
+              <div className="rounded-xl border border-coffee-100 dark:border-gray-700 p-3">
+                <p className="text-xs text-espresso-500 dark:text-gray-400">Avg Humidity</p>
+                <p className="text-lg font-bold text-espresso-900 dark:text-white">{dailySummary?.avgHumidity ?? '-'}</p>
+              </div>
+              <div className="rounded-xl border border-coffee-100 dark:border-gray-700 p-3">
+                <p className="text-xs text-espresso-500 dark:text-gray-400">Avg Moisture</p>
+                <p className="text-lg font-bold text-espresso-900 dark:text-white">{dailySummary?.avgMoisture ?? '-'}</p>
+              </div>
+              <div className="rounded-xl border border-coffee-100 dark:border-gray-700 p-3">
+                <p className="text-xs text-espresso-500 dark:text-gray-400">Avg Soil Temp</p>
+                <p className="text-lg font-bold text-espresso-900 dark:text-white">{dailySummary?.avgSoilTemperature ?? '-'}</p>
+              </div>
+            </div>
+          )}
+        </section>
 
         <section className="grid gap-6 md:grid-cols-2">
           <div className="rounded-2xl border border-coffee-100 dark:border-gray-800 bg-white/80 dark:bg-gray-900/60 p-6 shadow-sm">

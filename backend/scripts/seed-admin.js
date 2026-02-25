@@ -1,5 +1,5 @@
 const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '..', '.env'), override: true });
+require('dotenv').config({ path: path.join(__dirname, '..', '.env'), override: false });
 
 const bcrypt = require('bcryptjs');
 const { Sequelize, DataTypes } = require('sequelize');

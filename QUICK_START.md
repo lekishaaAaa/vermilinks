@@ -198,8 +198,8 @@ npm run smoke-ui
 
 For production deployment, see:
 - `docker-compose.prod.yml` - Full containerized setup
-- `DEPLOY.md` - Detailed deployment guide
-- `render.yaml` - Render.com deployment configuration
+- `docs/README.DEV.md` - Detailed deployment guide
+- Render config file - Render.com deployment configuration
 
 ## 📞 Support
 

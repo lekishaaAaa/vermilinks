@@ -2,7 +2,7 @@
 /*
  Robust smoke test for actuators:
  - Tries to login via /api/admin/login using LOCAL_ADMIN_USER/PASS or defaults
- - If login fails, synthesizes an admin JWT using JWT_SECRET or 'devsecret'
+ - If login fails, synthesizes an admin JWT using JWT_SECRET
  - Posts pump and valve commands for deviceId 'smoke-sim-01'
  - Attempts to read actuator logs for that device
  - Declares success if the actuator endpoints accepted the commands (200 + success true) or logs were created
@@ -10,11 +10,12 @@
 
 const child_process = require('child_process');
 const jwt = require('jsonwebtoken');
+const { getJwtSecret } = require('./backend/utils/jwtSecret');
 
 const API_BASE = process.env.API_BASE || 'http://127.0.0.1:5000';
 const ADMIN_USER = process.env.LOCAL_ADMIN_USER;
 const ADMIN_PASS = process.env.LOCAL_ADMIN_PASS;
-const JWT_SECRET = process.env.JWT_SECRET || 'devsecret';
+const JWT_SECRET = getJwtSecret();
 const DEVICE_ID = process.env.SMOKE_DEVICE_ID || 'smoke-sim-01';
 
 async function safeFetch(url, opts) {

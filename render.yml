@@ -1,0 +1,97 @@
+# Render Blueprint for VermiLinks.com (ESP32-only stack)
+# redeploy-trigger: 2025-11-24T00:00:00Z - harmless comment to force redeploy
+# Services:
+# - vermilinks-backend (Node web service)
+# - vermilinks-frontend (React static site)
+# - vermilinks-db (managed PostgreSQL)
+
+services:
+  - type: web
+    name: vermilinks-backend
+    env: node
+    plan: free
+    branch: master
+    rootDir: backend
+    buildCommand: npm install --force
+    startCommand: npm run start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: vermilinks-db
+          property: connectionString
+      - key: JWT_SECRET
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: EMAIL_USER
+        sync: false
+      - key: EMAIL_PASS
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: SOCKETIO_CORS_ORIGINS
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: MQTT_BROKER_URL
+        sync: false
+      - key: MQTT_USERNAME
+        sync: false
+      - key: MQTT_PASSWORD
+        sync: false
+      - key: MQTT_DEDUPE_TTL_SEC
+        value: "30"
+      - key: MQTT_TOPIC_DEVICE_REGEX
+        value: "vermilinks/([^/]+)"
+      - key: ENABLE_MOCKS
+        value: "false"
+      - key: ESP32_URL
+        sync: false
+      - key: ESP32_COMMAND_TIMEOUT_MS
+        sync: false
+      - key: INIT_ADMIN_EMAIL
+        sync: false
+      - key: INIT_ADMIN_PASSWORD
+        sync: false
+      - key: DEFAULT_TEMP_THRESHOLD
+        value: "30"
+      - key: DEFAULT_HUMIDITY_THRESHOLD
+        value: "80"
+      - key: DEFAULT_MOISTURE_THRESHOLD
+        value: "20"
+      - key: ALERT_THRESHOLDS_JSON
+        value: '{"temperature":{"min":10,"max":35,"warning":30,"critical":40},"humidity":{"min":20,"max":90,"warning":80,"critical":95},"moisture":{"min":10,"max":80,"warning":20,"critical":15},"ph":{"minWarning":5.5,"minCritical":5.0,"maxWarning":7.5,"maxCritical":8.0},"ec":{"min":0.5,"max":3.0,"warning":2.5,"critical":4.0}}'
+
+  - type: web
+    name: vermilinks-frontend
+    env: static
+    branch: master
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: build
+    autoDeploy: true
+    envVars:
+      - key: REACT_APP_API_URL
+        sync: false
+      - key: REACT_APP_BACKEND_URL
+        sync: false
+      - key: REACT_APP_WS_URL
+        sync: false
+      - key: REACT_APP_SENSOR_POLL_INTERVAL_MS
+        value: "5000"
+      - key: REACT_APP_ENABLE_MOCKS
+        value: "false"
+      - key: REACT_APP_DUMMY_MODE
+        value: "false"
+      - key: REACT_APP_ENABLE_SOCKETS
+        value: "true"
+
+databases:
+  - name: vermilinks-db
+    plan: free

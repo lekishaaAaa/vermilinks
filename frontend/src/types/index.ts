@@ -24,6 +24,7 @@ export interface SensorData {
   temperature?: number;
   humidity?: number;
   moisture?: number;
+  soilTemperature?: number;
   ph?: number;
   ec?: number;
   nitrogen?: number;
@@ -70,6 +71,7 @@ export interface LatestSnapshot {
   temperature: number | null;
   humidity: number | null;
   soil_moisture: number | null;
+  soil_temperature?: number | null;
   ph?: number | null;
   ec?: number | null;
   nitrogen?: number | null;

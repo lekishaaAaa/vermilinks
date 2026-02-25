@@ -29,7 +29,7 @@ describe('GET /api/public/telemetry', () => {
   test('returns latest snapshot data when available', async () => {
     const timestamp = new Date();
     await SensorSnapshot.upsert({
-      deviceId: 'vermilinks-homeassistant',
+      deviceId: 'vermilinks-esp32',
       temperature: 22.5,
       humidity: 55.2,
       moisture: 480,

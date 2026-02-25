@@ -1,5 +1,5 @@
 const express = require('express');
-// Mongoose removed. Using Sequelize/Postgres only.
+// MongoDB is used for IoT state/alerts alongside Sequelize/Postgres.
 const cors = require('cors');
 const helmet = require('helmet');
 const compression = require('compression');
@@ -14,6 +14,7 @@ const { validateEnv } = require('./utils/validateEnv');
 validateEnv();
 const logger = require('./utils/logger');
 const database = require('./services/database_pg');
+const { connectMongo } = require('./db/mongo');
 const sequelize = database;
 const connectDB = typeof sequelize.connectDB === 'function' ? sequelize.connectDB : async () => {
   try {
@@ -26,6 +27,9 @@ const connectDB = typeof sequelize.connectDB === 'function' ? sequelize.connectD
 };
 const { ensureDatabaseSetup } = database;
 const schemaReady = ensureDatabaseSetup({ force: (process.env.NODE_ENV || 'development') === 'test' });
+connectMongo().catch((error) => {
+  logger.warn('MongoDB connection failed during startup', error && error.message ? error.message : error);
+});
 const {
   markDeviceOnline,
   resetOfflineTimer,
@@ -41,6 +45,7 @@ const maintenanceRoutes = require('./routes/maintenance');
 const notificationRoutes = require('./routes/notifications');
 const deviceCommandRoutes = require('./routes/deviceCommands');
 const commandRoutes = require('./routes/command');
+const iotRoutes = require('./routes/iot');
 
 // Import middleware
 const { errorHandler } = require('./middleware/errorHandler');
@@ -95,10 +100,19 @@ const sensorRateLimiter = rateLimit({
 
 const defaultFrontendOrigin = process.env.FRONTEND_URL || process.env.FRONTEND_ORIGIN;
 const defaultDeviceOrigin = process.env.DEVICE_SOCKET_ORIGIN || process.env.DEVICE_HTTP_ORIGIN;
+const envSocketOrigins = (process.env.SOCKETIO_CORS_ORIGINS || process.env.CORS_ORIGINS || '')
+  .split(',')
+  .map((value) => value.trim())
+  .filter(Boolean);
 const allowedSocketOrigins = [
   'https://vermilinks-frontend.onrender.com',
   'http://localhost:3000',
 ];
+envSocketOrigins.forEach((origin) => {
+  if (!allowedSocketOrigins.includes(origin)) {
+    allowedSocketOrigins.push(origin);
+  }
+});
 if (defaultFrontendOrigin && !allowedSocketOrigins.includes(defaultFrontendOrigin)) {
   allowedSocketOrigins.push(defaultFrontendOrigin);
 }
@@ -223,7 +237,6 @@ if ((process.env.NODE_ENV || 'development') !== 'test') {
   logger.info('Skipping deviceCommandQueue retry loop in test mode');
 }
 
-let homeAssistantBridgeHandle = null;
 // Start MQTT ingest service if configured (non-test only)
 try {
   // Allow forcing MQTT ingest off even if broker envs remain set.
@@ -236,6 +249,18 @@ try {
   }
 } catch (e) {
   logger.warn('Failed to initialize MQTT ingest service', e && e.message ? e.message : e);
+}
+
+// Start IoT MQTT service for ESP32 commands/telemetry
+try {
+  if (process.env.NODE_ENV !== 'test' && process.env.DISABLE_IOT_MQTT !== 'true') {
+    const iotMqtt = require('./services/iotMqtt');
+    iotMqtt.startIotMqtt();
+  } else {
+    logger.info('DISABLE_IOT_MQTT set or running in test mode; skipping IoT MQTT startup');
+  }
+} catch (e) {
+  logger.warn('Failed to initialize IoT MQTT service', e && e.message ? e.message : e);
 }
 
 wss.on('connection', (ws, request) => {
@@ -343,6 +368,15 @@ const allowedHttpOrigins = [
   'https://vermilinks-frontend.onrender.com',
   'http://localhost:3000',
 ];
+const envHttpOrigins = (process.env.CORS_ORIGINS || process.env.CORS_ORIGIN || '')
+  .split(',')
+  .map((value) => value.trim())
+  .filter(Boolean);
+envHttpOrigins.forEach((origin) => {
+  if (!allowedHttpOrigins.includes(origin)) {
+    allowedHttpOrigins.push(origin);
+  }
+});
 if (defaultFrontendOrigin && !allowedHttpOrigins.includes(defaultFrontendOrigin)) {
   allowedHttpOrigins.push(defaultFrontendOrigin);
 }
@@ -351,26 +385,57 @@ if (deviceHttpOrigin && !allowedHttpOrigins.includes(deviceHttpOrigin)) {
   allowedHttpOrigins.push(deviceHttpOrigin);
 }
 
+const allowAllCors = (process.env.ALLOW_ALL_CORS || '').toString().toLowerCase() === 'true';
+const resolveCorsOrigin = (origin, callback) => {
+  if (!origin) {
+    return callback(null, true);
+  }
+  if (allowAllCors) {
+    return callback(null, origin);
+  }
+  if (allowedHttpOrigins.includes(origin)) {
+    return callback(null, origin);
+  }
+  return callback(new Error('CORS origin not allowed'), false);
+};
+
 const httpCors = cors({
-  origin: allowedHttpOrigins,
-  credentials: true,
+  origin: allowAllCors ? '*' : resolveCorsOrigin,
+  credentials: !allowAllCors,
 });
 
 app.use(httpCors);
 app.options('*', httpCors);
 
-// Body parsing middleware
-const captureRawBody = (req, res, buf) => {
-  if (!buf) {
-    return;
+const isOriginAllowed = (origin) => {
+  if (!origin) {
+    return true;
   }
-  const route = req.originalUrl || '';
-  if (route.startsWith('/api/ha')) {
-    req.rawBody = Buffer.isBuffer(buf) ? buf : Buffer.from(buf);
+  if (allowAllCors) {
+    return true;
   }
+  return allowedHttpOrigins.includes(origin);
 };
 
-app.use(express.json({ limit: '10mb', verify: captureRawBody }));
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (allowAllCors) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  } else if (origin && isOriginAllowed(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+  }
+  res.setHeader('Access-Control-Allow-Headers', 'content-type,authorization');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS');
+  res.setHeader('X-Force-Cors', '1');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(204);
+  }
+  return next();
+});
+
+// Body parsing middleware
+app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 app.use('/api/admin/login', adminAuthLimiter);
@@ -457,6 +522,7 @@ app.get('/internal/ping', (req, res) => {
   res.status(200).send('pong');
 });
 
+app.use('/api', iotRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/sensors', sensorRateLimiter, sensorRoutes);
 app.use('/api/settings', settingsRoutes);
@@ -486,21 +552,10 @@ app.use('/api/auth', authRoutes);
 app.use('/api/alerts', alertRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/notifications', notificationRoutes);
-const homeAssistantRoutes = require('./routes/homeAssistant');
-app.use('/api/ha', homeAssistantRoutes);
-const integrationRoutes = require('./routes/integrations');
-app.use('/api/integrations', integrationRoutes);
 const deviceEventsRoutes = require('./routes/deviceEvents');
 app.use('/api/device-events', deviceEventsRoutes);
 const sensorLogRoutes = require('./routes/sensorLogs');
 app.use('/api/sensor-logs', sensorLogRoutes);
-// RS485 telemetry fallback
-try {
-  const rs485Routes = require('./routes/rs485');
-  app.use('/api/rs485', sensorRateLimiter, rs485Routes);
-} catch (e) {
-  logger && logger.warn && logger.warn('RS485 routes not available:', e && e.message ? e.message : e);
-}
 
 // Actuator override endpoints (admin)
 try {
@@ -627,12 +682,6 @@ process.on('SIGTERM', () => {
   logger.info('SIGTERM received, shutting down gracefully');
   const cleanupTasks = [];
 
-  if (homeAssistantBridgeHandle && typeof homeAssistantBridgeHandle.stop === 'function') {
-    cleanupTasks.push(Promise.resolve().then(() => homeAssistantBridgeHandle.stop()).catch((error) => {
-      logger.warn('Home Assistant bridge stop failed during SIGTERM', error && error.message ? error.message : error);
-    }));
-  }
-
   Promise.all(cleanupTasks).finally(() => {
     server.close(() => {
       logger.info('Server closed');
@@ -694,15 +743,6 @@ if (process.env.RUN_POLLER === 'true' || process.env.RUN_POLLER === '1') {
     logger.info('Sensor poller started (runLoop)');
   } catch (e) {
     logger.warn('Could not start sensor poller inline:', e && e.message ? e.message : e);
-  }
-}
-
-if ((process.env.NODE_ENV || 'development') !== 'test') {
-  try {
-    const homeAssistantBridge = require('./services/homeAssistantBridge');
-    homeAssistantBridgeHandle = homeAssistantBridge.start();
-  } catch (error) {
-    logger.warn('Could not start Home Assistant bridge:', error && error.message ? error.message : error);
   }
 }
 

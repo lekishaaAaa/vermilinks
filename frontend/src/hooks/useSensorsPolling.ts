@@ -129,7 +129,7 @@ export const useSensorsPolling = (options: SensorsPollingOptions = {}): SensorsP
 
     try {
       const snapshot: LatestSnapshot | null = await sensorService.getLatestData(deviceId);
-      const resolvedDeviceId = deviceId || 'vermilinks-homeassistant';
+      const resolvedDeviceId = deviceId || 'esp32b';
 
       const reading: SensorData | null = snapshot
         ? {
@@ -137,6 +137,7 @@ export const useSensorsPolling = (options: SensorsPollingOptions = {}): SensorsP
             temperature: snapshot.temperature === null ? undefined : snapshot.temperature,
             humidity: snapshot.humidity === null ? undefined : snapshot.humidity,
             moisture: snapshot.soil_moisture === null ? undefined : snapshot.soil_moisture,
+            soilTemperature: snapshot.soil_temperature === null ? undefined : snapshot.soil_temperature,
             floatSensor: snapshot.float_state === null ? null : snapshot.float_state,
             timestamp: snapshot.updated_at,
             sensorSummary: undefined,

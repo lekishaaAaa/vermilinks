@@ -1,7 +1,7 @@
 const logger = require('../utils/logger');
 
 async function sendCommand(actuatorName, action) {
-  const message = 'Actuator command support has been retired; dispatch via Home Assistant instead.';
+  const message = 'Actuator command support has been retired; dispatch via /api/iot/control instead.';
   logger.warn('[ACTUATOR → ESP32] command rejected', {
     actuator: actuatorName,
     action,

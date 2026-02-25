@@ -21,7 +21,7 @@ describe('Admin device port management', () => {
     });
     token = jwt.sign(
       { id: 'admin-test', username: 'admin-test', role: 'admin' },
-      process.env.JWT_SECRET || 'devsecret',
+      process.env.JWT_SECRET || 'testsecret',
       { expiresIn: '1h' }
     );
   });

@@ -220,7 +220,7 @@ beantobin-system/
 │   │   ├── pages/         # Dashboard pages
 │   │   ├── services/      # API clients
 │   │   └── contexts/      # React contexts
-├── esp32/                  # ESPHome configurations
+├── esp32/                  # ESP32 firmware
 ├── docs/                   # Documentation
 ├── scripts/                # Utility scripts
 └── *.md                    # Setup guides

@@ -38,9 +38,7 @@ Scripts / Tooling
 - JavaScript (Node.js)
   - Build/serve helpers and verification scripts: `frontend/scripts/serve-build.js`, Puppeteer scripts in `frontend/scripts/*.js`
 - JSON / config
-  - `package.json`, `ecosystem.config.js`, `docker-compose.yml`, other `.json` files
-- YAML
-  - `docker-compose.yml` for container orchestration
+  - `package.json`, `ecosystem.config.js`, other `.json` files
 
 Hardware / Embedded
 - Arduino (C++ flavor)

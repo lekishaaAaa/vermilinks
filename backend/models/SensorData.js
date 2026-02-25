@@ -22,6 +22,11 @@ const SensorData = sequelize.define('SensorData', {
     type: DataTypes.FLOAT,
     allowNull: true,
   },
+  soilTemperature: {
+    type: DataTypes.FLOAT,
+    allowNull: true,
+    field: 'soil_temperature',
+  },
   ph: {
     type: DataTypes.FLOAT,
     allowNull: true,

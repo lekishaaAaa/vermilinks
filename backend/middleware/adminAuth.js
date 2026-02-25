@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const { getJwtSecret } = require('../utils/jwtSecret');
 
 // Admin authentication middleware
 const adminAuth = async (req, res, next) => {
@@ -13,7 +14,15 @@ const adminAuth = async (req, res, next) => {
       });
     }
 
-    const secret = process.env.JWT_SECRET || 'devsecret';
+    let secret;
+    try {
+      secret = getJwtSecret();
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        message: 'Server misconfiguration: JWT_SECRET is required.'
+      });
+    }
     const decoded = jwt.verify(token, secret);
 
     // Sequelize: findByPk to fetch user

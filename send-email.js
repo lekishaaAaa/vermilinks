@@ -17,10 +17,16 @@ async function main() {
 
   const summary = fs.readFileSync(summaryPath, 'utf8');
 
-  const user = process.env.VERMILINKS_GMAIL_USER || 'beantobin2025@gmail.com';
+  const user = process.env.VERMILINKS_GMAIL_USER || '';
   const password = process.env.VERMILINKS_GMAIL_APP_PASSWORD || process.env.GMAIL_APP_PASSWORD;
-  const recipient = process.env.VERMILINKS_REPORT_RECIPIENT || 'beantobin2025@gmail.com';
+  const recipient = process.env.VERMILINKS_REPORT_RECIPIENT || '';
 
+  if (!user) {
+    throw new Error('Missing sender email. Set VERMILINKS_GMAIL_USER.');
+  }
+  if (!recipient) {
+    throw new Error('Missing report recipient. Set VERMILINKS_REPORT_RECIPIENT.');
+  }
   if (!password) {
     throw new Error('Missing Gmail app password. Set VERMILINKS_GMAIL_APP_PASSWORD or GMAIL_APP_PASSWORD.');
   }

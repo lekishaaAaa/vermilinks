@@ -12,6 +12,7 @@ const AuditLog = require('../models/AuditLog');
 const RevokedToken = require('../models/RevokedToken');
 const { sendPasswordResetEmail } = require('../services/emailService');
 const PasswordResetToken = require('../models/PasswordResetToken');
+const { getJwtSecret } = require('../utils/jwtSecret');
 const {
   LockoutError,
   assertCanAttempt,
@@ -30,16 +31,33 @@ const REQUIRED_EMAIL_VARS = ['EMAIL_USER', 'EMAIL_PASS'];
 let emailEnvWarned = false;
 let smtpConfigLogged = false;
 
+const resolveJwtSecret = (res) => {
+  try {
+    return getJwtSecret();
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Server misconfiguration: JWT_SECRET is required.'
+    });
+    return null;
+  }
+};
+
 function warnMissingEmailEnv(contextLabel) {
   if (emailEnvWarned) {
     return;
   }
-  const missing = REQUIRED_EMAIL_VARS.filter((key) => !process.env[key] || process.env[key].trim().length === 0);
+
+  const missing = REQUIRED_EMAIL_VARS.filter((key) => {
+    const value = process.env[key];
+    return !value || String(value).trim().length === 0;
+  });
+
   if (missing.length > 0) {
     emailEnvWarned = true;
-    console.warn('adminAuthController email configuration incomplete', {
+    console.warn('adminAuthController email configuration missing required env vars', {
+      context: contextLabel || 'unknown',
       missing,
-      context: contextLabel || 'otp',
     });
   }
 }
@@ -48,42 +66,49 @@ function normalizeEmail(value) {
   return (value || '').toString().trim().toLowerCase();
 }
 
+function getConfiguredAdminCredentials() {
+  const email = normalizeEmail(
+    process.env.ADMIN_EMAIL ||
+    process.env.ADMIN_LOGIN_USERNAME ||
+    process.env.INIT_ADMIN_EMAIL
+  );
+  const password = (
+    process.env.ADMIN_PASSWORD ||
+    process.env.ADMIN_LOGIN_PASSWORD ||
+    process.env.INIT_ADMIN_PASSWORD ||
+    ''
+  ).toString();
+
+  if (!email || !password) {
+    return null;
+  }
+
+  return { email, password };
+}
+
+function generateOtpCode() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+function getOtpExpiryDate() {
+  const configured = Number(process.env.ADMIN_OTP_TTL_MS);
+  const effective = Number.isFinite(configured)
+    ? Math.min(Math.max(configured, MIN_OTP_TTL_MS), MAX_OTP_TTL_MS)
+    : DEFAULT_OTP_TTL_MS;
+  return new Date(Date.now() + effective);
+}
+
 async function findAdminByEmail(email) {
   const normalized = normalizeEmail(email);
   if (!normalized) {
     return null;
   }
-
-  return Admin.findOne({
-    where: where(fn('lower', col('email')), normalized),
-  });
-}
-
-function getPasswordResetExpiryDate() {
-  const minutesRaw = parseInt(process.env.RESET_TOKEN_EXPIRY_MINUTES || '15', 10);
-  const minutes = Number.isFinite(minutesRaw) && minutesRaw > 0 ? minutesRaw : 15;
-  return new Date(Date.now() + minutes * 60 * 1000);
-}
-
-function hashResetToken(rawToken) {
-  return crypto.createHash('sha256').update(rawToken, 'utf8').digest('hex');
-}
-
-function generateOtpCode() {
-  return Math.floor(100000 + Math.random() * 900000).toString();
-}
-
-function getOtpExpiryDate() {
-  const customTtl = Number(process.env.ADMIN_OTP_TTL_MS);
-  let ttlMs = Number.isFinite(customTtl) && customTtl > 0 ? customTtl : DEFAULT_OTP_TTL_MS;
-  ttlMs = Math.max(ttlMs, MIN_OTP_TTL_MS);
-  ttlMs = Math.min(ttlMs, MAX_OTP_TTL_MS);
-  return new Date(Date.now() + ttlMs);
+  return Admin.findOne({ where: { email: normalized } });
 }
 
 function getRequesterIp(req) {
-  const forwardedHeader = (req.headers['x-forwarded-for'] || '').toString();
-  if (forwardedHeader) {
+  const forwardedHeader = req && req.headers ? req.headers['x-forwarded-for'] : null;
+  if (forwardedHeader && typeof forwardedHeader === 'string') {
     const [firstIp] = forwardedHeader.split(',').map((value) => value.trim()).filter(Boolean);
     if (firstIp) {
       return firstIp;
@@ -224,6 +249,22 @@ async function sendOtpEmailToAdmin({ to, otp, expiresAt }) {
   const smtpHost = process.env.SMTP_HOST;
   const smtpPortRaw = process.env.SMTP_PORT;
   const smtpSecureRaw = process.env.EMAIL_SECURE;
+  const smtpConnectionTimeoutRaw = process.env.SMTP_CONNECTION_TIMEOUT_MS;
+  const smtpGreetingTimeoutRaw = process.env.SMTP_GREETING_TIMEOUT_MS;
+  const smtpSocketTimeoutRaw = process.env.SMTP_SOCKET_TIMEOUT_MS;
+
+  const smtpConnectionTimeout = (() => {
+    const parsed = Number(smtpConnectionTimeoutRaw);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 10000;
+  })();
+  const smtpGreetingTimeout = (() => {
+    const parsed = Number(smtpGreetingTimeoutRaw);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 10000;
+  })();
+  const smtpSocketTimeout = (() => {
+    const parsed = Number(smtpSocketTimeoutRaw);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 15000;
+  })();
 
   const transporterOptions = smtpHost
     ? {
@@ -240,6 +281,10 @@ async function sendOtpEmailToAdmin({ to, otp, expiresAt }) {
 
   const transporter = nodemailer.createTransport({
     ...transporterOptions,
+    pool: false,
+    connectionTimeout: smtpConnectionTimeout,
+    greetingTimeout: smtpGreetingTimeout,
+    socketTimeout: smtpSocketTimeout,
     auth: {
       user,
       pass,
@@ -253,6 +298,9 @@ async function sendOtpEmailToAdmin({ to, otp, expiresAt }) {
       host: transporterOptions.host || undefined,
       port: transporterOptions.port || undefined,
       secure: transporterOptions.secure || false,
+      connectionTimeout: smtpConnectionTimeout,
+      greetingTimeout: smtpGreetingTimeout,
+      socketTimeout: smtpSocketTimeout,
     });
   }
 
@@ -407,7 +455,21 @@ exports.login = async (req, res) => {
   }
 
   try {
-    const admin = await findAdminByEmail(normalizedEmail);
+    const providedPassword = (password || '').toString();
+    const configuredAdmin = getConfiguredAdminCredentials();
+
+    let admin = await findAdminByEmail(normalizedEmail);
+
+    if (!admin && configuredAdmin && normalizedEmail === configuredAdmin.email && providedPassword === configuredAdmin.password) {
+      try {
+        const passwordHash = await bcrypt.hash(configuredAdmin.password, 10);
+        admin = await Admin.create({ email: configuredAdmin.email, passwordHash });
+        console.info('Admin login bootstrap: created configured admin account from environment');
+      } catch (bootstrapErr) {
+        console.warn('Admin login bootstrap failed', bootstrapErr && bootstrapErr.message ? bootstrapErr.message : bootstrapErr);
+      }
+    }
+
     if (!admin) {
       console.warn('Admin login failed: account not found for', normalizedEmail);
       const attemptState = registerAttempt('password', normalizedEmail, requesterIp);
@@ -418,7 +480,18 @@ exports.login = async (req, res) => {
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
 
-    const passwordMatches = await bcrypt.compare((password || '').toString(), admin.passwordHash || '');
+    let passwordMatches = await bcrypt.compare(providedPassword, admin.passwordHash || '');
+    if (!passwordMatches && configuredAdmin && normalizedEmail === configuredAdmin.email && providedPassword === configuredAdmin.password) {
+      try {
+        const reconciledHash = await bcrypt.hash(configuredAdmin.password, 10);
+        await admin.update({ passwordHash: reconciledHash });
+        passwordMatches = true;
+        console.info('Admin login reconciliation: refreshed admin password hash from environment');
+      } catch (reconcileErr) {
+        console.warn('Admin login reconciliation failed', reconcileErr && reconcileErr.message ? reconcileErr.message : reconcileErr);
+      }
+    }
+
     if (!passwordMatches) {
       console.warn('Admin login failed: password mismatch for', normalizedEmail);
       const attemptState = registerAttempt('password', normalizedEmail, requesterIp);
@@ -442,41 +515,39 @@ exports.login = async (req, res) => {
       await recordAudit('otp.issued', admin.email, { expiresAt: expiresAt.toISOString(), ip: requesterIp });
     } catch (e) {}
 
-    try {
-      await sendOtpEmailToAdmin({ to: admin.email, otp, expiresAt });
-    } catch (emailErr) {
-      console.error('adminAuthController: failed to send OTP email', emailErr && emailErr.message ? emailErr.message : emailErr);
-      try { await recordAudit('otp.delivery_failed', admin.email, { ip: requesterIp, error: emailErr && emailErr.message ? emailErr.message : String(emailErr) }); } catch (auditErr) { console.warn('audit log failed for otp delivery', auditErr && auditErr.message ? auditErr.message : auditErr); }
+    const isProduction = (process.env.NODE_ENV || 'development') === 'production';
+    const allowDebugOtpInProduction = (process.env.ALLOW_DEBUG_OTP_IN_PRODUCTION || '').toString().toLowerCase() === 'true';
 
-      const isProduction = (process.env.NODE_ENV || 'development') === 'production';
-      if (!isProduction) {
-        return res.json({
-          success: true,
-          message: 'Verification code generated (email delivery failed; see debugCode).',
-          data: {
-            requires2FA: true,
-            expiresAt: expiresAt.toISOString(),
-            debugCode: otp,
-            delivery: 'email_failed',
-          },
-        });
+    setImmediate(async () => {
+      try {
+        await sendOtpEmailToAdmin({ to: admin.email, otp, expiresAt });
+        try { await recordAudit('otp.delivery_success', admin.email, { ip: requesterIp, expiresAt: expiresAt.toISOString() }); } catch (auditErr) {
+          console.warn('audit log failed for otp delivery success', auditErr && auditErr.message ? auditErr.message : auditErr);
+        }
+      } catch (emailErr) {
+        console.error('adminAuthController: failed to send OTP email', emailErr && emailErr.message ? emailErr.message : emailErr);
+        try { await recordAudit('otp.delivery_failed', admin.email, { ip: requesterIp, error: emailErr && emailErr.message ? emailErr.message : String(emailErr) }); } catch (auditErr) {
+          console.warn('audit log failed for otp delivery failure', auditErr && auditErr.message ? auditErr.message : auditErr);
+        }
       }
+    });
 
-      await clearAdminOtp(admin);
-      return res.status(500).json({ success: false, message: 'Failed to deliver verification code. Please try again.' });
-    }
-
-    console.info('Admin OTP issued and email dispatched', { email: admin.email, expiresAt: expiresAt.toISOString() });
-
-    return res.json({
+    const responsePayload = {
       success: true,
-      message: 'Verification code sent to email',
+      message: 'Verification code generated. Proceed to OTP verification.',
       data: {
         requires2FA: true,
         expiresAt: expiresAt.toISOString(),
-        delivery: 'email',
+        delivery: 'queued',
       },
-    });
+    };
+
+    if (!isProduction || allowDebugOtpInProduction) {
+      responsePayload.data.debugCode = otp;
+      responsePayload.data.delivery = 'queued_debug';
+    }
+
+    return res.json(responsePayload);
   } catch (err) {
     try { await recordAudit('login.attempt', normalizeEmail(email), { success: false, error: err && err.message ? err.message : String(err), ip: requesterIp }); } catch (e) {}
     console.error('adminAuthController.login error', err && err.message ? err.message : err);
@@ -556,7 +627,11 @@ exports.verifyOtp = async (req, res) => {
       role: 'admin',
     };
 
-    const token = jwt.sign(payload, process.env.JWT_SECRET || 'devsecret', { expiresIn: sessionTtlSeconds });
+    const secret = resolveJwtSecret(res);
+    if (!secret) {
+      return undefined;
+    }
+    const token = jwt.sign(payload, secret, { expiresIn: sessionTtlSeconds });
 
     await clearAdminOtp(admin);
     resetAttempts('otp', normalizedEmail, requesterIp);
@@ -752,36 +827,32 @@ exports.resendOtp = async (req, res) => {
     await persistOtpLog(admin.email, otp, expiresAt);
     try { await recordAudit('otp.resend', admin.email, { expiresAt: expiresAt.toISOString(), ip: requesterIp }); } catch (e) {}
 
-    let responsePayload;
-    try {
-      await sendOtpEmailToAdmin({ to: admin.email, otp, expiresAt });
-      responsePayload = {
-        success: true,
-        message: 'Verification code sent to email',
-        data: {
-          expiresAt: expiresAt.toISOString(),
-          delivery: 'email',
-        },
-      };
-    } catch (emailErr) {
-      console.error('adminAuthController: failed to resend OTP email', emailErr && emailErr.message ? emailErr.message : emailErr);
-      try { await recordAudit('otp.delivery_failed', admin.email, { ip: requesterIp, reason: 'resend', error: emailErr && emailErr.message ? emailErr.message : String(emailErr) }); } catch (auditErr) { console.warn('audit log failed for resend', auditErr && auditErr.message ? auditErr.message : auditErr); }
-
-      const isProduction = (process.env.NODE_ENV || 'development') === 'production';
-      if (!isProduction) {
-        responsePayload = {
-          success: true,
-          message: 'Verification code generated (email delivery failed; see debugCode).',
-          data: {
-            expiresAt: expiresAt.toISOString(),
-            debugCode: otp,
-            delivery: 'email_failed',
-          },
-        };
-      } else {
-        await clearAdminOtp(admin);
-        return res.status(500).json({ success: false, message: 'Unable to resend verification code. Please try again.' });
+    setImmediate(async () => {
+      try {
+        await sendOtpEmailToAdmin({ to: admin.email, otp, expiresAt });
+      } catch (emailErr) {
+        console.error('adminAuthController: failed to resend OTP email', emailErr && emailErr.message ? emailErr.message : emailErr);
+        try { await recordAudit('otp.delivery_failed', admin.email, { ip: requesterIp, reason: 'resend', error: emailErr && emailErr.message ? emailErr.message : String(emailErr) }); } catch (auditErr) {
+          console.warn('audit log failed for resend', auditErr && auditErr.message ? auditErr.message : auditErr);
+        }
       }
+    });
+
+    const isProduction = (process.env.NODE_ENV || 'development') === 'production';
+    const allowDebugOtpInProduction = (process.env.ALLOW_DEBUG_OTP_IN_PRODUCTION || '').toString().toLowerCase() === 'true';
+
+    const responsePayload = {
+      success: true,
+      message: 'A new verification code has been generated.',
+      data: {
+        expiresAt: expiresAt.toISOString(),
+        delivery: 'queued',
+      },
+    };
+
+    if (!isProduction || allowDebugOtpInProduction) {
+      responsePayload.data.debugCode = otp;
+      responsePayload.data.delivery = 'queued_debug';
     }
 
     const attemptState = registerAttempt('resend', normalizedEmail, requesterIp);
@@ -820,7 +891,10 @@ exports.getSession = async (req, res) => {
   }
 
   try {
-    const secret = process.env.JWT_SECRET || 'devsecret';
+    const secret = resolveJwtSecret(res);
+    if (!secret) {
+      return undefined;
+    }
     const decoded = jwt.verify(token, secret);
     const decodedPayload = decoded && typeof decoded === 'object' ? decoded : null;
     const adminId = decodedPayload && decodedPayload.id ? decodedPayload.id : null;
@@ -952,7 +1026,11 @@ exports.refreshSession = async (req, res) => {
       role: 'admin',
     };
 
-    const token = jwt.sign(payload, process.env.JWT_SECRET || 'devsecret', { expiresIn: sessionTtlSeconds });
+    const secret = resolveJwtSecret(res);
+    if (!secret) {
+      return undefined;
+    }
+    const token = jwt.sign(payload, secret, { expiresIn: sessionTtlSeconds });
 
     await session.update({
       token,

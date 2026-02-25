@@ -13,9 +13,26 @@ const Device = sequelize.define('Device', {
     allowNull: false,
     defaultValue: 'offline'
   },
+  online: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false,
+    field: 'online'
+  },
   lastHeartbeat: {
     type: DataTypes.DATE,
     allowNull: true
+  },
+  lastSeen: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    field: 'last_seen'
+  },
+  updatedAt: {
+    type: DataTypes.DATE,
+    allowNull: false,
+    defaultValue: DataTypes.NOW,
+    field: 'updated_at'
   },
   metadata: {
     type: DataTypes.JSON,

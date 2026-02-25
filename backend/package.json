@@ -29,6 +29,7 @@
     "jsonwebtoken": "^9.0.2",
     "mailparser": "^3.9.0",
     "mqtt": "^5.14.1",
+    "mongoose": "^8.0.0",
     "node-cache": "^5.1.2",
     "node-cron": "^3.0.3",
     "nodemailer": "^6.9.13",

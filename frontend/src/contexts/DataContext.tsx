@@ -49,7 +49,6 @@ interface FloatLockoutState {
 interface DataContextType {
   latestTelemetry: SensorData | null;
   latestSensorData: SensorData[];
-  latestHaSnapshot?: SensorData | null;
   actuatorStates: Record<string, boolean | number | null> | null;
   deviceStatuses: Record<string, DeviceStatusInfo>;
   recentAlerts: Alert[];
@@ -117,7 +116,6 @@ const backendBaseFromApi = () => {
 };
 
 const socketsEnabled = (process.env.REACT_APP_ENABLE_SOCKETS || '').toString().toLowerCase() === 'true';
-const treatHaAsSecondary = (process.env.REACT_APP_TREAT_HA_AS_SECONDARY || 'true').toString().toLowerCase() === 'true';
 const TELEMETRY_SMOOTH_ALPHA = (() => {
   const raw = Number(process.env.REACT_APP_TELEMETRY_SMOOTH_ALPHA ?? 0.4);
   return Number.isFinite(raw) && raw > 0 && raw <= 1 ? raw : 0.4;
@@ -280,6 +278,7 @@ const normalizeSensorSample = (sample: any, fallbackDeviceId?: string): SensorDa
     temperature: toNumber(sample.temperature ?? sample.temp ?? sample.temperatureC),
     humidity: toNumber(sample.humidity ?? sample.relativeHumidity),
     moisture: toNumber(sample.moisture ?? sample.soil_moisture ?? sample.soilMoisture),
+    soilTemperature: toNumber(sample.soilTemperature ?? sample.soil_temperature ?? sample.waterTempC ?? sample.soilTemp),
     ph: toNumber(sample.ph),
     ec: toNumber(sample.ec ?? sample.electricalConductivity),
     nitrogen: toNumber(sample.nitrogen),
@@ -316,6 +315,7 @@ const mergeSensorReadings = (existing: SensorData | null, incoming: SensorData |
     temperature: decide('temperature') as any,
     humidity: decide('humidity') as any,
     moisture: decide('moisture') as any,
+    soilTemperature: decide('soilTemperature') as any,
     ph: decide('ph') as any,
     ec: decide('ec') as any,
     nitrogen: decide('nitrogen') as any,
@@ -334,7 +334,6 @@ const mergeSensorReadings = (existing: SensorData | null, incoming: SensorData |
 export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
   const [latestTelemetry, setLatestTelemetry] = useState<SensorData | null>(null);
   const [latestSensorData, setLatestSensorData] = useState<SensorData[]>([]);
-  const [latestHaSnapshot, setLatestHaSnapshot] = useState<SensorData | null>(null);
   const [actuatorStates, setActuatorStates] = useState<Record<string, boolean | number | null> | null>(null);
   const [deviceStatuses, setDeviceStatuses] = useState<Record<string, DeviceStatusInfo>>({});
   const [recentAlerts, setRecentAlerts] = useState<Alert[]>([]);
@@ -578,7 +577,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
     try {
       await ensureBackendBase();
       const snapshot = await sensorService.getLatestData();
-      const resolvedDeviceId = 'vermilinks-homeassistant';
+      const resolvedDeviceId = 'vermilinks-esp32';
       const reading: SensorData | null = snapshot
         ? normalizeSensorSample({
             deviceId: resolvedDeviceId,
@@ -602,35 +601,13 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
         : null;
 
       if (reading) {
-        // If this is a Home Assistant produced snapshot (deviceId vermilinks-homeassistant)
-        // and the operator prefers HA treated as secondary, ignore this snapshot for
-        // the main live UI until at least one ESP device reports as online.
-        const isHaSnapshot = (reading.deviceId || '').toString().toLowerCase() === 'vermilinks-homeassistant';
-        const anyEspOnline = Object.values(deviceStatuses || {}).some((s) => {
-          const id = (s?.deviceId || '').toString().toLowerCase();
-          return s?.online && (id.includes('esp32') || id.includes('esp') || id.includes('vermilinks-esp'));
-        });
-
-        if (isHaSnapshot && treatHaAsSecondary && !anyEspOnline) {
-          // store HA snapshot for diagnostics but do not promote to live telemetry
-          setLatestHaSnapshot(reading);
-          // keep main UI null/empty to reflect no live sensors
-          if (!background) {
-            setLatestTelemetry(null);
-            setLatestSensorData([]);
-            setActuatorStates(null);
-            setIsConnected(false);
-            setLastFetchError('Awaiting live sensors');
-          }
+        const processed = handleTelemetryPayload(reading, { updateLatestList: false });
+        if (processed) {
+          setLatestSensorData([processed]);
         } else {
-          const processed = handleTelemetryPayload(reading, { updateLatestList: false });
-          if (processed) {
-            setLatestSensorData([processed]);
-          } else {
-            setLatestSensorData([]);
-          }
-          setActuatorStates(reading.actuatorStates || null);
+          setLatestSensorData([]);
         }
+        setActuatorStates(reading.actuatorStates || null);
       } else if (!background) {
         if (!latestTelemetryRef.current) {
           setLatestTelemetry(null);
@@ -904,7 +881,6 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
   const contextValue = useMemo<DataContextType>(() => ({
     latestTelemetry,
     latestSensorData,
-    latestHaSnapshot,
     actuatorStates,
     deviceStatuses,
     recentAlerts,
@@ -924,7 +900,6 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
   }), [
     latestTelemetry,
     latestSensorData,
-    latestHaSnapshot,
     actuatorStates,
     deviceStatuses,
     recentAlerts,

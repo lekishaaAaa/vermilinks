@@ -2,6 +2,7 @@ const SENSOR_FIELD_CONFIG = [
   { key: 'temperature', label: 'Temperature', unit: '°C' },
   { key: 'humidity', label: 'Humidity', unit: '%' },
   { key: 'moisture', label: 'Soil Moisture', unit: '%' },
+  { key: 'soilTemperature', label: 'Soil Temperature', unit: '°C' },
   { key: 'ph', label: 'pH', unit: '' },
   { key: 'ec', label: 'EC', unit: 'mS/cm' },
   { key: 'nitrogen', label: 'Nitrogen', unit: 'mg/kg' },

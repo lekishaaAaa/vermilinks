@@ -3,7 +3,7 @@ const Device = require('../models/Device');
 const DevicePort = require('../models/DevicePort');
 const DeviceCommand = require('../models/DeviceCommand');
 
-const ALLOWED_PORT_TYPES = new Set(['UART', 'RS485', 'I2C', 'GPIO', 'SPI', 'OTHER']);
+const ALLOWED_PORT_TYPES = new Set(['UART', 'I2C', 'GPIO', 'SPI', 'OTHER']);
 const ENUM_TIMEOUT_MS = Number(process.env.DEVICE_ENUMERATION_TIMEOUT_MS || 8000);
 
 function createHttpError(status, message) {

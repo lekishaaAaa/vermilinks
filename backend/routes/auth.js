@@ -3,8 +3,21 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const { body, validationResult } = require('express-validator');
 const User = require('../models/User');
+const { getJwtSecret } = require('../utils/jwtSecret');
 
 const router = express.Router();
+
+const resolveJwtSecret = (res) => {
+  try {
+    return getJwtSecret();
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Server misconfiguration: JWT_SECRET is required.'
+    });
+    return null;
+  }
+};
 
 // @route   POST /api/auth/login
 // @desc    Login user
@@ -135,7 +148,11 @@ router.post('/login', [
       if (allowFallback) {
         if (username === localUser && password === localPass) {
           const payload = { id: 'local-admin', username: localUser, role: 'admin' };
-          const token = jwt.sign(payload, process.env.JWT_SECRET || 'devsecret', { expiresIn: '24h' });
+          const secret = resolveJwtSecret(res);
+          if (!secret) {
+            return undefined;
+          }
+          const token = jwt.sign(payload, secret, { expiresIn: '24h' });
             if ((process.env.NODE_ENV || 'development') !== 'production') {
               try { console.log('DEV-LOGIN-TOKEN (local-fallback):', token); } catch(e) {}
             }
@@ -187,7 +204,10 @@ router.post('/login', [
     }
 
   const payload = { id: user.id, username: user.username, role: user.role };
-  const secret = process.env.JWT_SECRET || 'devsecret';
+  const secret = resolveJwtSecret(res);
+  if (!secret) {
+    return undefined;
+  }
   const token = jwt.sign(payload, secret, { expiresIn: '24h' });
   try { console.log(`Login successful for user id=${user.id} via DB`); } catch(e) {}
     if ((process.env.NODE_ENV || 'development') !== 'production') {

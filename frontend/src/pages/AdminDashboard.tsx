@@ -2,12 +2,13 @@
 import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { createPortal } from 'react-dom';
-import { Bell, Check, Settings, Activity, Users, BarChart3, Calendar, RefreshCw, ExternalLink, FileText } from 'lucide-react';
+import { Bell, Check, Settings, Activity, Users, BarChart3, Calendar, RefreshCw, FileText } from 'lucide-react';
 import SensorCharts from '../components/SensorCharts';
 import SystemHealth from '../components/SystemHealth';
 import DarkModeToggle from '../components/DarkModeToggle';
 import HeaderFrame from '../components/layout/HeaderFrame';
 import SensorSummaryPanel from '../components/SensorSummaryPanel';
+import ActuatorControls from '../components/ActuatorControls';
 import { DeviceManagement } from '../components/DeviceManagement';
 import { useAuth } from '../contexts/AuthContext';
 import { useData } from '../contexts/DataContext';
@@ -17,8 +18,6 @@ import api, { alertService } from '../services/api';
 import { SensorData as SensorDataType } from '../types';
 import { socket as sharedSocket } from '../socket';
 import RealtimeTelemetryPanel from '../components/RealtimeTelemetryPanel';
-import HADiagnosticsBadge from '../components/HADiagnosticsBadge';
-import { resolveHomeAssistantUrl } from '../utils/homeAssistant';
 
 type Sensor = {
   id: string;
@@ -27,6 +26,7 @@ type Sensor = {
   temperature?: number | null;
   humidity?: number | null;
   moisture?: number | null;
+  soilTemperature?: number | null;
   ph?: number | null;
   ec?: number | null;
   npk?: { n?: number; p?: number; k?: number } | null;
@@ -63,7 +63,7 @@ type StatusPillProps = { label: string; status: string };
 
 const SENSOR_STALE_THRESHOLD_MS = 60_000;
 
-const mapSensorDataToSensor = (reading: Partial<SensorDataType> | null | undefined, fallbackId = 'vermilinks-homeassistant'): Sensor | null => {
+const mapSensorDataToSensor = (reading: Partial<SensorDataType> | null | undefined, fallbackId = 'esp32b'): Sensor | null => {
   if (!reading) {
     return null;
   }
@@ -81,12 +81,13 @@ const mapSensorDataToSensor = (reading: Partial<SensorDataType> | null | undefin
   const hasNpk = npkValues.n !== undefined || npkValues.p !== undefined || npkValues.k !== undefined;
 
   return {
-    id: (reading.deviceId || fallbackId || 'home-assistant').toString(),
-    name: 'Home Assistant Feed',
-    deviceId: (reading.deviceId || fallbackId || 'home-assistant').toString(),
+    id: (reading.deviceId || fallbackId || 'esp32b').toString(),
+    name: 'ESP32-B Telemetry',
+    deviceId: (reading.deviceId || fallbackId || 'esp32b').toString(),
     temperature: toNumber(reading.temperature),
     humidity: toNumber(reading.humidity),
     moisture: toNumber(reading.moisture),
+    soilTemperature: toNumber((reading as any).soilTemperature ?? (reading as any).soil_temperature ?? (reading as any).waterTempC),
     ph: toNumber(reading.ph),
     ec: toNumber(reading.ec),
     npk: hasNpk ? npkValues : null,
@@ -160,7 +161,6 @@ export default function AdminDashboard(): React.ReactElement {
   const [alertsActionError, setAlertsActionError] = useState<string | null>(null);
   const [acknowledgingAlertId, setAcknowledgingAlertId] = useState<string | null>(null);
   const [realtimeRefreshing, setRealtimeRefreshing] = useState(false);
-  const homeAssistantUrl = useMemo(resolveHomeAssistantUrl, []);
 
   const hasLiveTelemetry = useMemo(() => {
     if (telemetryDisabled) {
@@ -596,10 +596,11 @@ export default function AdminDashboard(): React.ReactElement {
     }
 
     try {
-      const headers = ['Timestamp', 'Temperature (°C)', 'Soil Moisture (%)', 'pH', 'EC (mS/cm)', 'Water Level', 'Battery (%)', 'Signal (dBm)'];
+      const headers = ['Timestamp', 'Temperature (°C)', 'Soil Temperature (°C)', 'Soil Moisture (%)', 'pH', 'EC (mS/cm)', 'Water Level', 'Battery (%)', 'Signal (dBm)'];
       const csvData = sensorHistory.map((entry) => [
         entry.timestamp || entry.lastSeen || '',
         entry.temperature ?? '',
+        entry.soilTemperature ?? '',
         entry.moisture ?? '',
         entry.ph ?? '',
         entry.ec ?? '',
@@ -628,6 +629,96 @@ export default function AdminDashboard(): React.ReactElement {
       console.error('Export failed:', err);
       error('Export Failed', 'Unable to export sensor data');
     }
+  }, [sensorHistory, success, error, warning]);
+
+  const handleExportExcel = useCallback(() => {
+    if (!sensorHistory.length) {
+      warning('Export Failed', 'No sensor data available to export');
+      return;
+    }
+    try {
+      const headers = ['Timestamp', 'Temperature (°C)', 'Soil Temperature (°C)', 'Soil Moisture (%)', 'pH', 'EC (mS/cm)', 'Water Level', 'Battery (%)', 'Signal (dBm)'];
+      const rows = sensorHistory.map((entry) => [
+        entry.timestamp || entry.lastSeen || '',
+        entry.temperature ?? '',
+        entry.soilTemperature ?? '',
+        entry.moisture ?? '',
+        entry.ph ?? '',
+        entry.ec ?? '',
+        entry.waterLevel ?? '',
+        entry.batteryLevel ?? '',
+        entry.signalStrength ?? '',
+      ]);
+
+      const tableRows = [headers, ...rows]
+        .map((row) => `<tr>${row.map((cell) => `<td>${String(cell ?? '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</td>`).join('')}</tr>`)
+        .join('');
+
+      const html = `
+        <html>
+          <head><meta charset="utf-8" /></head>
+          <body>
+            <table border="1">${tableRows}</table>
+          </body>
+        </html>
+      `;
+
+      const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `sensor-data-${new Date().toISOString().split('T')[0]}.xls`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      success('Export Complete', `Exported ${sensorHistory.length} sensor readings to Excel`);
+    } catch (exportError) {
+      console.error('Excel export failed:', exportError);
+      error('Export Failed', 'Unable to export Excel report');
+    }
+  }, [sensorHistory, success, error, warning]);
+
+  const handleExportPdf = useCallback(() => {
+    if (!sensorHistory.length) {
+      warning('Export Failed', 'No sensor data available to export');
+      return;
+    }
+    const lines = sensorHistory.slice(-200).map((entry) => {
+      const ts = entry.timestamp || entry.lastSeen || '';
+      return `${ts} | T:${entry.temperature ?? '-'} | H:${entry.humidity ?? '-'} | M:${entry.moisture ?? '-'} | SoilT:${entry.soilTemperature ?? '-'} | pH:${entry.ph ?? '-'} | EC:${entry.ec ?? '-'} | WL:${entry.waterLevel ?? '-'} | Batt:${entry.batteryLevel ?? '-'} | RSSI:${entry.signalStrength ?? '-'}`;
+    });
+
+    const reportWindow = window.open('', '_blank', 'width=1024,height=768');
+    if (!reportWindow) {
+      error('Export Failed', 'Popup blocked. Allow popups to export PDF.');
+      return;
+    }
+
+    reportWindow.document.write(`
+      <html>
+        <head>
+          <title>VermiLinks Sensor Report</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 24px; }
+            h1 { margin-bottom: 4px; }
+            .meta { color: #555; margin-bottom: 16px; }
+            pre { white-space: pre-wrap; font-size: 12px; line-height: 1.4; }
+          </style>
+        </head>
+        <body>
+          <h1>VermiLinks Sensor Report</h1>
+          <div class="meta">Generated: ${new Date().toLocaleString()} | Records: ${sensorHistory.length}</div>
+          <pre>${lines.join('\n')}</pre>
+        </body>
+      </html>
+    `);
+    reportWindow.document.close();
+    reportWindow.focus();
+    reportWindow.print();
+    success('Export Complete', 'PDF print dialog opened. Save as PDF to download.');
   }, [sensorHistory, success, error, warning]);
 
   function acknowledgeReminder(id: string) {
@@ -746,7 +837,7 @@ export default function AdminDashboard(): React.ReactElement {
         return;
       }
       try {
-        const response = await api.get('/ha/history', { params: { limit: 336 } }).catch(() => null);
+        const response = await api.get('/sensors/history', { params: { limit: 336 } }).catch(() => null);
         if (!response || !response.data || !response.data.success) {
           setSensorHistory([]);
           return;
@@ -1127,15 +1218,6 @@ export default function AdminDashboard(): React.ReactElement {
                 ESP32 {devicesOnline > 0 ? 'active' : 'awaiting heartbeat'}
               </div>
             </div>
-            <a
-              href={homeAssistantUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center justify-center gap-2 rounded-lg border border-blue-200 bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400 dark:border-transparent"
-            >
-              View VermiLinks Actuators
-              <ExternalLink className="h-4 w-4" />
-            </a>
             <Link
               to="/admin/sensor-logs"
               className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white/80 px-4 py-2 text-sm font-semibold text-gray-700 shadow hover:border-gray-300 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-100"
@@ -1143,6 +1225,22 @@ export default function AdminDashboard(): React.ReactElement {
               <FileText className="h-4 w-4" />
               Review Sensor Logs
             </Link>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={handleExportExcel}
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white/80 px-3 py-2 text-xs font-semibold text-gray-700 shadow hover:border-gray-300 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-100"
+              >
+                Export Excel
+              </button>
+              <button
+                type="button"
+                onClick={handleExportPdf}
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white/80 px-3 py-2 text-xs font-semibold text-gray-700 shadow hover:border-gray-300 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-100"
+              >
+                Export PDF
+              </button>
+            </div>
           </div>
         </div>
 
@@ -1349,6 +1447,8 @@ export default function AdminDashboard(): React.ReactElement {
                   </div>
                 </div>
 
+                <ActuatorControls />
+
                 <div className={`${cardClass} rounded-2xl`}>
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                     <div>
@@ -1367,7 +1467,7 @@ export default function AdminDashboard(): React.ReactElement {
 
                   {actuatorCards.length === 0 ? (
                     <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">
-                      Waiting for the first actuator command. Manual overrides or Home Assistant automations will appear here.
+                      Waiting for the first actuator command. Manual overrides or scheduled automations will appear here.
                     </p>
                   ) : (
                     <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1430,9 +1530,6 @@ export default function AdminDashboard(): React.ReactElement {
                   )}
                 </div>
 
-                <div className="mb-3">
-                  <HADiagnosticsBadge />
-                </div>
                 <RealtimeTelemetryPanel
                   latest={realtimeSample}
                   history={telemetryHistory}

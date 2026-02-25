@@ -20,6 +20,14 @@ const buildAdminPrincipal = (admin) => {
   };
 };
 
+const getJwtSecret = () => {
+  const secret = (process.env.JWT_SECRET || '').trim();
+  if (!secret) {
+    throw new Error('JWT_SECRET is required');
+  }
+  return secret;
+};
+
 // Authentication middleware
 const auth = async (req, res, next) => {
   try {
@@ -32,7 +40,16 @@ const auth = async (req, res, next) => {
       });
     }
 
-    const secret = process.env.JWT_SECRET || 'devsecret';
+    let secret;
+    try {
+      secret = getJwtSecret();
+    } catch (secretError) {
+      return res.status(500).json({
+        success: false,
+        message: 'Server misconfiguration: JWT_SECRET is required.'
+      });
+    }
+
     const decoded = jwt.verify(token, secret);
 
     // Check if token is blacklisted
@@ -141,13 +158,35 @@ const adminOnly = (req, res, next) => {
   }
 };
 
+// Require an OTP-verified admin session for sensitive operations.
+const requireOtpVerified = (req, res, next) => {
+  if (!req.user || req.user.role !== 'admin') {
+    return res.status(403).json({
+      success: false,
+      message: 'Access denied. Admin privileges required.'
+    });
+  }
+
+  const metadata = req.session && req.session.metadata ? req.session.metadata : null;
+  const verifiedAt = metadata && (metadata.otpVerifiedAt || metadata.otp_verified_at);
+  if (!verifiedAt) {
+    return res.status(403).json({
+      success: false,
+      message: 'OTP verification required.'
+    });
+  }
+
+  return next();
+};
+
 // Optional auth middleware (doesn't require token, but validates if present)
 const optionalAuth = async (req, res, next) => {
   try {
     const token = req.header('Authorization')?.replace('Bearer ', '');
     
     if (token) {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const secret = getJwtSecret();
+      const decoded = jwt.verify(token, secret);
       let principal = await User.findByPk(decoded.id, { attributes: { exclude: ['password'] } });
       if (!principal) {
         const adminRecord = await Admin.findByPk(decoded.id, {
@@ -171,5 +210,6 @@ const optionalAuth = async (req, res, next) => {
 module.exports = {
   auth,
   adminOnly,
+  requireOtpVerified,
   optionalAuth
 };

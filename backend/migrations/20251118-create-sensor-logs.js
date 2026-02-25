@@ -32,7 +32,7 @@ module.exports = {
         value: { type: DataTypes.DOUBLE, allowNull: false },
         unit: { type: DataTypes.STRING(24), allowNull: true },
         mqtt_topic: { type: DataTypes.STRING(255), allowNull: true },
-        origin: { type: DataTypes.STRING(64), allowNull: false, defaultValue: 'home_assistant' },
+        origin: { type: DataTypes.STRING(64), allowNull: false, defaultValue: 'mqtt' },
         recorded_at: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW },
         raw_payload: { type: DataTypes.JSONB || DataTypes.JSON, allowNull: true },
         created_at: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW },

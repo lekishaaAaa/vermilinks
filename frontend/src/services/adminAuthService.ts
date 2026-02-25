@@ -1,5 +1,31 @@
 import api, { discoverApi } from './api';
 
+const FALLBACK_API_ROOT = 'https://vermilinks.onrender.com';
+const AUTH_REQUEST_TIMEOUT_MS = 45000;
+
+function normalizeRoot(value?: string | null) {
+  if (!value) return '';
+  return value.replace(/\s+/g, '').replace(/\/?api$/i, '').replace(/\/$/, '');
+}
+
+async function callWithFallback<T>(runner: () => Promise<T>): Promise<T> {
+  try {
+    return await runner();
+  } catch (error: any) {
+    if (!error?.request || error?.response) {
+      throw error;
+    }
+
+    const fallbackRoot = normalizeRoot(FALLBACK_API_ROOT);
+    if (!fallbackRoot) {
+      throw error;
+    }
+
+    api.defaults.baseURL = `${fallbackRoot}/api`;
+    return runner();
+  }
+}
+
 export interface AdminLoginResponse {
   success: boolean;
   message?: string;
@@ -87,8 +113,11 @@ function extractMessage(error: any, fallback: string): never {
   if (error?.response?.status === 401) {
     throw new Error('Invalid email or password.');
   }
+  if (String(error?.code || '').toUpperCase() === 'ECONNABORTED') {
+    throw new Error('Server is starting up. Please wait a few seconds and try again.');
+  }
   if (error?.request) {
-    throw new Error('Unable to reach the server. Please confirm the backend is running.');
+    throw new Error('Unable to reach the server right now. If this is Render free tier cold start, retry in 10-20 seconds.');
   }
   throw new Error(error?.message || fallback);
 }
@@ -104,10 +133,12 @@ async function ensureApiBase() {
 export async function login(email: string, password: string): Promise<AdminLoginResponse> {
   await ensureApiBase();
   try {
-    const response = await api.post<AdminLoginResponse>('/admin/login', {
-      email: email.trim(),
-      password,
-    });
+    const response = await callWithFallback(() =>
+      api.post<AdminLoginResponse>('/admin/login', {
+        email: email.trim(),
+        password,
+      }, { timeout: AUTH_REQUEST_TIMEOUT_MS })
+    );
     return response.data;
   } catch (error: any) {
     extractMessage(error, 'Unable to sign in. Please try again.');
@@ -117,10 +148,12 @@ export async function login(email: string, password: string): Promise<AdminLogin
 export async function verifyOtp(email: string, otp: string): Promise<AdminVerifyOtpResponse> {
   await ensureApiBase();
   try {
-    const response = await api.post<AdminVerifyOtpResponse>('/admin/verify-otp', {
-      email: email.trim(),
-      otp: otp.trim(),
-    });
+    const response = await callWithFallback(() =>
+      api.post<AdminVerifyOtpResponse>('/admin/verify-otp', {
+        email: email.trim(),
+        otp: otp.trim(),
+      }, { timeout: AUTH_REQUEST_TIMEOUT_MS })
+    );
     return response.data;
   } catch (error: any) {
     extractMessage(error, 'Unable to verify the code. Please try again.');
@@ -142,9 +175,11 @@ export async function forgotPassword(email: string): Promise<AdminForgotPassword
 export async function resendOtp(email: string): Promise<AdminResendOtpResponse> {
   await ensureApiBase();
   try {
-    const response = await api.post<AdminResendOtpResponse>('/admin/resend-otp', {
-      email: email.trim(),
-    });
+    const response = await callWithFallback(() =>
+      api.post<AdminResendOtpResponse>('/admin/resend-otp', {
+        email: email.trim(),
+      }, { timeout: AUTH_REQUEST_TIMEOUT_MS })
+    );
     return response.data;
   } catch (error: any) {
     extractMessage(error, 'Unable to resend the verification code. Please try again.');

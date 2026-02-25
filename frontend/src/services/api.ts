@@ -17,7 +17,7 @@ import {
 // Create axios instance with base configuration
 // Build a normalized API base URL. Users may set REACT_APP_API_URL with or without
 // a trailing '/api'. Normalize to avoid accidentally producing '/api/api' in requests.
-const RAW_API_ROOT = (process.env.REACT_APP_API_URL || 'http://127.0.0.1:5000').toString();
+const RAW_API_ROOT = (process.env.REACT_APP_API_URL || 'https://vermilinks.onrender.com').toString();
 // Remove any trailing slashes and any repeated '/api' segments to avoid producing '/api/api'
 const API_ROOT = RAW_API_ROOT.replace(/(\/api)+\/?$/i, '').replace(/\/+$/,'');
 export const API_BASE_URL = API_ROOT;
@@ -196,6 +196,7 @@ export async function discoverApi(options?: { candidates?: string[]; timeout?: n
     // include current configured base plus common dev ports
     const list = [] as string[];
     if (normalized) list.push(normalized);
+    list.push('https://vermilinks.onrender.com');
     list.push('http://127.0.0.1:5000');
     list.push('http://127.0.0.1:8000');
   list.push('http://127.0.0.1:10000');
@@ -426,8 +427,16 @@ export const sensorService = {
   }) =>
     api.get<ApiResponse<SensorStats>>('/sensors/stats', { params }),
 
-  getHaHistory: (params?: { deviceId?: string; limit?: number; since?: string }) =>
-    api.get<ApiResponse<{ deviceId: string; since: string; readings: SensorData[] }>>('/ha/history', { params }),
+  getHistory: (params?: { deviceId?: string; limit?: number; start?: string; end?: string }) =>
+    api.get<ApiResponse<{ deviceId: string; readings: SensorData[] }>>('/sensors/history', { params }),
+
+  getDaily: (params: { date: string; deviceId?: string }) =>
+    api.get<ApiResponse<{
+      date: string;
+      deviceId: string;
+      stats: Record<string, number | string | null>;
+      actuatorActivity: Array<Record<string, any>>;
+    }>>('/sensors/daily', { params }),
   
   submitData: (data: Omit<SensorData, '_id'>) =>
     api.post<ApiResponse<SensorData>>('/sensors/data', data),

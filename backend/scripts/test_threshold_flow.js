@@ -4,8 +4,8 @@ const { simpleParser } = require('mailparser');
 const ioClient = require('socket.io-client');
 
 const BACKEND = process.env.VERMILINKS_BACKEND_URL || process.env.BACKEND_URL || 'http://localhost:10000';
-const ADMIN_EMAIL = process.env.VERMILINKS_ADMIN_EMAIL || process.env.GMAIL_ADDRESS || 'beantobin2025@gmail.com';
-const ADMIN_PASSWORD = process.env.VERMILINKS_ADMIN_PASSWORD || 'Bean2bin2025';
+const ADMIN_EMAIL = process.env.VERMILINKS_ADMIN_EMAIL || process.env.GMAIL_ADDRESS || '';
+const ADMIN_PASSWORD = process.env.VERMILINKS_ADMIN_PASSWORD || '';
 const GMAIL_USER = process.env.VERMILINKS_GMAIL_USER || process.env.GMAIL_USER || ADMIN_EMAIL;
 const GMAIL_PASS = process.env.VERMILINKS_GMAIL_APP_PASSWORD || process.env.GMAIL_APP_PASSWORD || process.env.EMAIL_PASS;
 
@@ -45,6 +45,9 @@ async function fetchOtp() {
 }
 
 async function main() {
+  if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
+    throw new Error('Missing admin credentials. Set VERMILINKS_ADMIN_EMAIL and VERMILINKS_ADMIN_PASSWORD.');
+  }
   console.log('Backend:', BACKEND);
 
   const axiosInst = axios.create({ baseURL: BACKEND, timeout: 15000 });

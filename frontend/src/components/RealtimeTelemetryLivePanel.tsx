@@ -14,6 +14,7 @@ const METRICS: MetricConfig[] = [
   { key: 'temperature', label: 'Temperature', unit: '°C', precision: 1 },
   { key: 'humidity', label: 'Humidity', unit: '%', precision: 1 },
   { key: 'moisture', label: 'Soil Moisture', unit: '%', precision: 1 },
+  { key: 'soilTemperature', label: 'Soil Temperature', unit: '°C', precision: 1 },
   { key: 'ph', label: 'pH', precision: 2 },
   { key: 'ec', label: 'EC', unit: 'mS/cm', precision: 2 },
   { key: 'waterLevel', label: 'Water Level', unit: 'cm', precision: 0 },
@@ -79,6 +80,11 @@ export default function RealtimeTelemetryLivePanel({ deviceId = 'vermilinks-esp3
         temperature: typeof data.sensors?.temperature === 'number' ? data.sensors.temperature : undefined,
         humidity: typeof data.sensors?.humidity === 'number' ? data.sensors.humidity : undefined,
         moisture: typeof data.sensors?.moisture === 'number' ? data.sensors.moisture : undefined,
+        soilTemperature: typeof data.sensors?.soilTemperature === 'number'
+          ? data.sensors.soilTemperature
+          : typeof data.sensors?.waterTempC === 'number'
+            ? data.sensors.waterTempC
+            : undefined,
         ph: typeof data.sensors?.ph === 'number' ? data.sensors.ph : undefined,
         ec: typeof data.sensors?.ec === 'number' ? data.sensors.ec : undefined,
         waterLevel: typeof data.sensors?.float_distance === 'number' ? data.sensors.float_distance : typeof data.sensors?.waterLevel === 'number' ? data.sensors.waterLevel : undefined,

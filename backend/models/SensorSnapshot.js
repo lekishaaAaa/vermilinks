@@ -23,6 +23,11 @@ const SensorSnapshot = sequelize.define('SensorSnapshot', {
     allowNull: true,
     field: 'moisture',
   },
+  soilTemperature: {
+    type: DataTypes.FLOAT,
+    allowNull: true,
+    field: 'soil_temperature',
+  },
   ph: {
     type: DataTypes.FLOAT,
     allowNull: true,

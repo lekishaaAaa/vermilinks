@@ -14,7 +14,7 @@ interface FormState {
   notes: string;
 }
 
-const ALLOWED_PORT_TYPES = ['UART', 'RS485', 'I2C', 'GPIO', 'SPI', 'OTHER'];
+const ALLOWED_PORT_TYPES = ['UART', 'I2C', 'GPIO', 'SPI', 'OTHER'];
 
 const DevicePortsPage: React.FC = () => {
   const { deviceId } = useParams<{ deviceId: string }>();

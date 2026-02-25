@@ -1,0 +1,1158 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom base styles */
+:root {
+  color-scheme: light;
+  --page-background: radial-gradient(circle at 20% 18%, #f9f5f1 0%, #f2e5d8 46%, #e8d3bf 100%);
+  --surface-color: rgba(255, 252, 247, 0.97);
+  --surface-alt: rgba(248, 237, 225, 0.9);
+  --surface-glass: rgba(255, 240, 227, 0.82);
+  --surface-border: rgba(118, 84, 58, 0.14);
+  --surface-border-strong: rgba(118, 84, 58, 0.26);
+  --shadow-soft: 0 22px 44px -28px rgba(109, 76, 51, 0.38);
+  --shadow-hover: 0 30px 52px -30px rgba(109, 76, 51, 0.48);
+  --shadow-card: 0 24px 54px -32px rgba(109, 76, 51, 0.42);
+  --text-primary: #2f231b;
+  --text-secondary: #5a4231;
+  --text-muted: #856c5a;
+  --accent-primary: #b46a3a;
+  --accent-secondary: #8a4f2a;
+  --accent-tertiary: #57341f;
+  --divider-soft: rgba(160, 118, 88, 0.26);
+  --badge-background: rgba(180, 106, 61, 0.15);
+  --header-background: linear-gradient(120deg, rgba(255, 252, 246, 0.98), rgba(244, 229, 211, 0.94));
+  --header-border: rgba(148, 108, 76, 0.18);
+  --header-shadow: 0 18px 34px -22px rgba(96, 68, 46, 0.35);
+  --header-text: #2f231b;
+  --interactive-shadow: 0 16px 28px -20px rgba(122, 86, 57, 0.36);
+}
+
+.dark {
+  color-scheme: dark;
+  --page-background: radial-gradient(circle at 18% 18%, #0f172a 0%, #020617 70%);
+  --surface-color: rgba(15, 23, 42, 0.88);
+  --surface-alt: rgba(15, 23, 42, 0.82);
+  --surface-glass: rgba(15, 23, 42, 0.72);
+  --surface-border: rgba(148, 163, 184, 0.08);
+  --surface-border-strong: rgba(148, 163, 184, 0.16);
+  --shadow-soft: 0 30px 60px -35px rgba(0, 0, 0, 0.75);
+  --shadow-hover: 0 40px 80px -40px rgba(0, 0, 0, 0.78);
+  --shadow-card: 0 24px 55px -36px rgba(0, 0, 0, 0.72);
+  --text-primary: rgba(241, 245, 249, 0.97);
+  --text-secondary: rgba(226, 232, 240, 0.75);
+  --text-muted: rgba(148, 163, 184, 0.66);
+  --accent-primary: #22d3ee;
+  --accent-secondary: #60a5fa;
+  --accent-tertiary: #c084fc;
+  --divider-soft: rgba(100, 116, 139, 0.22);
+  --badge-background: rgba(94, 234, 212, 0.12);
+  --header-background: linear-gradient(120deg, rgba(18, 24, 38, 0.94), rgba(12, 17, 28, 0.9)); /* keeps dark header neutral so text remains legible */
+  --header-border: rgba(148, 163, 184, 0.12); /* subtle cool edge for structure in dark mode */
+  --header-shadow: 0 24px 40px -24px rgba(0, 0, 0, 0.7);
+  --header-text: rgba(241, 245, 249, 0.97);
+}
+
+@layer base {
+  html {
+    @apply scroll-smooth;
+  }
+  
+  body {
+    @apply bg-coffee-50 text-espresso-900 font-sans antialiased;
+    background: var(--page-background);
+    color: var(--text-primary);
+    min-height: 100vh;
+    background-attachment: fixed;
+    padding-top: 0; /* only add top padding when a fixed header is present */
+    line-height: 1.55;
+  }
+
+  /* When the admin/header portal is mounted, add top padding to the body
+     so page content doesn't sit beneath the fixed header. The header itself
+     is scoped to `header.admin-fixed` so regular headers are unaffected. */
+  body.has-admin-header {
+    padding-top: var(--admin-header-height);
+  }
+}
+
+@layer base {
+  body:not(.dark) main {
+    color: var(--text-secondary);
+  }
+
+  body:not(.dark) strong,
+  body:not(.dark) h1,
+  body:not(.dark) h2,
+  body:not(.dark) h3,
+  body:not(.dark) h4,
+  body:not(.dark) h5,
+  body:not(.dark) h6 {
+    color: var(--text-primary);
+  }
+
+  body:not(.dark) p,
+  body:not(.dark) span,
+  body:not(.dark) li {
+    color: inherit;
+  }
+
+  body a {
+    color: var(--accent-secondary);
+    transition: color 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  body a:hover,
+  body a:focus-visible {
+    color: var(--accent-primary);
+  }
+
+  body:not(.dark) hr {
+    border-color: var(--divider-soft);
+  }
+
+  body:not(.dark) .badge,
+  body:not(.dark) .site-badge,
+  body:not(.dark) .letran-badge {
+    background: var(--badge-background);
+    color: var(--accent-primary);
+    border: 1px solid rgba(15, 118, 110, 0.18);
+  }
+}
+
+/* Prevent root-level stacking contexts that can break `position: fixed` on portals.
+   This is a minimal, safe override applied only to the top-level containers and
+   avoids touching component-level transforms or animations. */
+html, body, #root {
+  transform: none !important;
+  -webkit-transform: none !important;
+  will-change: auto !important;
+  filter: none !important;
+  perspective: none !important;
+  -webkit-backface-visibility: visible !important;
+  backface-visibility: visible !important;
+}
+
+/* When the admin header portal is mounted we add top padding to the body
+   so page content doesn't hide behind the fixed header. This keeps normal
+   pages unaffected when the header is not present. */
+body.has-admin-header {
+  padding-top: var(--admin-header-height);
+}
+
+/* Extra-specific overrides: when header is appended to document.body (via portal),
+   ensure it is forced to viewport-fixed regardless of other CSS. This targets the
+   common header markup used across admin/public pages and keeps behavior robust. */
+body > header.admin-fixed,
+header.admin-fixed {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  width: 100% !important;
+  z-index: 9999 !important; /* reasonable high value */
+  transform: none !important;
+}
+
+/* Custom component styles */
+@layer components {
+  .btn {
+    @apply px-4 py-2 rounded-lg font-medium transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2;
+    box-shadow: 0 8px 20px -12px rgba(15, 23, 42, 0.18);
+  }
+  
+  .btn-primary {
+    @apply btn bg-primary-600 hover:bg-primary-700 text-white focus:ring-primary-500;
+  }
+  
+  .btn-secondary {
+    @apply btn bg-coffee-200 hover:bg-coffee-300 text-espresso-900 focus:ring-coffee-500;
+  }
+  
+  .btn-success {
+    @apply btn bg-success-600 hover:bg-success-700 text-white focus:ring-success-500;
+  }
+  
+  .btn-warning {
+    @apply btn bg-warning-600 hover:bg-warning-700 text-white focus:ring-warning-500;
+  }
+  
+  .btn-danger {
+    @apply btn bg-danger-600 hover:bg-danger-700 text-white focus:ring-danger-500;
+  }
+  
+  .card {
+    @apply bg-white rounded-xl shadow-lg border border-coffee-200 p-6;
+    background: var(--surface-color);
+    border-color: var(--surface-border);
+    box-shadow: var(--shadow-card);
+    transition: transform 0.22s ease, box-shadow 0.22s ease;
+  }
+
+  body:not(.dark) .card:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-hover);
+  }
+  
+  .input {
+    @apply block w-full rounded-lg border-coffee-300 shadow-sm focus:border-primary-500 focus:ring-primary-500;
+    background: var(--surface-alt);
+    border-color: var(--surface-border);
+  }
+  
+  .alert {
+    @apply p-4 rounded-lg border-l-4;
+  }
+  
+  .alert-success {
+    @apply alert bg-success-50 border-success-500 text-success-800;
+  }
+  
+  .alert-warning {
+    @apply alert bg-warning-50 border-warning-500 text-warning-800;
+  }
+  
+  .alert-danger {
+    @apply alert bg-danger-50 border-danger-500 text-danger-800;
+  }
+  
+  .alert-info {
+    @apply alert bg-primary-50 border-primary-500 text-primary-800;
+  }
+
+  /* Coffee-themed custom components */
+  .coffee-gradient {
+    background: linear-gradient(135deg, rgba(255,255,255,0.96), rgba(244,248,255,0.94));
+  }
+  
+  .espresso-gradient {
+    background: linear-gradient(135deg, #8b6636 0%, #3c2e24 100%);
+  }
+
+  /* Letran-themed gradients */
+  .letran-gradient {
+  background: linear-gradient(135deg, #8E44AD 0%, #6B21A8 100%);
+  }
+
+  .letran-coffee-gradient {
+  background: linear-gradient(135deg, #8E44AD 0%, #00BFA6 50%, #374151 100%);
+  }
+  
+  .coffee-card {
+    @apply bg-white rounded-xl shadow-lg border border-coffee-200 p-6 hover:shadow-xl transition-shadow duration-200;
+    background: var(--surface-color);
+    border-left: 4px solid var(--accent-primary);
+    box-shadow: var(--shadow-card);
+  }
+
+  .coffee-card-alt {
+    @apply bg-white rounded-xl shadow-lg border border-coffee-200 p-6 hover:shadow-xl transition-shadow duration-200;
+    background: var(--surface-alt);
+    border-top: 3px solid var(--accent-primary);
+    box-shadow: var(--shadow-card);
+  }
+
+  .coffee-button {
+    @apply bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg font-medium transition-all duration-200 shadow-md hover:shadow-lg;
+    background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+    box-shadow: 0 16px 30px -18px rgba(0, 0, 0, 0.45);
+  }
+
+  body:not(.dark) .coffee-gradient {
+    background: linear-gradient(140deg, #fdf1e3 0%, #f1d7b8 100%);
+  }
+
+  body:not(.dark) .coffee-card {
+    background: linear-gradient(155deg, rgba(255,249,243,0.96) 0%, rgba(250,232,212,0.92) 100%);
+    border-left: 4px solid rgba(194, 124, 78, 0.65);
+  }
+
+  body:not(.dark) .coffee-card-alt {
+    background: linear-gradient(160deg, rgba(255,246,234,0.95) 0%, rgba(247,225,198,0.9) 100%);
+    border-top: 3px solid rgba(194, 124, 78, 0.65);
+  }
+
+  body:not(.dark) .coffee-button {
+    background: linear-gradient(135deg, #d8a66c 0%, #c27c4e 100%);
+    box-shadow: 0 16px 30px -18px rgba(171, 111, 60, 0.55);
+  }
+
+  .dark .coffee-button {
+    background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
+    box-shadow: 0 16px 30px -18px rgba(14, 165, 233, 0.55);
+  }
+
+  .letran-button {
+  @apply text-white px-4 py-2 rounded-full font-semibold transition-all duration-200 shadow-lg hover:shadow-xl inline-flex items-center gap-2;
+  background: #8E44AD; /* purple primary */
+    box-shadow: 0 10px 20px -8px rgba(0,0,0,0.5);
+    border: 1px solid rgba(0,0,0,0.08);
+  }
+
+  .letran-button:hover {
+  background: #7a38a0; /* slightly darker purple on hover */
+  }
+  
+  .coffee-input {
+    @apply w-full px-3 py-2 border border-coffee-300 rounded-lg focus:ring-2 focus:ring-letran-500 focus:border-letran-500 bg-white placeholder-espresso-400;
+    background: var(--surface-alt);
+    border-color: var(--surface-border);
+  }
+
+  /* Letran accent elements */
+  .letran-nav-accent {
+  border-bottom: 2px solid #8E44AD;
+  }
+
+  .letran-badge {
+    @apply px-3 py-1 rounded-full text-sm font-medium;
+  background-color: rgba(142, 68, 173, 0.08);
+  color: #8E44AD;
+  }
+
+  .site-title {
+    /* responsive, slightly larger on wider screens but constrained */
+    font-size: clamp(1.125rem, 1.8vw, 1.375rem); /* 18px -> 22px max */
+    font-weight: 800;
+    letter-spacing: -0.0125em;
+    color: var(--header-text, var(--heading, #111827));
+    margin: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    line-height: 1;
+  }
+
+  /* Ensure admin header remains fixed and visually separated */
+  .admin-fixed {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    width: 100% !important;
+    z-index: 9999 !important;
+    box-shadow: 0 8px 30px -12px rgba(2,6,23,0.45);
+    backdrop-filter: blur(6px);
+  }
+
+  /* Global enforcement: keep header at viewport top even if nested in transforms */
+  :root { --admin-header-height: 6.5rem; }
+  /* Only make the admin/header portal fixed. Avoid forcing every <header> to be fixed */
+  header.admin-fixed {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    width: 100% !important;
+    z-index: 9998 !important;
+    transform: translateZ(0) !important;
+    will-change: transform;
+    min-height: var(--admin-header-height);
+    height: auto !important;
+  }
+
+  /* Explicitly ensure non-admin site headers are not positioned fixed to avoid accidental overlays */
+  .site-header:not(.admin-fixed) {
+    position: static !important;
+    top: auto !important;
+    left: auto !important;
+    right: auto !important;
+    height: auto !important;
+    z-index: auto !important;
+  }
+
+  /* Visual separation: pull structural styles from theme tokens so light/dark stay in sync */
+  .site-header {
+    background: var(--header-background);
+    color: var(--header-text);
+    box-shadow: var(--header-shadow);
+    border-bottom: 1px solid var(--header-border);
+    backdrop-filter: blur(6px);
+  }
+
+  /* Enhanced accent for the title with gradient */
+  .site-title .site-accent {
+    color: var(--accent-secondary, #8E44AD);
+    font-weight: 800;
+    background: linear-gradient(90deg, rgba(142,68,173,0.06), transparent);
+    padding: 0.06rem 0.35rem;
+    border-radius: 6px;
+    font-size: 0.92em;
+    display: inline-block;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body:not(.dark) .site-title .site-accent {
+    background: linear-gradient(90deg, rgba(188,114,61,0.18), transparent); /* warmer highlight for light mode without losing contrast */
+  }
+
+  .site-subtitle {
+    font-size: 0.875rem; /* 14px */
+    color: rgba(55,65,81,0.66); /* muted slate (dark override below) */
+    margin-top: 0.125rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    line-height: 1.08;
+  }
+
+  body:not(.dark) .site-subtitle {
+    color: var(--text-muted);
+  }
+
+  .site-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.125rem 0.45rem;
+    font-size: 0.68rem; /* slightly smaller, tighter */
+    border-radius: 9999px;
+    background: rgba(142,68,173,0.06);
+    color: var(--tertiary-accent, #8E44AD);
+    border: 1px solid rgba(142,68,173,0.08);
+    box-shadow: none;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  body:not(.dark) .site-badge {
+    background: rgba(188,114,61,0.14);
+    color: #814623;
+    border: 1px solid rgba(188,114,61,0.24);
+  }
+
+  .site-header .site-title,
+  .site-header .site-subtitle,
+  .site-header .site-badge {
+    color: var(--header-text) !important; /* override tailwind text utilities so header stays readable when themes toggle */
+  }
+
+  /* Contact page styles */
+  .contact-hero {
+    background: linear-gradient(180deg, rgba(255,255,255,0.6), rgba(255,255,255,0.4));
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(0,0,0,0.04);
+    box-shadow: 0 12px 30px rgba(2,6,23,0.06);
+    border-radius: 1rem;
+    padding: 2rem;
+  }
+
+  .contact-hero-deco {
+    position: absolute;
+    inset: -24px 0 auto 0;
+    pointer-events: none;
+    opacity: 0.85;
+    transform: translateY(-6%);
+    filter: blur(0.6px);
+    z-index: 0;
+  }
+
+  .contact-card {
+    background: linear-gradient(180deg, rgba(255,255,255,0.95), rgba(255,255,255,0.9));
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+    border: 1px solid rgba(16,24,40,0.04);
+    border-radius: 1rem;
+    transition: transform .25s ease, box-shadow .25s ease;
+  }
+
+  .contact-card:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 30px 60px -20px rgba(2,6,23,0.2);
+  }
+
+  /* Per-card accent colors for contact cards */
+  .contact-card[data-accent="purple"] .card-accent { background: linear-gradient(90deg, #8E44AD, #6B21A8); }
+  .contact-card[data-accent="blue"] .card-accent { background: linear-gradient(90deg, #3b82f6, #2563eb); }
+  .contact-card[data-accent="green"] .card-accent { background: linear-gradient(90deg, #10b981, #059669); }
+
+  .contact-card .card-accent {
+    height: 6px;
+    width: 100%;
+    border-top-left-radius: 1rem;
+    border-top-right-radius: 1rem;
+    background: linear-gradient(90deg, #00BFA6, #8E44AD);
+  }
+
+  /* Grid helpers for contact detail rows */
+  .contact-card-body .grid { align-items: start; }
+  .contact-card-body .col-span-1 { display: flex; align-items: center; justify-content: flex-start; }
+
+  .contact-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: .5rem;
+    padding: .6rem 1rem;
+    border-radius: .75rem;
+    font-weight: 600;
+    box-shadow: 0 10px 30px -12px rgba(0,0,0,0.2);
+    transition: transform .18s ease, box-shadow .18s ease;
+    white-space: nowrap; /* ensure labels like 'Copy Phone' don't wrap to two lines */
+    word-break: keep-all;
+  }
+
+  .contact-cta:hover { transform: translateY(-3px); box-shadow: 0 20px 40px -16px rgba(0,0,0,0.24); }
+
+
+  /* Live indicator styles */
+  .live-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.125rem 0.375rem;
+    font-size: 0.625rem;
+    border-radius: 9999px;
+    background: rgba(20, 184, 166, 0.1);
+    color: #0d9488;
+    border: 1px solid rgba(20, 184, 166, 0.2);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .live-indicator .pulse-dot {
+    width: 0.375rem;
+    height: 0.375rem;
+    border-radius: 50%;
+    background: #0d9488;
+    animation: pulse 2s infinite;
+  }
+
+  /* Ensure hero content sits above deco */
+  .contact-hero { position: relative; z-index: 5; }
+  .contact-hero .contact-hero-inner { z-index: 12; position: relative; }
+  .contact-hero-deco { position: absolute; left: 50%; transform: translateX(-50%) translateY(-8%); width: calc(100% + 120px); max-width: 720px; pointer-events: none; opacity: 0.45; }
+
+  /* Hide decorative SVG on small screens to avoid overlap */
+  @media (max-width: 768px) {
+    .contact-hero-deco { display: none; }
+    .contact-card { margin-top: 0; }
+  }
+
+  /* Align footer buttons and ensure consistent sizing */
+  .contact-card-footer .contact-cta { display: inline-flex; align-items: center; justify-content: center; padding: .65rem .8rem; border-radius: .6rem; font-weight:700; }
+  .contact-card-footer { display: flex; gap: .75rem; align-items: center; }
+  .contact-card-footer .contact-cta { flex: 1; }
+  .contact-card-footer { margin-top: auto; }
+
+  /* Dark-mode tweaks for contact components */
+  .dark .contact-hero { background: linear-gradient(180deg, rgba(12,14,18,0.65), rgba(8,10,12,0.5)); border-color: rgba(255,255,255,0.04); }
+  .dark .contact-hero-inner h1 { color: #ffffff; }
+  .dark .contact-hero-inner p { color: rgba(226,234,248,0.78); }
+  .dark .contact-card { background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); border-color: rgba(255,255,255,0.04); color: #e6eef8; }
+  .dark .contact-card .card-accent { opacity: 1; }
+  .dark .contact-card-footer { background: linear-gradient(180deg, rgba(12,14,18,0.6), rgba(8,10,12,0.5)); border-top: 1px solid rgba(255,255,255,0.04); }
+  .dark .contact-card-footer .contact-cta { color: #fff; }
+  .dark .contact-cta.bg-primary-600 { background: linear-gradient(90deg,#00BFA6,#03A9F4); color: #042027; }
+  /* Replace very light button with a stronger, accessible variant in dark mode */
+  .dark .contact-cta.bg-coffee-50 { background: linear-gradient(90deg,#374151,#1f2937); color: #e6eef8; box-shadow: 0 8px 20px rgba(2,6,23,0.45); }
+  /* Also ensure default contact-cta buttons have good contrast in dark */
+  .dark .contact-cta { box-shadow: 0 14px 36px -10px rgba(0,0,0,0.6); }
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.2);
+  }
+}
+
+  /* Dark-mode adjustments for header typography */
+  .dark .site-title { color: var(--heading); }
+  .dark .site-title .site-accent {
+    color: var(--tertiary-accent);
+    background: rgba(142,68,173,0.06);
+    padding: 0.06rem 0.36rem;
+    border-radius: 6px;
+  }
+  .dark .site-subtitle { color: rgba(226,234,248,0.82); }
+  .dark .site-badge { background: rgba(142,68,173,0.12); color: #fff; border-color: rgba(255,255,255,0.06); }
+
+  .letran-alert {
+    padding: 1rem; /* p-4 */
+    border-top-right-radius: 0.5rem; /* rounded-r-lg -> right corners */
+    border-bottom-right-radius: 0.5rem;
+    border-left: 4px solid #8E44AD;
+    background-color: rgba(142,68,173,0.04);
+  }
+
+  /* Premium Glass Card Effects */
+  .glass-card {
+    background: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  }
+
+  .glass-card:hover {
+    transform: translateY(-8px) scale(1.02);
+    box-shadow: 0 35px 60px -12px rgba(0, 0, 0, 0.35);
+  }
+
+  /* Enhanced Shadow Utilities */
+  .shadow-3xl {
+    box-shadow: 0 35px 60px -12px rgba(0, 0, 0, 0.25);
+  }
+
+  /* Letran Branded Elements */
+  .letran-accent-border {
+  border-image: linear-gradient(45deg, #8E44AD, #6B21A8) 1;
+  }
+
+  .coffee-shimmer {
+    background: linear-gradient(45deg, #fefdf9, #f4ead2, #fefdf9);
+  }
+
+  /* Feature card specific accents (inner glow and icon badge) */
+  .feature-card {
+    position: relative;
+    overflow: hidden;
+    background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02));
+    border-radius: 1rem;
+  }
+
+  .feature-card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: radial-gradient(600px 200px at 10% 10%, rgba(255,255,255,0.03), transparent 20%), radial-gradient(400px 150px at 90% 80%, rgba(255,255,255,0.02), transparent 25%);
+    mix-blend-mode: overlay;
+    opacity: 0.9;
+  }
+
+  .feature-icon-badge {
+    width: 64px;
+    height: 64px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    transition: transform .28s cubic-bezier(.2,.9,.2,1), box-shadow .28s ease;
+    background: linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.01)), linear-gradient(135deg, var(--accent-start, #8E44AD), var(--accent-mid, #00BFA6));
+    border: 1px solid rgba(255,255,255,0.06);
+    box-shadow: 0 26px 64px -28px rgba(0,0,0,0.68), inset 0 3px 10px rgba(255,255,255,0.04);
+  }
+
+  .feature-card .card-edge-glow {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 8px;
+    width: 100%;
+    pointer-events: none;
+    background: linear-gradient(90deg, var(--accent-start, rgba(142,68,173,0.95)), var(--accent-mid, rgba(3,218,197,0.90)), var(--accent-end, rgba(59,130,246,0.85)));
+    opacity: 0.34;
+    filter: blur(8px);
+    transform: translateZ(0);
+  }
+
+  /* Upgraded feature card visuals */
+  .feature-card > .relative {
+    border-radius: 1rem;
+    overflow: visible;
+  }
+
+  .feature-card-inner {
+    position: relative;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .feature-card .feature-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 600;
+    color: #ffffff;
+    background: linear-gradient(90deg,#8E44AD,#00BFA6);
+    padding: 0.5rem 0.75rem;
+    border-radius: 999px;
+    font-size: 0.8125rem;
+    box-shadow: 0 10px 30px -12px rgba(0,0,0,0.45);
+    transform: translateY(0);
+    transition: transform .22s ease, box-shadow .22s ease;
+  }
+
+  .feature-card .feature-cta:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 20px 40px -16px rgba(0,0,0,0.5);
+  }
+
+  .feature-card .accent-corner {
+    position: absolute;
+    right: -18px;
+    bottom: -18px;
+    width: 72px;
+    height: 72px;
+    background: radial-gradient(circle at 20% 20%, rgba(142,68,173,0.18), transparent 25%), radial-gradient(circle at 80% 80%, rgba(3,218,197,0.12), transparent 30%);
+    border-radius: 18px;
+    filter: blur(6px);
+    z-index: 2;
+    pointer-events: none;
+  }
+
+  /* Hover tilt + glow */
+  .feature-card:hover {
+    transform: translateY(-6px) rotate(-0.3deg) scale(1.02);
+  }
+
+  .feature-icon-badge {
+    width: 64px;
+    height: 64px;
+    border-radius: 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform .28s cubic-bezier(.2,.9,.2,1), box-shadow .28s ease;
+    background: linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.01)), linear-gradient(135deg, var(--accent-start, #8E44AD), var(--accent-mid, #00BFA6));
+    border: 1px solid rgba(255,255,255,0.06);
+    box-shadow: 0 26px 64px -28px rgba(0,0,0,0.68), inset 0 3px 10px rgba(255,255,255,0.04);
+  }
+
+  .feature-card:hover .feature-icon-badge {
+    transform: translateY(-6px) rotate(-6deg) scale(1.05);
+    box-shadow: 0 28px 60px -28px rgba(0,0,0,0.6), inset 0 2px 8px rgba(255,255,255,0.03);
+  }
+
+  /* Small overlay vignette */
+  .feature-card::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 1rem;
+    box-shadow: inset 0 40px 90px -50px rgba(0,0,0,0.68), 0 18px 40px -18px rgba(0,0,0,0.12);
+    pointer-events: none;
+    opacity: 0.12;
+    z-index: 5;
+  }
+
+  /* Per-card accent variables via data-accent attribute */
+  .feature-card[data-accent="green"] { --accent-start: #16a34a; --accent-mid: #059669; --accent-end: #065f46; }
+  .feature-card[data-accent="red"] { --accent-start: #ef4444; --accent-mid: #dc2626; --accent-end: #991b1b; }
+  .feature-card[data-accent="orange"] { --accent-start: #f97316; --accent-mid: #ea580c; --accent-end: #c2410c; }
+  .feature-card[data-accent="blue"] { --accent-start: #3b82f6; --accent-mid: #2563eb; --accent-end: #1e40af; }
+  .feature-card[data-accent="purple"] { --accent-start: #8b5cf6; --accent-mid: #7c3aed; --accent-end: #6d28d9; }
+  .feature-card[data-accent="maroon"] { --accent-start: #ef476f; --accent-mid: #d94660; --accent-end: #9f1239; }
+
+  /* Apply accents to edge glow and icon badge */
+  .feature-card[data-accent] .card-edge-glow {
+    background: linear-gradient(90deg, rgba(var(--accent-start-r, 142),var(--accent-start-g,68),var(--accent-start-b,173),0.95), rgba(3,218,197,0.85), rgba(59,130,246,0.75));
+    opacity: 0.18;
+  }
+
+  /* fallback for the badge using CSS variables */
+  .feature-card[data-accent] .feature-icon-badge {
+    background: linear-gradient(135deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02));
+    border: 1px solid rgba(255,255,255,0.04);
+  }
+
+  /* stronger card border and inner tint */
+  .feature-card {
+    border: 1px solid rgba(255,255,255,0.03);
+    box-shadow: 0 30px 60px -20px rgba(8,15,25,0.6);
+    background: linear-gradient(180deg, rgba(6,10,15,0.28), rgba(20,24,34,0.22));
+  }
+
+  /* make the edge glow colorful using JS-friendly rgba parsing fallback */
+  .feature-card[data-accent="green"] .card-edge-glow { background: linear-gradient(90deg, rgba(16,185,129,0.95), rgba(6,182,212,0.85)); }
+  .feature-card[data-accent="red"] .card-edge-glow { background: linear-gradient(90deg, rgba(239,68,68,0.95), rgba(236,72,153,0.85)); }
+  .feature-card[data-accent="orange"] .card-edge-glow { background: linear-gradient(90deg, rgba(249,115,22,0.95), rgba(252,211,77,0.85)); }
+  .feature-card[data-accent="blue"] .card-edge-glow { background: linear-gradient(90deg, rgba(59,130,246,0.95), rgba(99,102,241,0.85)); }
+  .feature-card[data-accent="purple"] .card-edge-glow { background: linear-gradient(90deg, rgba(139,92,246,0.95), rgba(236,72,153,0.85)); }
+  .feature-card[data-accent="maroon"] .card-edge-glow { background: linear-gradient(90deg, rgba(239,71,111,0.95), rgba(185,28,46,0.85)); }
+
+  .coffee-shimmer {
+    background: linear-gradient(45deg, #fefdf9, #f4ead2, #fefdf9);
+    background-size: 200% 200%;
+    animation: shimmer 3s ease-in-out infinite;
+  }
+
+  @keyframes shimmer {
+    0%, 100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+  }
+
+  /* Enhanced Hover Effects */
+  .card-hover-lift {
+    transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .card-hover-lift:hover {
+  transform: translateY(-12px) scale(1.03);
+  box-shadow: 0 40px 80px -20px rgba(3,169,244,0.12);
+  }
+
+  /* Advanced Card Animations */
+  .enhanced-glass-card {
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.7);
+    transition: all 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .enhanced-glass-card:hover {
+    background: rgba(255, 255, 255, 0.98);
+    backdrop-filter: blur(25px);
+    -webkit-backdrop-filter: blur(25px);
+    border: 1px solid rgba(255, 255, 255, 0.9);
+    transform: translateY(-16px) scale(1.025);
+    box-shadow: 
+      0 50px 100px -30px rgba(0, 0, 0, 0.15),
+  0 25px 50px -12px rgba(3,169,244,0.06),
+      0 0 0 1px rgba(255, 255, 255, 0.8);
+  }
+
+  /* Floating Animation for Cards */
+  @keyframes float {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-10px); }
+  }
+
+  .float-animation {
+    animation: float 6s ease-in-out infinite;
+  }
+
+  .float-animation:nth-child(2) {
+    animation-delay: -2s;
+  }
+
+  .float-animation:nth-child(3) {
+    animation-delay: -4s;
+  }
+
+  /* Enhanced Gradient Borders */
+  .gradient-border {
+    position: relative;
+    background: linear-gradient(white, white) padding-box,
+                linear-gradient(45deg, #8E44AD, #00BFA6, #8E44AD) border-box;
+    border: 2px solid transparent;
+  }
+
+  /* Shimmer Effect for Premium Cards */
+  .premium-shimmer {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .premium-shimmer::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.6),
+      transparent
+    );
+    transition: left 0.5s;
+  }
+
+  .premium-shimmer:hover::before {
+    left: 100%;
+  }
+}
+
+/* Dark-mode variants for custom components to ensure consistent admin dashboard UI */
+@layer components {
+  /* Global CSS variables and refined palette for a polished dark theme */
+  .dark {
+    --bg: #121212; /* base background */
+    --bg-2: #181818; /* slightly darker */
+    --card: #1E1E1E; /* primary card */
+    --card-2: #232323; /* secondary card */
+    --muted: #9aa4b2;
+    --text: #E0E0E0; /* body text */
+    --heading: #FFFFFF; /* headings */
+    --primary-accent: #00BFA6; /* teal - active/highlight */
+    --secondary-accent: #03A9F4; /* cyan - graphs/alerts */
+    --tertiary-accent: #8E44AD; /* purple - alternative highlights */
+    --success: #10b981;
+    --danger: #ef4444;
+    --surface-contrast: rgba(255,255,255,0.03);
+  }
+
+  /* Global body adjustments when dark mode is active */
+  .dark body {
+    background-color: var(--bg);
+    color: var(--text);
+  }
+
+  /* Cards and panels */
+  .dark .card,
+  .dark .coffee-card,
+  .dark .coffee-card-alt,
+  .dark .glass-card,
+  .dark .enhanced-glass-card,
+  .dark .premium-shimmer {
+    background-color: var(--card);
+    color: var(--text);
+    border-color: rgba(255,255,255,0.04);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+  }
+
+  .dark .coffee-card {
+    background: linear-gradient(180deg, var(--card) 0%, var(--card-2) 100%);
+  border-left: 4px solid rgba(0,191,166,0.12); /* subtle teal accent */
+  }
+
+  /* Ensure the alternate coffee card switches fully to the dark palette (override light gradient) */
+  .dark .coffee-card-alt {
+    background: linear-gradient(180deg, var(--card) 0%, var(--card-2) 100%) !important;
+    color: var(--text) !important;
+    border-top: 3px solid rgba(3,169,244,0.10);
+    box-shadow: 0 12px 30px rgba(0,0,0,0.6) !important;
+  }
+
+  /* Target the header and body inside .coffee-card-alt without referencing Tailwind utility class names
+     (referencing utility class selectors like `.p-6` can trigger PostCSS/Tailwind circular @apply errors).
+     Using a structural selector avoids the circular dependency while making immediate children transparent. */
+  .dark .coffee-card-alt > * {
+    background-color: transparent !important;
+    color: var(--text) !important;
+  }
+
+  /* Buttons and interactive elements */
+  .dark .btn,
+  .dark .btn-primary,
+  .dark .btn-secondary,
+  .dark .letran-button,
+  .dark .coffee-button {
+    color: var(--heading);
+  }
+
+  .dark .btn-primary {
+    .dark .bg-gray-50 {
+      background-color: rgba(11,18,32,0.55) !important;
+      color: #e6eef8 !important;
+    }
+
+    .dark .bg-gray-100 {
+      background-color: rgba(15,21,30,0.62) !important;
+      color: #e6eef8 !important;
+    }
+
+    .dark .bg-coffee-50 {
+      background-color: rgba(13,18,26,0.5) !important;
+      color: #e6eef8 !important;
+    }
+
+    .dark .border-coffee-200 {
+      border-color: rgba(255,255,255,0.04) !important;
+    }
+    background: linear-gradient(90deg, rgba(0,191,166,0.12), rgba(0,191,166,0.06));
+    border: 1px solid rgba(0,191,166,0.18);
+    color: var(--heading);
+  }
+
+  .dark .letran-button {
+    background: linear-gradient(90deg, rgba(220,20,60,0.08), rgba(220,20,60,0.03));
+    border: 1px solid rgba(255,255,255,0.04);
+    color: var(--heading);
+  }
+
+  .dark .coffee-button {
+    background: linear-gradient(90deg, rgba(0,191,166,0.06), rgba(3,169,244,0.04));
+    border: 1px solid rgba(255,255,255,0.04);
+    color: var(--heading);
+  }
+
+  /* Inputs */
+  .dark .coffee-input,
+  .dark .input {
+    background-color: rgba(255,255,255,0.03);
+    border-color: rgba(255,255,255,0.06);
+    color: var(--text);
+  }
+  .dark .coffee-input::placeholder,
+  .dark .input::placeholder { color: var(--muted); }
+
+  /* Alerts */
+  .dark .alert-success { background-color: rgba(16,185,129,0.08); border-color: rgba(16,185,129,0.2); color: #bbf7d0; }
+  .dark .alert-warning { background-color: rgba(245,158,11,0.08); border-color: rgba(245,158,11,0.18); color: #fde68a; }
+  .dark .alert-danger { background-color: rgba(239,68,68,0.06); border-color: rgba(239,68,68,0.18); color: #fecaca; }
+  .dark .alert-info { background-color: rgba(0,191,166,0.06); border-color: rgba(0,191,166,0.18); color: #bff7ec; }
+
+  /* Glass and premium shimmer tweaks */
+  .dark .glass-card { background: rgba(255,255,255,0.02); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.04); }
+  .dark .premium-shimmer::before { background: linear-gradient(90deg, transparent, rgba(255,255,255,0.03), transparent); }
+
+  /* Dashboard specific tweaks: only apply in dark mode to avoid changing light theme */
+  .dark .dashboard-card {
+    background: linear-gradient(180deg, rgba(20,24,30,0.88), rgba(18,20,26,0.95)) !important;
+    border-color: rgba(255,255,255,0.04) !important;
+    box-shadow: 0 12px 30px rgba(3, 6, 12, 0.6) !important;
+  }
+
+  .dark .dashboard-row {
+    background-color: rgba(42,48,58,0.9) !important; /* matches the site's dark slate tone */
+    color: var(--text) !important;
+    border-radius: 0.5rem; /* keep rounded look */
+  }
+
+  /* Headings and text */
+  .dark h1, .dark h2, .dark h3, .dark h4, .dark h5, .dark h6 { color: var(--heading); }
+  .dark .text-espresso-900, .dark .text-espresso-800, .dark .text-gray-900 { color: var(--text) !important; }
+
+  /* Strong overrides for Tailwind utility classes used throughout the app */
+  .dark .bg-white { background-color: var(--card) !important; color: var(--text) !important; }
+  .dark .bg-white\/80 { background-color: rgba(255,255,255,0.03) !important; color: var(--text) !important; }
+  .dark .bg-white\/95 { background-color: rgba(255,255,255,0.015) !important; color: var(--text) !important; }
+  .dark .bg-white\/50 { background-color: rgba(255,255,255,0.02) !important; color: var(--text) !important; }
+
+  .dark .border-gray-100 { border-color: rgba(255,255,255,0.04) !important; }
+  .dark .border-white\/50 { border-color: rgba(255,255,255,0.04) !important; }
+  .dark .border-white { border-color: rgba(255,255,255,0.03) !important; }
+
+  /* Chart and icon colors: keep high contrast */
+  .dark .chart-label, .dark .chart-axis, .dark .recharts-text { fill: var(--muted) !important; color: var(--muted) !important; }
+
+  /* Hover/active micro-interactions */
+  .dark .card-hover-lift:hover { transform: translateY(-8px) scale(1.02); box-shadow: 0 30px 60px -20px rgba(0,0,0,0.6); }
+
+  /* Small utility to make focus visible */
+  .dark :focus { outline: 2px solid rgba(6,182,212,0.2); outline-offset: 2px; }
+}
+
+/* Strong overrides for Tailwind utility classes that are used directly in many components.
+  These ensure components that use `bg-white`, `bg-white/80`, or light borders receive
+  appropriate dark backgrounds and borders even if they were authored with light utilities. */
+
+/* Background overrides for common white utilities (escape slashes for classes like bg-white/80) */
+.dark .bg-white { background-color: #0b1220 !important; color: #e6eef8 !important; }
+.dark .bg-white\/80 { background-color: rgba(11,18,32,0.6) !important; color: #e6eef8 !important; }
+.dark .bg-white\/95 { background-color: rgba(11,18,32,0.9) !important; color: #e6eef8 !important; }
+.dark .bg-white\/50 { background-color: rgba(11,18,32,0.45) !important; color: #e6eef8 !important; }
+
+/* Border overrides for light borders */
+.dark .border-gray-100 { border-color: #334155 !important; }
+.dark .border-white\/50 { border-color: rgba(255,255,255,0.06) !important; }
+.dark .border-white { border-color: rgba(255,255,255,0.04) !important; }
+
+/* Subtle background for card-like elements using backdrop blur */
+.dark .backdrop-blur-sm { background-color: rgba(17,24,39,0.4) !important; }
+
+/* Highest specificity fallback: ensure the big outer panels flip to dark when html has .dark */
+html.dark .coffee-card-alt {
+  background: linear-gradient(180deg, #111217 0%, #16161a 100%) !important;
+  color: #e6eef8 !important;
+  border-top-color: rgba(3,169,244,0.08) !important;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.6) !important;
+}
+
+/* Final failsafe: target the specific panel instance with a data attribute so this rule always wins */
+html.dark [data-theme="dark-panel"] {
+  background: linear-gradient(180deg, #0f1216 0%, #17181c 100%) !important;
+  color: #e6eef8 !important;
+  border-top-color: rgba(3,169,244,0.08) !important;
+  box-shadow: 0 28px 60px rgba(0,0,0,0.7) !important;
+}
+
+/* Admin dashboard empty-state card: not-too-dark tone for readability */
+html.dark .admin-empty-card {
+  background: linear-gradient(180deg, rgba(34,40,49,0.85), rgba(30,34,40,0.9)) !important;
+  color: rgba(230,238,248,0.95) !important;
+  border: 1px solid rgba(255,255,255,0.04) !important;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.55) !important;
+}
+
+html.dark .admin-empty-card .text-gray-500 { color: rgba(190,200,210,0.75) !important; }
+html.dark .admin-empty-card svg { color: rgba(160,170,180,0.9) !important; }
+
+/* Ensure glass-style dashboard cards become dark-only in dark mode (high specificity fallback) */
+html.dark .dashboard-card {
+  background: linear-gradient(180deg, rgba(14,18,26,0.86), rgba(10,14,20,0.95)) !important;
+  color: #e6eef8 !important;
+  border-color: rgba(255,255,255,0.04) !important;
+  box-shadow: 0 18px 44px rgba(0,0,0,0.7) !important;
+}
+
+/* Ensure placeholder/light text flips to readable color in dark */
+.dark .text-espresso-900, .dark .text-espresso-800 { color: #e6eef8 !important; }
+.dark .text-gray-900 { color: #e6eef8 !important; }
+
+/* Buttons that used light backgrounds should get darker complements */
+.dark .btn-secondary, .dark .btn-primary, .dark .btn { color: #f8fafc !important; }
+
+  /* Reusable panel button used for small nav-panel actions (Load Weather, SmartBin Console).
+     Polished spacing, typography and subtle shadows for a clean, consistent header. */
+  .panel-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.35rem 0.9rem; /* balanced touch target */
+    min-height: 32px;
+    font-size: 0.8125rem; /* 13px - slightly larger than text-xs for readability */
+    line-height: 1;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+    color: #0b1220;
+    background: linear-gradient(180deg, #ffffff 0%, #fbfbfb 100%);
+    border: 1px solid rgba(9,10,14,0.06);
+    border-radius: 0.5rem;
+    transition: box-shadow 180ms ease, transform 150ms ease, background-color 180ms ease, color 180ms ease;
+    text-decoration: none;
+    cursor: pointer;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  .panel-button:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(0,191,166,0.12);
+  }
+
+  .panel-button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 8px 20px rgba(3,6,12,0.06);
+  }
+
+  /* Variant for primary/light accent when shown in the header (keeps semantics but no heavy color conflicts) */
+  .panel-button--primary {
+    background: linear-gradient(180deg, #fffaf6 0%, #fff7f0 100%);
+    border-color: rgba(142,68,173,0.08);
+    color: #2b2b2b;
+  }
+
+  /* Neutral/ghost variant (used for small icon toggles) */
+  .panel-button--ghost {
+    background: transparent;
+    border: 1px solid rgba(11,18,32,0.04);
+    color: inherit;
+    padding: 0.25rem 0.6rem;
+  }
+
+  /* Dark-mode base overrides */
+  .dark .panel-button {
+    background: linear-gradient(180deg, rgba(28,32,38,0.92), rgba(18,20,24,0.96));
+    color: var(--heading);
+    border: 1px solid rgba(255,255,255,0.04);
+    box-shadow: 0 6px 18px rgba(0,0,0,0.65);
+  }
+
+  .dark .panel-button--primary {
+    background: linear-gradient(180deg, rgba(30,34,40,0.92), rgba(22,26,32,0.96));
+    color: var(--heading);
+    border-color: rgba(255,255,255,0.045);
+  }
+
+  /* Highest-specificity fallback when html has .dark */
+  html.dark .panel-button {
+    background: linear-gradient(180deg, #0f1216 0%, #17181c 100%) !important;
+    color: #e6eef8 !important;
+    border-color: rgba(255,255,255,0.04) !important;
+    box-shadow: 0 18px 44px rgba(0,0,0,0.72) !important;
+  }
+

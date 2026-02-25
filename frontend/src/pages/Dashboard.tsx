@@ -120,6 +120,22 @@ const Dashboard: React.FC = () => {
     return null;
   }, [latestReadings]);
 
+  const soilTemperatureReading = useMemo(() => {
+    if (!latestReadings) return null;
+    if (isFiniteNumber((latestReadings as any).soilTemperature)) {
+      return (latestReadings as any).soilTemperature as number;
+    }
+    if (Array.isArray(latestReadings.sensorSummary)) {
+      const summaryEntry = latestReadings.sensorSummary.find((item) => item.key === 'soilTemperature' || item.key === 'soil_temperature');
+      if (summaryEntry) {
+        if (typeof summaryEntry.value === 'number') {
+          return summaryEntry.value;
+        }
+      }
+    }
+    return null;
+  }, [latestReadings]);
+
   const floatSensorReading = useMemo(() => {
     if (!latestReadings) {
       return { value: null as number | null, timestamp: null as string | null };
@@ -170,6 +186,11 @@ const Dashboard: React.FC = () => {
     if (soilMoistureReading === null) return 'No data';
     return `${formatFixed(soilMoistureReading, 1)}%`;
   }, [soilMoistureReading]);
+
+  const soilTemperatureLabel = useMemo(() => {
+    if (soilTemperatureReading === null) return 'No data';
+    return `${formatFixed(soilTemperatureReading, 1)}°C`;
+  }, [soilTemperatureReading]);
 
   const latestTimestampLabel = useMemo(
     () => formatTimestampLabel(latestReadings?.timestamp ?? null),
@@ -482,6 +503,27 @@ const Dashboard: React.FC = () => {
                           </div>
                         </div>
                         <div className="flex-1 min-h-[140px]"></div>
+                      </div>
+                    </div>
+
+                    {/* Soil Temperature Card */}
+                    <div className="group relative overflow-hidden h-full">
+                      <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
+                        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-500 to-cyan-400 rounded-t-2xl"></div>
+                        <div className="flex items-center mb-4">
+                          <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center rounded-2xl mr-4 bg-gradient-to-br from-cyan-100 to-cyan-50 dark:from-cyan-800 dark:to-cyan-700 shadow-lg group-hover:rotate-12 transition-transform duration-500">
+                            <Thermometer className="h-6 w-6 text-cyan-600 dark:text-cyan-300" />
+                          </div>
+                          <div className="flex flex-col justify-center flex-1 min-h-[72px]">
+                            <div className="mb-2"><p className="text-sm font-medium text-espresso-600 dark:text-gray-300">Soil Temperature</p></div>
+                            <p className="text-3xl font-bold text-espresso-900 dark:text-white group-hover:text-letran-600 dark:group-hover:text-letran-400 transition-colors">{soilTemperatureLabel}</p>
+                          </div>
+                        </div>
+                        <div className="flex-1 min-h-[140px]">
+                          <p className="text-xs text-espresso-500 dark:text-gray-400 leading-relaxed">
+                            {latestReadings ? `Last update: ${latestTimestampLabel}` : 'Awaiting live data'}
+                          </p>
+                        </div>
                       </div>
                     </div>
 

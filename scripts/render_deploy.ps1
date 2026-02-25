@@ -8,7 +8,7 @@ Usage (secure):
 What this script does:
   - Checks for the Render CLI and offers install instructions
   - Logs in to Render using your API key (keeps the key local)
-  - Imports the bundled `render.yaml` manifest into your Render account
+  - Imports the bundled Render config manifest into your Render account
 
 Security: This script DOES NOT send your API key anywhere outside your machine. You run it locally to keep secrets private.
 
@@ -19,7 +19,7 @@ param()
 
 function Abort($msg){ Write-Host "ERROR: $msg" -ForegroundColor Red; exit 1 }
 
-Write-Host "Render deploy helper — will attempt to import render.yaml into your Render account" -ForegroundColor Cyan
+Write-Host "Render deploy helper — will attempt to import the Render config into your Render account" -ForegroundColor Cyan
 
 if (-not (Get-Command render -ErrorAction SilentlyContinue)) {
   Write-Host "Render CLI not found. Install options:" -ForegroundColor Yellow
@@ -44,13 +44,13 @@ if ($LASTEXITCODE -ne 0) {
   Abort "Login failed. Try running 'render login' interactively and ensure the CLI is installed."
 }
 
-Write-Host "Importing render.yaml manifest..." -ForegroundColor Cyan
+Write-Host "Importing Render config manifest..." -ForegroundColor Cyan
 # The Render CLI supports importing a manifest; if your CLI version doesn't, run the import in the web UI
-$import = & render import render.yaml 2>&1
+$import = & render import render.yml 2>&1
 if ($LASTEXITCODE -ne 0) {
   Write-Host "render import failed or is not supported by your CLI. Output:" -ForegroundColor Yellow
   Write-Host $import
-  Write-Host "Fallback: open Render dashboard, import repo, and ensure 'render.yaml' is used (choose branch fix/contact-header-gap)." -ForegroundColor Gray
+  Write-Host "Fallback: open Render dashboard, import repo, and ensure the Render config is used (choose branch fix/contact-header-gap)." -ForegroundColor Gray
   exit 1
 }
 

@@ -25,8 +25,6 @@ const defaultFilters: Filters = {
 
 const ORIGIN_OPTIONS = [
   { label: 'Any origin', value: '' },
-  { label: 'Home Assistant Webhook', value: 'home_assistant_webhook' },
-  { label: 'Home Assistant REST', value: 'home_assistant_rest' },
   { label: 'MQTT', value: 'mqtt' },
   { label: 'ESP32 HTTP', value: 'esp32_http' },
   { label: 'ESP32 Batch', value: 'esp32_batch' },

@@ -10,7 +10,7 @@ const resolveTargetDeviceId = () => {
       return value.trim();
     }
   }
-  return 'vermilinks-homeassistant';
+  return 'esp32b';
 };
 
 const TARGET_DEVICE_ID = resolveTargetDeviceId();
@@ -24,6 +24,7 @@ interface MetricConfig {
 
 const METRICS: MetricConfig[] = [
   { key: 'temperature', label: 'Temperature', unit: '°C', precision: 1 },
+  { key: 'soilTemperature', label: 'Soil Temperature', unit: '°C', precision: 1 },
   { key: 'moisture', label: 'Soil Moisture', unit: '%', precision: 1 },
   { key: 'ph', label: 'pH', precision: 2 },
   { key: 'ec', label: 'EC', unit: 'mS/cm', precision: 2 },

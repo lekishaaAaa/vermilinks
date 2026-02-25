@@ -24,7 +24,10 @@ async function markDeviceOnline(deviceId, metadata = {}) {
   const [device] = await Device.findOrCreate({ where: { deviceId }, defaults: { deviceId, status: 'online', lastHeartbeat: now, metadata } });
   if (device.lastHeartbeat == null || new Date(device.lastHeartbeat) < now) {
     device.lastHeartbeat = now;
+    device.lastSeen = now;
+    device.updatedAt = now;
     device.status = 'online';
+    device.online = true;
     device.metadata = metadata || device.metadata;
     await device.save();
   }
@@ -77,8 +80,11 @@ async function markDeviceOffline(deviceId) {
   await ensureReady();
   const device = await Device.findOne({ where: { deviceId } });
   if (!device) return null;
+  const now = new Date();
   device.status = 'offline';
-  device.lastHeartbeat = new Date();
+  device.online = false;
+  device.updatedAt = now;
+  device.lastHeartbeat = now;
   await device.save();
   // resolve alerts related to this device
   try {

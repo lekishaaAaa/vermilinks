@@ -43,6 +43,7 @@ const buildFallbackSummary = (latest: SensorData | null): SensorSummaryItem[] =>
   pushNumeric('temperature', 'Temperature', latest.temperature, '°C');
   pushNumeric('humidity', 'Humidity', latest.humidity, '%');
   pushNumeric('moisture', 'Soil Moisture', latest.moisture, '%');
+  pushNumeric('soilTemperature', 'Soil Temperature', latest.soilTemperature, '°C');
   pushNumeric('waterLevel', 'Water Level', latest.waterLevel, latest.waterLevel != null ? 'cm' : undefined);
   pushNumeric('floatSensor', 'Float Sensor', typeof latest.floatSensor === 'number' ? latest.floatSensor : undefined);
   pushNumeric('ph', 'pH', latest.ph);

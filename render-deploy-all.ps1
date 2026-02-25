@@ -319,7 +319,6 @@ if ($backendExit -eq 0 -and $frontendExit -eq 0) {
 
     Write-Info "Backend URL: https://vermilinks-backend.onrender.com"
     Write-Info "Frontend URL: https://vermilinks-frontend.onrender.com"
-    Write-Info "HA Webhook URL: https://vermilinks-backend.onrender.com/api/ha/webhook"
     Write-Info "Health Check: https://vermilinks-backend.onrender.com/api/health"
     Write-Info "Admin Alerts: https://vermilinks-backend.onrender.com/api/admin/alerts"
     Write-Info "WebSocket URL: wss://vermilinks-backend.onrender.com"
