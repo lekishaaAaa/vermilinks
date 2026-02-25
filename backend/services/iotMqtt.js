@@ -371,10 +371,17 @@ function startIotMqtt() {
     return null;
   }
 
+  const configuredClientId = (process.env.MQTT_CLIENT_ID || '').toString().trim();
+  const iotClientId = configuredClientId
+    ? `${configuredClientId}-iot`
+    : `vermilinks-iot-${Math.random().toString(16).slice(2, 8)}`;
+  const mqttUsername = (process.env.MQTT_USERNAME || '').toString().trim();
+  const mqttPassword = (process.env.MQTT_PASSWORD || '').toString().trim();
+
   client = mqtt.connect(BROKER, {
-    clientId: process.env.MQTT_CLIENT_ID || `vermilinks-iot-${Math.random().toString(16).slice(2, 8)}`,
-    username: process.env.MQTT_USERNAME || undefined,
-    password: process.env.MQTT_PASSWORD || undefined,
+    clientId: iotClientId,
+    username: mqttUsername || undefined,
+    password: mqttPassword || undefined,
   });
 
   client.on('connect', () => {

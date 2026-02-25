@@ -153,10 +153,17 @@ function startMqtt() {
   }
 
   try {
+    const configuredClientId = (process.env.MQTT_CLIENT_ID || '').toString().trim();
+    const ingestClientId = configuredClientId
+      ? `${configuredClientId}-ingest`
+      : `vermilinks-ingest-${Math.random().toString(16).slice(2,8)}`;
+    const mqttUsername = (process.env.MQTT_USERNAME || '').toString().trim();
+    const mqttPassword = (process.env.MQTT_PASSWORD || '').toString().trim();
+
     client = mqtt.connect(BROKER, {
-      clientId: process.env.MQTT_CLIENT_ID || `vermilinks-ingest-${Math.random().toString(16).slice(2,8)}`,
-      username: process.env.MQTT_USERNAME || undefined,
-      password: process.env.MQTT_PASSWORD || undefined,
+      clientId: ingestClientId,
+      username: mqttUsername || undefined,
+      password: mqttPassword || undefined,
     });
 
     client.on('connect', () => {
