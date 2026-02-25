@@ -515,19 +515,21 @@ exports.login = async (req, res) => {
       await recordAudit('otp.issued', admin.email, { expiresAt: expiresAt.toISOString(), ip: requesterIp });
     } catch (e) {}
 
-    setImmediate(async () => {
-      try {
-        await sendOtpEmailToAdmin({ to: admin.email, otp, expiresAt });
-        try { await recordAudit('otp.delivery_success', admin.email, { ip: requesterIp, expiresAt: expiresAt.toISOString() }); } catch (auditErr) {
-          console.warn('audit log failed for otp delivery success', auditErr && auditErr.message ? auditErr.message : auditErr);
-        }
-      } catch (emailErr) {
-        console.error('adminAuthController: failed to send OTP email', emailErr && emailErr.message ? emailErr.message : emailErr);
-        try { await recordAudit('otp.delivery_failed', admin.email, { ip: requesterIp, error: emailErr && emailErr.message ? emailErr.message : String(emailErr) }); } catch (auditErr) {
-          console.warn('audit log failed for otp delivery failure', auditErr && auditErr.message ? auditErr.message : auditErr);
-        }
+    try {
+      await sendOtpEmailToAdmin({ to: admin.email, otp, expiresAt });
+      try { await recordAudit('otp.delivery_success', admin.email, { ip: requesterIp, expiresAt: expiresAt.toISOString() }); } catch (auditErr) {
+        console.warn('audit log failed for otp delivery success', auditErr && auditErr.message ? auditErr.message : auditErr);
       }
-    });
+    } catch (emailErr) {
+      console.error('adminAuthController: failed to send OTP email', emailErr && emailErr.message ? emailErr.message : emailErr);
+      try { await recordAudit('otp.delivery_failed', admin.email, { ip: requesterIp, error: emailErr && emailErr.message ? emailErr.message : String(emailErr) }); } catch (auditErr) {
+        console.warn('audit log failed for otp delivery failure', auditErr && auditErr.message ? auditErr.message : auditErr);
+      }
+      return res.status(502).json({
+        success: false,
+        message: 'Unable to deliver OTP email right now. Please retry in a moment.',
+      });
+    }
 
     const responsePayload = {
       success: true,
@@ -535,7 +537,7 @@ exports.login = async (req, res) => {
       data: {
         requires2FA: true,
         expiresAt: expiresAt.toISOString(),
-        delivery: 'queued',
+        delivery: 'email_sent',
       },
     };
 
@@ -819,23 +821,28 @@ exports.resendOtp = async (req, res) => {
     await persistOtpLog(admin.email, otp, expiresAt);
     try { await recordAudit('otp.resend', admin.email, { expiresAt: expiresAt.toISOString(), ip: requesterIp }); } catch (e) {}
 
-    setImmediate(async () => {
-      try {
-        await sendOtpEmailToAdmin({ to: admin.email, otp, expiresAt });
-      } catch (emailErr) {
-        console.error('adminAuthController: failed to resend OTP email', emailErr && emailErr.message ? emailErr.message : emailErr);
-        try { await recordAudit('otp.delivery_failed', admin.email, { ip: requesterIp, reason: 'resend', error: emailErr && emailErr.message ? emailErr.message : String(emailErr) }); } catch (auditErr) {
-          console.warn('audit log failed for resend', auditErr && auditErr.message ? auditErr.message : auditErr);
-        }
+    try {
+      await sendOtpEmailToAdmin({ to: admin.email, otp, expiresAt });
+      try { await recordAudit('otp.delivery_success', admin.email, { ip: requesterIp, reason: 'resend', expiresAt: expiresAt.toISOString() }); } catch (auditErr) {
+        console.warn('audit log failed for resend success', auditErr && auditErr.message ? auditErr.message : auditErr);
       }
-    });
+    } catch (emailErr) {
+      console.error('adminAuthController: failed to resend OTP email', emailErr && emailErr.message ? emailErr.message : emailErr);
+      try { await recordAudit('otp.delivery_failed', admin.email, { ip: requesterIp, reason: 'resend', error: emailErr && emailErr.message ? emailErr.message : String(emailErr) }); } catch (auditErr) {
+        console.warn('audit log failed for resend', auditErr && auditErr.message ? auditErr.message : auditErr);
+      }
+      return res.status(502).json({
+        success: false,
+        message: 'Unable to deliver OTP email right now. Please retry in a moment.',
+      });
+    }
 
     const responsePayload = {
       success: true,
       message: 'A new verification code has been generated.',
       data: {
         expiresAt: expiresAt.toISOString(),
-        delivery: 'queued',
+        delivery: 'email_sent',
       },
     };
 
