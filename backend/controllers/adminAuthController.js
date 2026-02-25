@@ -484,6 +484,25 @@ async function persistAdminSession({
 }
 
 exports.login = async (req, res) => {
+  try {
+    console.log('LOGIN HIT', {
+      email: normalizeEmail(req && req.body ? req.body.email : ''),
+      hasPassword: Boolean(req && req.body && req.body.password),
+      origin: req && req.headers ? (req.headers.origin || req.headers.Origin || null) : null,
+      ip: getRequesterIp(req),
+    });
+  } catch (logErr) {
+    // ignore logging failures
+  }
+
+  if ((process.env.ADMIN_LOGIN_DEBUG_RESPONSE || '').toString().toLowerCase() === 'true') {
+    return res.json({
+      success: true,
+      reachedBackend: true,
+      message: 'Admin login debug response enabled',
+    });
+  }
+
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ success: false, message: errors.array()[0].msg, errors: errors.array() });

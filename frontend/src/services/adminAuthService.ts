@@ -1,7 +1,7 @@
 import api, { discoverApi } from './api';
 
 const FALLBACK_API_ROOT = 'https://vermilinks.onrender.com';
-const AUTH_REQUEST_TIMEOUT_MS = 70000;
+const AUTH_REQUEST_TIMEOUT_MS = 90000;
 
 const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
 
@@ -159,8 +159,11 @@ function extractMessage(error: any, fallback: string): never {
   if (error?.response?.status === 401) {
     throw new Error('Invalid email or password.');
   }
-  if (String(error?.code || '').toUpperCase() === 'ECONNABORTED') {
+  if (String(error?.code || '').toUpperCase() === 'ECONNABORTED' || error?.name === 'AbortError') {
     throw new Error('Server is starting up. Please wait a few seconds and try again.');
+  }
+  if (typeof error?.message === 'string' && /failed to fetch|networkerror|load failed|fetch/i.test(error.message)) {
+    throw new Error('Unable to reach the server right now. If this is Render free tier cold start, retry in 10-20 seconds.');
   }
   if (error?.request) {
     throw new Error('Unable to reach the server right now. If this is Render free tier cold start, retry in 10-20 seconds.');
@@ -197,17 +200,18 @@ export async function login(email: string, password: string): Promise<AdminLogin
     );
     return response.data;
   } catch (error: any) {
+    let lastError: any = error;
     if (error?.request && !error?.response) {
       try {
         return await postDirect<AdminLoginResponse>('/admin/login', {
           email: email.trim(),
           password,
-        });
-      } catch {
-        // fall through to standard extractor
+        }, AUTH_REQUEST_TIMEOUT_MS);
+      } catch (fallbackError: any) {
+        lastError = fallbackError;
       }
     }
-    extractMessage(error, 'Unable to sign in. Please try again.');
+    extractMessage(lastError, 'Unable to sign in. Please try again.');
   }
 }
 
