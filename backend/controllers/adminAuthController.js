@@ -266,54 +266,109 @@ async function sendOtpEmailToAdmin({ to, otp, expiresAt }) {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 15000;
   })();
 
-  const transporterOptions = smtpHost
-    ? {
-        host: smtpHost,
-        port: (() => {
-          const parsed = Number(smtpPortRaw);
-          return Number.isFinite(parsed) && parsed > 0 ? parsed : 587;
-        })(),
-        secure: typeof smtpSecureRaw === 'string' ? smtpSecureRaw.toLowerCase() === 'true' : false,
-      }
-    : {
-        service: process.env.EMAIL_SERVICE || 'gmail',
-      };
+  const parsedPort = (() => {
+    const parsed = Number(smtpPortRaw);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 587;
+  })();
+  const parsedSecure = typeof smtpSecureRaw === 'string' ? smtpSecureRaw.toLowerCase() === 'true' : false;
 
-  const transporter = nodemailer.createTransport({
-    ...transporterOptions,
-    pool: false,
-    connectionTimeout: smtpConnectionTimeout,
-    greetingTimeout: smtpGreetingTimeout,
-    socketTimeout: smtpSocketTimeout,
-    auth: {
-      user,
-      pass,
+  const transportCandidates = [];
+  if (smtpHost) {
+    transportCandidates.push({
+      mode: 'configured',
+      options: {
+        host: smtpHost,
+        port: parsedPort,
+        secure: parsedSecure,
+      },
+    });
+
+    const isGmailHost = /gmail\.com$/i.test(smtpHost);
+    if (isGmailHost) {
+      if (!(parsedPort === 465 && parsedSecure === true)) {
+        transportCandidates.push({
+          mode: 'gmail-host-465',
+          options: {
+            host: smtpHost,
+            port: 465,
+            secure: true,
+          },
+        });
+      }
+      if (!(parsedPort === 587 && parsedSecure === false)) {
+        transportCandidates.push({
+          mode: 'gmail-host-587',
+          options: {
+            host: smtpHost,
+            port: 587,
+            secure: false,
+            requireTLS: true,
+          },
+        });
+      }
+    }
+  }
+
+  transportCandidates.push({
+    mode: 'gmail-service',
+    options: {
+      service: process.env.EMAIL_SERVICE || 'gmail',
     },
   });
 
-  if (!smtpConfigLogged) {
-    smtpConfigLogged = true;
-    console.info('OTP mail transporter configured', {
-      service: transporterOptions.service || undefined,
-      host: transporterOptions.host || undefined,
-      port: transporterOptions.port || undefined,
-      secure: transporterOptions.secure || false,
+  const from = process.env.EMAIL_FROM || user;
+
+  let lastError = null;
+  for (const candidate of transportCandidates) {
+    const transporter = nodemailer.createTransport({
+      ...candidate.options,
+      pool: false,
       connectionTimeout: smtpConnectionTimeout,
       greetingTimeout: smtpGreetingTimeout,
       socketTimeout: smtpSocketTimeout,
+      auth: {
+        user,
+        pass,
+      },
     });
+
+    if (!smtpConfigLogged) {
+      smtpConfigLogged = true;
+      console.info('OTP mail transporter configured', {
+        mode: candidate.mode,
+        service: candidate.options.service || undefined,
+        host: candidate.options.host || undefined,
+        port: candidate.options.port || undefined,
+        secure: candidate.options.secure || false,
+        connectionTimeout: smtpConnectionTimeout,
+        greetingTimeout: smtpGreetingTimeout,
+        socketTimeout: smtpSocketTimeout,
+      });
+    }
+
+    try {
+      const info = await transporter.sendMail({
+        from,
+        to,
+        subject: 'VermiLinks OTP Verification',
+        text: `Your OTP code is: ${otp}\n\nThis code expires at ${expiresAt.toISOString()}.`,
+      });
+
+      console.info(`OTP sent successfully to ${to}`, {
+        mode: candidate.mode,
+        messageId: info && info.messageId ? info.messageId : undefined,
+      });
+      return;
+    } catch (sendErr) {
+      lastError = sendErr;
+      console.warn('OTP send attempt failed', {
+        mode: candidate.mode,
+        error: sendErr && sendErr.message ? sendErr.message : sendErr,
+      });
+    }
   }
 
-  const from = process.env.EMAIL_FROM || user;
-
-  const info = await transporter.sendMail({
-    from,
-    to,
-    subject: 'VermiLinks OTP Verification',
-    text: `Your OTP code is: ${otp}\n\nThis code expires at ${expiresAt.toISOString()}.`,
-  });
-
-  console.info(`OTP sent successfully to ${to}`, { messageId: info && info.messageId ? info.messageId : undefined });
+  throw (lastError || new Error('All SMTP delivery attempts failed'));
 }
 
 async function assignOtpToAdmin(admin, otp, expiresAt) {
