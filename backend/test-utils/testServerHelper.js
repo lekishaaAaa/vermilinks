@@ -6,8 +6,7 @@ process.env.PORT = '0';
 // Provide safe fallbacks for all envs validateEnv expects so tests work without a .env file.
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgres://postgres:bN8%23t7QpV4%21s2Z@127.0.0.1:5075/beantobin_test';
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'testsecret';
-process.env.SMTP_HOST = process.env.SMTP_HOST || 'smtp.test.local';
-process.env.SMTP_PORT = process.env.SMTP_PORT || '587';
+process.env.RESEND_API_KEY = process.env.RESEND_API_KEY || 're_test_dummy';
 process.env.EMAIL_FROM = process.env.EMAIL_FROM || 'Test <test@example.com>';
 process.env.CORS_ORIGINS = process.env.CORS_ORIGINS || 'http://localhost:3000';
 process.env.CORS_ORIGIN = process.env.CORS_ORIGIN || process.env.CORS_ORIGINS;

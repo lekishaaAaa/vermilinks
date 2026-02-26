@@ -5,11 +5,11 @@ const { simpleParser } = require('mailparser');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env'), override: true });
 
 async function main() {
-  const user = process.env.EMAIL_USER;
-  const pass = process.env.EMAIL_PASS;
+  const user = process.env.OTP_IMAP_USER;
+  const pass = process.env.OTP_IMAP_PASS;
 
   if (!user || !pass) {
-    throw new Error('EMAIL_USER and EMAIL_PASS must be configured.');
+    throw new Error('OTP_IMAP_USER and OTP_IMAP_PASS must be configured.');
   }
 
   const client = new ImapFlow({

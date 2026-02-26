@@ -4,11 +4,10 @@ const request = require('supertest');
 const sentResetEmails = [];
 
 jest.mock('../services/emailService', () => ({
-  sendOtpEmail: jest.fn(),
+  sendEmail: jest.fn(),
   sendPasswordResetEmail: jest.fn(async (payload) => {
     sentResetEmails.push(payload);
   }),
-  getTransporter: jest.fn(),
 }));
 
 const app = require('../test-utils/testServerHelper');

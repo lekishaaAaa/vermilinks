@@ -3,8 +3,7 @@ const logger = require('./logger');
 const requiredKeys = [
   'DATABASE_URL',
   'JWT_SECRET',
-  'SMTP_HOST',
-  'SMTP_PORT',
+  'RESEND_API_KEY',
   'EMAIL_FROM',
   'CORS_ORIGINS',
 ];

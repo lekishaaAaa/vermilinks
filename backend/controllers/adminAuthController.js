@@ -3,15 +3,13 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { fn, col, where, Op } = require('sequelize');
 const crypto = require('crypto');
-const https = require('https');
-const nodemailer = require('nodemailer');
 const cron = require('node-cron');
 const Admin = require('../models/Admin');
 const Otp = require('../models/Otp');
 const UserSession = require('../models/UserSession');
 const AuditLog = require('../models/AuditLog');
 const RevokedToken = require('../models/RevokedToken');
-const { sendPasswordResetEmail } = require('../services/emailService');
+const { sendEmail, sendPasswordResetEmail } = require('../services/emailService');
 const PasswordResetToken = require('../models/PasswordResetToken');
 const { getJwtSecret } = require('../utils/jwtSecret');
 const {
@@ -28,10 +26,6 @@ const OTP_RETENTION_HOURS = parseInt(process.env.ADMIN_OTP_RETENTION_HOURS || '2
 const OTP_RETENTION_BUFFER_MS = Math.max(OTP_RETENTION_HOURS, 1) * 60 * 60 * 1000;
 const OTP_CLEANUP_CRON = process.env.ADMIN_OTP_CLEANUP_CRON || '0 3 * * *';
 const OTP_CLEANUP_TZ = process.env.ADMIN_OTP_CLEANUP_TZ || undefined;
-const REQUIRED_EMAIL_VARS = ['EMAIL_USER', 'EMAIL_PASS'];
-let emailEnvWarned = false;
-let smtpConfigLogged = false;
-let smtpEnvLogged = false;
 
 const resolveJwtSecret = (res) => {
   try {
@@ -45,49 +39,6 @@ const resolveJwtSecret = (res) => {
   }
 };
 
-function warnMissingEmailEnv(contextLabel) {
-  if (emailEnvWarned) {
-    return;
-  }
-
-  const missing = REQUIRED_EMAIL_VARS.filter((key) => {
-    const value = process.env[key];
-    return !value || String(value).trim().length === 0;
-  });
-
-  if (missing.length > 0) {
-    emailEnvWarned = true;
-    console.warn('adminAuthController email configuration missing required env vars', {
-      context: contextLabel || 'unknown',
-      missing,
-    });
-  }
-}
-
-function logSmtpConfigOnce(contextLabel) {
-  if (smtpEnvLogged) {
-    return;
-  }
-
-  smtpEnvLogged = true;
-
-  const host = process.env.EMAIL_HOST || process.env.SMTP_HOST || null;
-  const port = process.env.EMAIL_PORT || process.env.SMTP_PORT || null;
-  const secure = process.env.EMAIL_SECURE || process.env.SMTP_SECURE || null;
-  const user = process.env.EMAIL_USER || null;
-  const from = process.env.EMAIL_FROM || null;
-  const hasPass = Boolean(process.env.EMAIL_PASS && String(process.env.EMAIL_PASS).trim().length > 0);
-
-  console.log('SMTP CONFIG:', {
-    context: contextLabel || 'startup',
-    host,
-    port,
-    secure,
-    user,
-    from,
-    hasPass,
-  });
-}
 
 function normalizeEmail(value) {
   return (value || '').toString().trim().toLowerCase();
@@ -259,260 +210,15 @@ function ensureOtpCleanupScheduler() {
 }
 
 ensureOtpCleanupScheduler();
-logSmtpConfigOnce('module_init');
 
 async function sendOtpEmailToAdmin({ to, otp, expiresAt }) {
   if (!to || !otp) {
     throw new Error('OTP recipient and code are required');
   }
-
-  warnMissingEmailEnv('otp_delivery');
-  logSmtpConfigOnce('otp_delivery');
-
-  const user = process.env.EMAIL_USER;
-  const pass = process.env.EMAIL_PASS;
-
-  if (!user || !pass) {
-    throw new Error('EMAIL_USER and EMAIL_PASS must be configured');
-  }
-
-  const smtpHost = process.env.EMAIL_HOST || process.env.SMTP_HOST;
-  const smtpPortRaw = process.env.EMAIL_PORT || process.env.SMTP_PORT;
-  const smtpSecureRaw = process.env.EMAIL_SECURE || process.env.SMTP_SECURE;
-  const smtpConnectionTimeoutRaw = process.env.SMTP_CONNECTION_TIMEOUT_MS;
-  const smtpGreetingTimeoutRaw = process.env.SMTP_GREETING_TIMEOUT_MS;
-  const smtpSocketTimeoutRaw = process.env.SMTP_SOCKET_TIMEOUT_MS;
-
-  const smtpConnectionTimeout = (() => {
-    const parsed = Number(smtpConnectionTimeoutRaw);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : 10000;
-  })();
-  const smtpGreetingTimeout = (() => {
-    const parsed = Number(smtpGreetingTimeoutRaw);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : 10000;
-  })();
-  const smtpSocketTimeout = (() => {
-    const parsed = Number(smtpSocketTimeoutRaw);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : 15000;
-  })();
-
-  const parsedPort = (() => {
-    const parsed = Number(smtpPortRaw);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : 587;
-  })();
-  const parsedSecure = typeof smtpSecureRaw === 'string' ? smtpSecureRaw.toLowerCase() === 'true' : false;
-
-  const transportCandidates = [];
-  if (smtpHost) {
-    const isGmailHost = /gmail\.com$/i.test(smtpHost);
-    if (isGmailHost) {
-      transportCandidates.push({
-        mode: 'gmail-host-587',
-        options: {
-          host: smtpHost,
-          port: 587,
-          secure: false,
-          requireTLS: true,
-          family: 4,
-        },
-      });
-
-      transportCandidates.push({
-        mode: 'gmail-host-465',
-        options: {
-          host: smtpHost,
-          port: 465,
-          secure: true,
-          family: 4,
-        },
-      });
-
-      if (!((parsedPort === 587 && parsedSecure === false) || (parsedPort === 465 && parsedSecure === true))) {
-        transportCandidates.push({
-          mode: 'configured',
-          options: {
-            host: smtpHost,
-            port: parsedPort,
-            secure: parsedSecure,
-            family: 4,
-          },
-        });
-      }
-    } else {
-      if (!(parsedPort === 465 && parsedSecure === true)) {
-        transportCandidates.push({
-          mode: 'configured',
-          options: {
-            host: smtpHost,
-            port: parsedPort,
-            secure: parsedSecure,
-            family: 4,
-          },
-        });
-      }
-    }
-  }
-
-  transportCandidates.push({
-    mode: 'gmail-service',
-    options: {
-      service: process.env.EMAIL_SERVICE || 'gmail',
-      family: 4,
-    },
-  });
-
-  const from = process.env.EMAIL_FROM || user;
-  const resendApiKey = (process.env.RESEND_API_KEY || '').toString().trim();
-
-  let lastError = null;
-  for (const candidate of transportCandidates) {
-    const transporter = nodemailer.createTransport({
-      ...candidate.options,
-      pool: false,
-      connectionTimeout: smtpConnectionTimeout,
-      greetingTimeout: smtpGreetingTimeout,
-      socketTimeout: smtpSocketTimeout,
-      tls: {
-        minVersion: 'TLSv1.2',
-      },
-      auth: {
-        user,
-        pass,
-      },
-    });
-
-    if (!smtpConfigLogged) {
-      smtpConfigLogged = true;
-      console.info('OTP mail transporter configured', {
-        mode: candidate.mode,
-        service: candidate.options.service || undefined,
-        host: candidate.options.host || undefined,
-        port: candidate.options.port || undefined,
-        secure: candidate.options.secure || false,
-        connectionTimeout: smtpConnectionTimeout,
-        greetingTimeout: smtpGreetingTimeout,
-        socketTimeout: smtpSocketTimeout,
-      });
-    }
-
-    try {
-      await transporter.verify();
-      console.log('SMTP transport verified', {
-        mode: candidate.mode,
-        host: candidate.options.host || null,
-        port: candidate.options.port || null,
-        secure: candidate.options.secure || false,
-      });
-    } catch (verifyErr) {
-      lastError = verifyErr;
-      console.error('SMTP VERIFY FAILURE:');
-      console.error('MODE:', candidate.mode);
-      console.error('CODE:', verifyErr && verifyErr.code ? verifyErr.code : null);
-      console.error('RESPONSE:', verifyErr && verifyErr.response ? verifyErr.response : null);
-      console.error('MESSAGE:', verifyErr && verifyErr.message ? verifyErr.message : verifyErr);
-      console.error('STACK:', verifyErr && verifyErr.stack ? verifyErr.stack : null);
-      continue;
-    }
-
-    try {
-      const mailOptions = {
-        from,
-        to,
-        subject: 'VermiLinks OTP Verification',
-        text: `Your OTP code is: ${otp}\n\nThis code expires at ${expiresAt.toISOString()}.`,
-      };
-
-      const info = await transporter.sendMail(mailOptions);
-      console.log('OTP EMAIL SENT:', info && info.response ? info.response : null);
-
-      console.info(`OTP sent successfully to ${to}`, {
-        mode: candidate.mode,
-        messageId: info && info.messageId ? info.messageId : undefined,
-      });
-      return;
-    } catch (sendErr) {
-      lastError = sendErr;
-      console.error('SMTP FAILURE:');
-      console.error('MODE:', candidate.mode);
-      console.error('CODE:', sendErr && sendErr.code ? sendErr.code : null);
-      console.error('RESPONSE:', sendErr && sendErr.response ? sendErr.response : null);
-      console.error('MESSAGE:', sendErr && sendErr.message ? sendErr.message : sendErr);
-      console.error('STACK:', sendErr && sendErr.stack ? sendErr.stack : null);
-      console.warn('OTP send attempt failed', {
-        mode: candidate.mode,
-        error: sendErr && sendErr.message ? sendErr.message : sendErr,
-      });
-    }
-  }
-
-  if (resendApiKey) {
-    try {
-      await sendOtpEmailViaResend({ to, otp, expiresAt, from, apiKey: resendApiKey });
-      console.info(`OTP sent successfully to ${to}`, {
-        mode: 'resend-api',
-      });
-      return;
-    } catch (resendErr) {
-      lastError = resendErr;
-      console.error('RESEND FAILURE:');
-      console.error('CODE:', resendErr && resendErr.code ? resendErr.code : null);
-      console.error('MESSAGE:', resendErr && resendErr.message ? resendErr.message : resendErr);
-      console.error('STACK:', resendErr && resendErr.stack ? resendErr.stack : null);
-    }
-  }
-
-  throw (lastError || new Error('All SMTP delivery attempts failed'));
-}
-
-function sendOtpEmailViaResend({ to, otp, expiresAt, from, apiKey }) {
-  const payload = JSON.stringify({
-    from,
-    to: [to],
-    subject: 'VermiLinks OTP Verification',
-    text: `Your OTP code is: ${otp}\n\nThis code expires at ${expiresAt.toISOString()}.`,
-  });
-
-  const options = {
-    hostname: 'api.resend.com',
-    path: '/emails',
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-      'Content-Length': Buffer.byteLength(payload),
-    },
-    timeout: 15000,
-  };
-
-  return new Promise((resolve, reject) => {
-    const request = https.request(options, (response) => {
-      let body = '';
-      response.on('data', (chunk) => {
-        body += chunk;
-      });
-      response.on('end', () => {
-        if (response.statusCode >= 200 && response.statusCode < 300) {
-          console.log('OTP EMAIL SENT:', body || null);
-          return resolve();
-        }
-
-        const error = new Error(`Resend request failed with status ${response.statusCode}`);
-        error.code = `RESEND_${response.statusCode}`;
-        error.response = body;
-        return reject(error);
-      });
-    });
-
-    request.on('timeout', () => {
-      request.destroy(new Error('Resend request timeout'));
-    });
-
-    request.on('error', (error) => {
-      reject(error);
-    });
-
-    request.write(payload);
-    request.end();
+  await sendEmail({
+    to,
+    subject: 'Your Admin OTP Code',
+    html: `<p>Your OTP is <strong>${otp}</strong></p><p>This code expires at ${expiresAt.toISOString()}.</p>`,
   });
 }
 

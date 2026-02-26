@@ -7,7 +7,7 @@ const BACKEND = process.env.VERMILINKS_BACKEND_URL || process.env.BACKEND_URL ||
 const ADMIN_EMAIL = process.env.VERMILINKS_ADMIN_EMAIL || process.env.GMAIL_ADDRESS || '';
 const ADMIN_PASSWORD = process.env.VERMILINKS_ADMIN_PASSWORD || '';
 const GMAIL_USER = process.env.VERMILINKS_GMAIL_USER || process.env.GMAIL_USER || ADMIN_EMAIL;
-const GMAIL_PASS = process.env.VERMILINKS_GMAIL_APP_PASSWORD || process.env.GMAIL_APP_PASSWORD || process.env.EMAIL_PASS;
+const GMAIL_PASS = process.env.VERMILINKS_GMAIL_APP_PASSWORD || process.env.GMAIL_APP_PASSWORD;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
