@@ -318,11 +318,10 @@ const login = async (username: string, password: string): Promise<{ success: boo
     const refreshToken = storageGet('adminRefreshToken');
     const currentToken = storageGet('token') || storageGet('adminToken');
     if (refreshToken || currentToken) {
-      try {
-        await logoutSession({ refreshToken: refreshToken || undefined, token: currentToken || undefined });
-      } catch (err) {
-        console.debug('logout session API warning', err && (err as any).message ? (err as any).message : err);
-      }
+      logoutSession({ refreshToken: refreshToken || undefined, token: currentToken || undefined })
+        .catch((err) => {
+          console.debug('logout session API warning', err && (err as any).message ? (err as any).message : err);
+        });
     }
 
     setUser(null);
