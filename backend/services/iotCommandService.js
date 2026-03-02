@@ -1,6 +1,15 @@
 const crypto = require('crypto');
+const { Op } = require('sequelize');
 const { ActuatorState, PendingCommand, AuditLog } = require('../models');
+const Device = require('../models/Device');
 const { publishCommand } = require('./iotMqtt');
+
+const COMMAND_ACK_TIMEOUT_MS = Math.max(
+  5000,
+  parseInt(process.env.COMMAND_ACK_TIMEOUT_MS || '25000', 10),
+);
+
+let timeoutSweeperStarted = false;
 
 function isBoolean(value) {
   return typeof value === 'boolean';
@@ -34,7 +43,52 @@ async function ensureNoPendingCommand(deviceId) {
   return existing || null;
 }
 
+async function failStalePendingCommands() {
+  const cutoff = new Date(Date.now() - COMMAND_ACK_TIMEOUT_MS);
+  await PendingCommand.update(
+    {
+      status: 'failed',
+      error: `Command acknowledgement timeout after ${COMMAND_ACK_TIMEOUT_MS}ms`,
+      updatedAt: new Date(),
+    },
+    {
+      where: {
+        status: { [Op.in]: ['sent', 'waiting'] },
+        createdAt: { [Op.lt]: cutoff },
+      },
+    },
+  );
+}
+
+function ensureCommandTimeoutSweeper() {
+  if (timeoutSweeperStarted || (process.env.NODE_ENV || 'development') === 'test') {
+    return;
+  }
+  timeoutSweeperStarted = true;
+
+  const timer = setInterval(() => {
+    failStalePendingCommands().catch(() => {});
+  }, 5000);
+
+  if (typeof timer.unref === 'function') {
+    timer.unref();
+  }
+}
+
 async function createCommand({ deviceId = 'esp32a', desiredState, actor = null, actorMeta = null }) {
+  ensureCommandTimeoutSweeper();
+  await failStalePendingCommands();
+
+  const device = await Device.findOne({ where: { deviceId } });
+  const isOnline = Boolean(device && (device.online === true || device.status === 'online'));
+  if (!isOnline) {
+    return {
+      ok: false,
+      status: 503,
+      message: 'Target device is offline. Command rejected.',
+    };
+  }
+
   const pending = await ensureNoPendingCommand(deviceId);
   if (pending) {
     return {
@@ -68,6 +122,7 @@ async function createCommand({ deviceId = 'esp32a', desiredState, actor = null, 
   await PendingCommand.create({
     requestId,
     deviceId,
+    command: 'set_state',
     desiredState: commandPayload,
     status: 'sent',
   });

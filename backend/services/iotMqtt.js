@@ -10,12 +10,12 @@ const { markDeviceOnline } = require('./deviceManager');
 const BROKER = process.env.MQTT_BROKER_URL || process.env.MQTT_URL || process.env.MQTT_BROKER;
 const TOPICS = {
   state: 'vermilinks/esp32a/state',
+  ack: 'vermilinks/esp32a/ack',
   statusA: 'vermilinks/esp32a/status',
   command: 'vermilinks/esp32a/command',
-  telemetry: 'vermilinks/esp32b/telemetry',
+  telemetry: 'vermilinks/esp32b/metrics',
   statusB: 'vermilinks/esp32b/status',
-  deviceStatusA: 'vermilinks/device_status/esp32a',
-  deviceStatusB: 'vermilinks/device_status/esp32b',
+  deviceStatusPrefix: 'vermilinks/device_status/',
 };
 
 let client = null;
@@ -36,7 +36,7 @@ function safeJsonParse(payload) {
 }
 
 function parseLwtPayload(topic, message) {
-  if (topic !== TOPICS.deviceStatusA && topic !== TOPICS.deviceStatusB) {
+  if (!topic || !topic.startsWith(TOPICS.deviceStatusPrefix)) {
     return null;
   }
   const raw = Buffer.isBuffer(message) ? message.toString('utf8') : String(message || '');
@@ -44,8 +44,12 @@ function parseLwtPayload(topic, message) {
   if (normalized !== 'online' && normalized !== 'offline') {
     return null;
   }
+  const deviceId = topic.slice(TOPICS.deviceStatusPrefix.length).trim();
+  if (!deviceId) {
+    return null;
+  }
   return {
-    deviceId: topic === TOPICS.deviceStatusA ? 'esp32a' : 'esp32b',
+    deviceId,
     online: normalized === 'online',
   };
 }
@@ -82,6 +86,49 @@ function normalizeFloatState(value) {
   return null;
 }
 
+function toNullableNumber(value) {
+  if (value === null || typeof value === 'undefined' || value === '') {
+    return null;
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function resolveTelemetryTimestamp(payload, fallbackNow) {
+  if (!payload || typeof payload !== 'object') {
+    return fallbackNow;
+  }
+
+  const tsRaw = payload.ts ?? payload.timestamp ?? payload.time;
+  if (typeof tsRaw === 'number' && Number.isFinite(tsRaw)) {
+    const tsMs = tsRaw > 9999999999 ? tsRaw : tsRaw * 1000;
+    const parsed = new Date(tsMs);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed;
+    }
+  }
+
+  if (typeof tsRaw === 'string' && tsRaw.trim().length > 0) {
+    const numeric = Number(tsRaw);
+    if (Number.isFinite(numeric)) {
+      const tsMs = numeric > 9999999999 ? numeric : numeric * 1000;
+      const parsed = new Date(tsMs);
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed;
+      }
+    }
+    const parsed = new Date(tsRaw);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed;
+    }
+  }
+
+  return fallbackNow;
+}
+
 async function upsertActuatorState(deviceId, state) {
   const existing = await ActuatorState.findOne({ where: { actuatorKey: deviceId } });
   if (existing) {
@@ -96,9 +143,14 @@ async function handleStateMessage(payload) {
     logger.warn('iotMqtt: invalid state payload ignored');
     return;
   }
+  const rawDeviceId = payload.deviceId;
+  if (typeof rawDeviceId !== 'string' || rawDeviceId.trim().length === 0) {
+    logger.warn('iotMqtt: state payload rejected (missing deviceId)');
+    return;
+  }
 
   const now = new Date();
-  const deviceId = 'esp32a';
+  const deviceId = rawDeviceId.trim();
   const floatState = normalizeFloatState(payload.float) || 'UNKNOWN';
   const statePayload = {
     pump: payload.pump,
@@ -235,10 +287,65 @@ async function handleStateMessage(payload) {
   await markDeviceOnline(deviceId, { via: 'mqtt', lastStateAt: now.toISOString() });
 }
 
-async function handleStatusMessage(payload, deviceId) {
+async function handleAckMessage(payload) {
   if (!payload || typeof payload !== 'object') {
     return;
   }
+
+  const requestId = typeof payload.requestId === 'string' ? payload.requestId.trim() : '';
+  if (!requestId) {
+    logger.warn('iotMqtt: ack payload ignored (missing requestId)');
+    return;
+  }
+
+  const now = new Date();
+  const acknowledged = payload.ack !== false && payload.success !== false;
+  const status = acknowledged ? 'acknowledged' : 'failed';
+  const errorMessage = acknowledged ? null : (payload.error || payload.message || 'Device reported command failure');
+
+  await PendingCommand.update(
+    {
+      status,
+      error: errorMessage,
+      responseState: payload,
+      ackAt: now,
+      updatedAt: now,
+    },
+    {
+      where: {
+        requestId,
+        status: ['sent', 'waiting'],
+      },
+    },
+  );
+
+  const ackDeviceId = (typeof payload.deviceId === 'string' && payload.deviceId.trim())
+    ? payload.deviceId.trim()
+    : 'esp32a';
+
+  emitRealtime(REALTIME_EVENTS.ACTUATOR_UPDATE, {
+    key: 'device-command',
+    name: 'Device Command',
+    status: acknowledged,
+    mode: 'manual',
+    updatedAt: now.toISOString(),
+    deviceAck: acknowledged,
+    deviceAckMessage: errorMessage,
+    requestId,
+    deviceId: ackDeviceId,
+  });
+}
+
+async function handleStatusMessage(payload) {
+  if (!payload || typeof payload !== 'object') {
+    return;
+  }
+
+  const rawDeviceId = payload.deviceId;
+  if (typeof rawDeviceId !== 'string' || rawDeviceId.trim().length === 0) {
+    return;
+  }
+  const deviceId = rawDeviceId.trim();
 
   const now = new Date();
   if (payload.online !== false) {
@@ -316,23 +423,13 @@ async function handleLwtStatusMessage(payload) {
 }
 
 async function handleTelemetryMessage(payload) {
-  if (!payload || typeof payload !== 'object') {
+  const telemetry = buildTelemetryRecord(payload);
+  if (!telemetry) {
+    logger.warn('iotMqtt: telemetry payload rejected (invalid payload/deviceId)');
     return;
   }
 
-  const now = new Date();
-  const deviceId = 'esp32b';
-  const timestamp = payload.ts ? new Date(payload.ts * 1000) : now;
-  const telemetry = {
-    deviceId,
-    temperature: payload.tempC ?? null,
-    humidity: payload.humidity ?? null,
-    moisture: payload.soil ?? null,
-    soilTemperature: payload.waterTempC ?? null,
-    timestamp,
-    source: 'mqtt',
-    rawPayload: payload,
-  };
+  const { deviceId, timestamp } = telemetry;
 
   await SensorData.create(telemetry);
   await SensorSnapshot.upsert({
@@ -341,6 +438,7 @@ async function handleTelemetryMessage(payload) {
     humidity: telemetry.humidity,
     moisture: telemetry.moisture,
     soilTemperature: telemetry.soilTemperature,
+    signalStrength: telemetry.signalStrength,
     timestamp,
   });
 
@@ -357,12 +455,38 @@ async function handleTelemetryMessage(payload) {
       humidity: telemetry.humidity,
       moisture: telemetry.moisture,
       soilTemperature: telemetry.soilTemperature,
+      signalStrength: telemetry.signalStrength,
     },
     origin: 'mqtt',
     recordedAt: timestamp,
     rawPayload: payload,
     mqttTopic: TOPICS.telemetry,
   });
+}
+
+function buildTelemetryRecord(payload) {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  const rawDeviceId = payload.deviceId;
+  if (typeof rawDeviceId !== 'string' || rawDeviceId.trim().length === 0) {
+    return null;
+  }
+
+  const now = new Date();
+  const timestamp = resolveTelemetryTimestamp(payload, now);
+  return {
+    deviceId: rawDeviceId.trim(),
+    temperature: toNullableNumber(payload.temperature ?? payload.tempC ?? payload.temp),
+    humidity: toNullableNumber(payload.humidity),
+    moisture: toNullableNumber(payload.soilMoisture ?? payload.soil ?? payload.moisture),
+    soilTemperature: toNullableNumber(payload.soilTemp ?? payload.soilTemperature ?? payload.waterTempC),
+    signalStrength: toNullableNumber(payload.signalStrength ?? payload.rssi),
+    timestamp,
+    source: 'mqtt',
+    rawPayload: payload,
+  };
 }
 
 function startIotMqtt() {
@@ -388,11 +512,11 @@ function startIotMqtt() {
     logger.info('iotMqtt connected', { broker: BROKER });
     client.subscribe([
       TOPICS.state,
+      TOPICS.ack,
       TOPICS.statusA,
       TOPICS.telemetry,
       TOPICS.statusB,
-      TOPICS.deviceStatusA,
-      TOPICS.deviceStatusB,
+      `${TOPICS.deviceStatusPrefix}#`,
     ], { qos: 0 }, (err) => {
       if (err) {
         logger.warn('iotMqtt subscribe failed', err && err.message ? err.message : err);
@@ -421,8 +545,15 @@ function startIotMqtt() {
       return;
     }
 
+    if (topic === TOPICS.ack) {
+      handleAckMessage(payload).catch((error) => {
+        logger.warn('iotMqtt ack handler failed', error && error.message ? error.message : error);
+      });
+      return;
+    }
+
     if (topic === TOPICS.statusA) {
-      handleStatusMessage(payload, 'esp32a').catch((error) => {
+      handleStatusMessage(payload).catch((error) => {
         logger.warn('iotMqtt status handler failed', error && error.message ? error.message : error);
       });
       return;
@@ -436,7 +567,7 @@ function startIotMqtt() {
     }
 
     if (topic === TOPICS.statusB) {
-      handleStatusMessage(payload, 'esp32b').catch((error) => {
+      handleStatusMessage(payload).catch((error) => {
         logger.warn('iotMqtt status handler failed', error && error.message ? error.message : error);
       });
     }
@@ -464,4 +595,9 @@ function publishCommand(commandPayload) {
 module.exports = {
   startIotMqtt,
   publishCommand,
+  __testHooks: {
+    buildTelemetryRecord,
+    handleTelemetryMessage,
+    parseLwtPayload,
+  },
 };

@@ -12,10 +12,13 @@ async function ensureReady() {
   }
 }
 
-// In-memory map of timers used to detect offline devices
-const offlineTimers = new Map();
 // Default offline timeout (ms) — devices must heartbeat at least every 10 seconds
 const OFFLINE_TIMEOUT_MS = parseInt(process.env.DEVICE_OFFLINE_TIMEOUT_MS || process.env.SENSOR_STALE_THRESHOLD_MS || '60000', 10);
+const PRESENCE_SWEEP_INTERVAL_MS = Math.max(
+  5000,
+  parseInt(process.env.PRESENCE_SWEEP_INTERVAL_MS || '10000', 10),
+);
+let presenceSweepStarted = false;
 
 async function markDeviceOnline(deviceId, metadata = {}) {
   if (!deviceId) return null;
@@ -31,8 +34,6 @@ async function markDeviceOnline(deviceId, metadata = {}) {
     device.metadata = metadata || device.metadata;
     await device.save();
   }
-  // reset offline timer
-  resetOfflineTimer(deviceId);
   // Broadcast device status via Socket.IO
   try {
     const payload = {
@@ -50,29 +51,64 @@ async function markDeviceOnline(deviceId, metadata = {}) {
 }
 
 function resetOfflineTimer(deviceId) {
-  const prev = offlineTimers.get(deviceId);
-  if (prev) {
-    clearTimeout(prev);
-  }
-  offlineTimers.delete(deviceId);
+  return deviceId;
+}
 
-  if ((process.env.NODE_ENV || 'development') === 'test') {
+function isHeartbeatStale(device, now = Date.now()) {
+  if (!device || !device.lastHeartbeat) {
+    return true;
+  }
+  const last = new Date(device.lastHeartbeat).getTime();
+  if (!Number.isFinite(last)) {
+    return true;
+  }
+  return now - last > OFFLINE_TIMEOUT_MS;
+}
+
+async function reconcilePresenceFromDatabase() {
+  await ensureReady();
+  const now = Date.now();
+  const devices = await Device.findAll();
+
+  for (const device of devices) {
+    const shouldBeOffline =
+      (device.online === true || device.status === 'online') &&
+      isHeartbeatStale(device, now);
+
+    if (shouldBeOffline) {
+      await markDeviceOffline(device.deviceId);
+      continue;
+    }
+
+    emitRealtime(REALTIME_EVENTS.DEVICE_STATUS, {
+      deviceId: device.deviceId,
+      status: device.online === true || device.status === 'online' ? 'online' : 'offline',
+      online: device.online === true || device.status === 'online',
+      lastHeartbeat: device.lastHeartbeat || null,
+      event: 'startup-sync',
+    });
+  }
+}
+
+function startPresenceReconciliation() {
+  if (presenceSweepStarted || (process.env.NODE_ENV || 'development') === 'test') {
     return;
   }
+  presenceSweepStarted = true;
 
-  const timer = setTimeout(async () => {
-    try {
-      await markDeviceOffline(deviceId);
-    } catch (e) {
-      console.error('Error marking device offline:', e && e.message ? e.message : e);
-    }
-  }, OFFLINE_TIMEOUT_MS);
+  reconcilePresenceFromDatabase().catch((e) => {
+    console.error('Presence reconciliation failed:', e && e.message ? e.message : e);
+  });
+
+  const timer = setInterval(() => {
+    reconcilePresenceFromDatabase().catch((e) => {
+      console.error('Presence reconciliation failed:', e && e.message ? e.message : e);
+    });
+  }, PRESENCE_SWEEP_INTERVAL_MS);
 
   if (typeof timer.unref === 'function') {
     timer.unref();
   }
-
-  offlineTimers.set(deviceId, timer);
 }
 
 async function markDeviceOffline(deviceId) {
@@ -112,4 +148,4 @@ async function markDeviceOffline(deviceId) {
   return device;
 }
 
-module.exports = { markDeviceOnline, markDeviceOffline, resetOfflineTimer };
+module.exports = { markDeviceOnline, markDeviceOffline, resetOfflineTimer, reconcilePresenceFromDatabase, startPresenceReconciliation };

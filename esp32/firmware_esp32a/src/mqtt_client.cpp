@@ -99,6 +99,7 @@ void mqttPublishState(const ActuatorState& state, bool retained) {
     return;
   }
   String payload = "{";
+  payload += "\"deviceId\":\"esp32a\",";
   payload += "\"pump\":" + String(state.pump ? "true" : "false") + ",";
   payload += "\"valve1\":" + String(state.valve1 ? "true" : "false") + ",";
   payload += "\"valve2\":" + String(state.valve2 ? "true" : "false") + ",";
@@ -116,6 +117,7 @@ void mqttPublishStatus(bool online) {
     return;
   }
   String payload = "{";
+  payload += "\"deviceId\":\"esp32a\",";
   payload += "\"online\":" + String(online ? "true" : "false") + ",";
   payload += "\"rssi\":" + String(WiFi.RSSI()) + ",";
   payload += "\"uptime\":" + String(millis() / 1000) + ",";
@@ -175,4 +177,17 @@ void mqttHandleCommand(const char* payload) {
   enforceFloatSafety(*stateRef);
   applyActuatorState(*stateRef);
   mqttPublishState(*stateRef, true);
+
+  String ackPayload = "{";
+  ackPayload += "\"deviceId\":\"esp32a\",";
+  ackPayload += "\"requestId\":\"" + stateRef->requestId + "\",";
+  ackPayload += "\"ack\":true,";
+  ackPayload += "\"pump\":" + String(stateRef->pump ? "true" : "false") + ",";
+  ackPayload += "\"valve1\":" + String(stateRef->valve1 ? "true" : "false") + ",";
+  ackPayload += "\"valve2\":" + String(stateRef->valve2 ? "true" : "false") + ",";
+  ackPayload += "\"valve3\":" + String(stateRef->valve3 ? "true" : "false") + ",";
+  ackPayload += "\"source\":\"" + stateRef->source + "\",";
+  ackPayload += "\"ts\":" + String(static_cast<long>(time(nullptr)));
+  ackPayload += "}";
+  mqttClient.publish(TOPIC_ACK, ackPayload.c_str(), false);
 }

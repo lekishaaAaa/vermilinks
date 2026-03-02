@@ -2,21 +2,21 @@
 #include "config.h"
 
 void initActuators() {
-  pinMode(PIN_PUMP, OUTPUT);
-  pinMode(PIN_VALVE1, OUTPUT);
-  pinMode(PIN_VALVE2, OUTPUT);
-  pinMode(PIN_VALVE3, OUTPUT);
+  pinMode(PUMP_PIN, OUTPUT);
+  pinMode(VALVE1_PIN, OUTPUT);
+  pinMode(VALVE2_PIN, OUTPUT);
+  pinMode(VALVE3_PIN, OUTPUT);
 
   // Fail-safe: pump off on boot
-  digitalWrite(PIN_PUMP, LOW);
-  digitalWrite(PIN_VALVE1, LOW);
-  digitalWrite(PIN_VALVE2, LOW);
-  digitalWrite(PIN_VALVE3, LOW);
+  digitalWrite(PUMP_PIN, LOW);
+  digitalWrite(VALVE1_PIN, LOW);
+  digitalWrite(VALVE2_PIN, LOW);
+  digitalWrite(VALVE3_PIN, LOW);
 }
 
 void applyActuatorState(const ActuatorState& state) {
-  digitalWrite(PIN_PUMP, state.pump ? HIGH : LOW);
-  digitalWrite(PIN_VALVE1, state.valve1 ? HIGH : LOW);
-  digitalWrite(PIN_VALVE2, state.valve2 ? HIGH : LOW);
-  digitalWrite(PIN_VALVE3, state.valve3 ? HIGH : LOW);
+  digitalWrite(PUMP_PIN, state.pump ? HIGH : LOW);
+  digitalWrite(VALVE1_PIN, state.valve1 ? HIGH : LOW);
+  digitalWrite(VALVE2_PIN, state.valve2 ? HIGH : LOW);
+  digitalWrite(VALVE3_PIN, state.valve3 ? HIGH : LOW);
 }

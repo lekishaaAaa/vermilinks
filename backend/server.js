@@ -33,6 +33,7 @@ connectMongo().catch((error) => {
 const {
   markDeviceOnline,
   resetOfflineTimer,
+  startPresenceReconciliation,
 } = require('./services/deviceManager');
 const deviceCommandQueue = require('./services/deviceCommandQueue');
 
@@ -255,6 +256,10 @@ try {
 
 // Start IoT MQTT service for ESP32 commands/telemetry
 try {
+  if (process.env.NODE_ENV !== 'test') {
+    startPresenceReconciliation();
+  }
+
   if (process.env.NODE_ENV !== 'test' && process.env.DISABLE_IOT_MQTT !== 'true') {
     const iotMqtt = require('./services/iotMqtt');
     iotMqtt.startIotMqtt();

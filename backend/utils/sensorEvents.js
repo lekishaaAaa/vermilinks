@@ -1,5 +1,6 @@
 const Alert = require('../models/Alert');
 const Settings = require('../models/Settings');
+const { sendEmail } = require('../services/emailService');
 const logger = require('./logger');
 const {
   toPlainObject,
@@ -14,6 +15,65 @@ const MAX_TRACKED_DEVICES = 500;
 const FLOAT_EVENT_COOLDOWN_MS = 30 * 1000;
 const floatStateTracker = new Map();
 const pumpStateTracker = new Map();
+
+const getAlertEmailRecipients = () => {
+  const raw =
+    process.env.ALERT_EMAIL_RECIPIENTS ||
+    process.env.ALERT_EMAIL_TO ||
+    process.env.ADMIN_ALERT_EMAILS ||
+    '';
+
+  return String(raw)
+    .split(/[;,]/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+};
+
+const dispatchAlertEmails = ({ alerts, deviceId }) => {
+  const recipients = getAlertEmailRecipients();
+  if (!Array.isArray(alerts) || alerts.length === 0 || recipients.length === 0) {
+    return;
+  }
+
+  const emailEligible = alerts.filter((alert) => {
+    const severity = String(alert && alert.severity ? alert.severity : '').toLowerCase();
+    return severity === 'high' || severity === 'critical';
+  });
+
+  if (emailEligible.length === 0) {
+    return;
+  }
+
+  const criticalCount = emailEligible.filter((alert) => String(alert.severity).toLowerCase() === 'critical').length;
+  const highCount = emailEligible.length - criticalCount;
+  const deviceLabel = deviceId || 'unknown-device';
+  const subject = `[BeanToBin Alert] ${deviceLabel}: ${criticalCount} critical, ${highCount} high`;
+  const rows = emailEligible
+    .slice(0, 10)
+    .map((alert) => {
+      const severity = String(alert.severity || '').toUpperCase();
+      const type = alert.type || 'unknown';
+      const message = alert.message || 'No message provided';
+      return `<li><strong>${severity}</strong> [${type}] - ${message}</li>`;
+    })
+    .join('');
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; line-height: 1.6;">
+      <h2 style="margin-bottom: 12px;">BeanToBin Alert Notification</h2>
+      <p><strong>Device:</strong> ${deviceLabel}</p>
+      <p><strong>Total triggered:</strong> ${emailEligible.length}</p>
+      <ul>${rows}</ul>
+      <p style="font-size: 12px; color: #666;">This email was sent automatically by the BeanToBin alert engine.</p>
+    </div>
+  `;
+
+  Promise.resolve()
+    .then(() => sendEmail({ to: recipients, subject, html }))
+    .catch((error) => {
+      logger.warn('Failed to send alert notification email', error && error.message ? error.message : error);
+    });
+};
 
 const limitTrackerSize = (map) => {
   if (map.size <= MAX_TRACKED_DEVICES) {
@@ -649,6 +709,8 @@ const checkThresholds = async (sensorData, ioInstance) => {
         event: 'new',
         triggeredAt: new Date().toISOString(),
       }, { io: ioInstance || global.io });
+
+      dispatchAlertEmails({ alerts: persistedAlerts, deviceId: devId });
     }
 
     return persistedAlerts;

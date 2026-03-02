@@ -2,11 +2,11 @@
 #include "config.h"
 
 void initFloatSensor() {
-  pinMode(PIN_FLOAT, INPUT_PULLUP);
+  pinMode(FLOAT_PIN, INPUT_PULLUP);
 }
 
 int readFloatRaw() {
-  return digitalRead(PIN_FLOAT);
+  return digitalRead(FLOAT_PIN);
 }
 
 bool floatIsLow() {

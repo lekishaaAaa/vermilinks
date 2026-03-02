@@ -1104,7 +1104,7 @@ export default function AdminDashboard(): React.ReactElement {
           </div>
         )}
         rightSlot={(
-          <div className="flex w-full items-center justify-end gap-3 sm:gap-4">
+          <div className="relative z-[2147483001] flex w-full items-center justify-end gap-3 sm:gap-4 pointer-events-auto">
             <div className="hidden md:flex items-center gap-2 rounded-full border border-emerald-200 bg-white px-3 py-1 text-xs font-semibold text-emerald-700 shadow-sm dark:border-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200">
               <span className="font-medium">Latency:</span>
               <span>{systemStatus.apiLatency}ms</span>
@@ -1113,20 +1113,32 @@ export default function AdminDashboard(): React.ReactElement {
               <span className="h-2 w-2 rounded-full bg-emerald-500" />
               Realtime control active
             </div>
-            <button
-              type="button"
-              onClick={() => setShowLogoutConfirm(true)}
-              className="rounded-lg border border-coffee-200 bg-white px-3 py-2 text-sm font-medium text-coffee-700 transition-colors hover:border-coffee-300 hover:text-coffee-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-            >
-              Logout
-            </button>
-            <DarkModeToggle />
           </div>
         )}
       />,
       document.body
     );
   };
+
+  const AdminQuickActions: React.FC = () => createPortal(
+    <div
+      className="fixed right-6 bottom-6 flex items-center gap-2"
+      style={{ zIndex: 2147483647, pointerEvents: 'auto' }}
+    >
+      <button
+        type="button"
+        onClick={() => setShowLogoutConfirm(true)}
+        className="rounded-lg border border-coffee-200 bg-white px-3 py-2 text-sm font-medium text-coffee-700 shadow-sm transition-colors hover:border-coffee-300 hover:text-coffee-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+        style={{ pointerEvents: 'auto' }}
+      >
+        Logout
+      </button>
+      <div className="rounded-lg bg-white/90 p-1 shadow-sm dark:bg-slate-900/90" style={{ pointerEvents: 'auto' }}>
+        <DarkModeToggle />
+      </div>
+    </div>,
+    document.body
+  );
 
   const [activeTab, setActiveTab] = useState<'overview' | 'devices' | 'monitoring' | 'management'>('overview');
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -1141,17 +1153,35 @@ export default function AdminDashboard(): React.ReactElement {
     }
   }, [activeTab, location.search]);
 
+  const handleLogoutConfirm = useCallback(async () => {
+    setShowLogoutConfirm(false);
+    try {
+      await logout();
+    } finally {
+      navigate('/admin/login', { replace: true });
+    }
+  }, [logout, navigate]);
+
+  const handleLogoutCancel = useCallback(() => {
+    setShowLogoutConfirm(false);
+  }, []);
+
   const LogoutConfirmModal: React.FC = () => {
     if (!showLogoutConfirm) return null;
     return createPortal(
-      <div className="fixed inset-0 z-60 flex items-center justify-center p-4">
-        <div className="absolute inset-0 bg-black/50" onClick={() => setShowLogoutConfirm(false)} />
-        <div className="relative z-70 bg-white dark:bg-gray-900 rounded-xl shadow-lg border p-6 max-w-md w-full">
+      <div className="fixed inset-0 flex items-center justify-center p-4 pointer-events-auto" style={{ zIndex: 2147483647 }}>
+        <button
+          type="button"
+          className="absolute inset-0 bg-black/50"
+          onClick={handleLogoutCancel}
+          aria-label="Close logout confirmation"
+        />
+        <div className="relative w-full max-w-md rounded-xl border bg-white p-6 shadow-lg dark:border-gray-700 dark:bg-gray-900" style={{ zIndex: 2147483647 }}>
           <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Confirm Logout</h3>
-          <p className="text-sm text-gray-600 dark:text-gray-300 mt-2">Are you sure you want to logout?</p>
-            <div className="mt-4 flex justify-end gap-3">
-            <button onClick={() => setShowLogoutConfirm(false)} className="px-3 py-2 rounded-md border">No</button>
-            <button onClick={() => { setShowLogoutConfirm(false); logout(); navigate('/admin/login'); }} className="px-3 py-2 rounded-md bg-red-600 text-white">Yes, logout</button>
+          <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">Are you sure you want to logout?</p>
+          <div className="mt-4 flex justify-end gap-3">
+            <button type="button" onClick={handleLogoutCancel} className="rounded-md border px-3 py-2">No</button>
+            <button type="button" onClick={handleLogoutConfirm} className="rounded-md bg-red-600 px-3 py-2 text-white">Yes, logout</button>
           </div>
         </div>
       </div>,
@@ -1188,6 +1218,8 @@ export default function AdminDashboard(): React.ReactElement {
       )}
   {/* header rendered to body via portal (AdminHeader) */}
   <AdminHeader />
+  {/* always-clickable top-right admin actions */}
+  <AdminQuickActions />
   {/* Logout confirmation modal (portal) */}
   <LogoutConfirmModal />
 

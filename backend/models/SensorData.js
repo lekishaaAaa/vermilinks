@@ -9,6 +9,7 @@ const SensorData = sequelize.define('SensorData', {
   deviceId: {
     type: DataTypes.STRING,
     allowNull: false,
+    field: 'device_id',
   },
   temperature: {
     type: DataTypes.FLOAT,
@@ -82,9 +83,10 @@ const SensorData = sequelize.define('SensorData', {
     type: DataTypes.DATE,
     allowNull: false,
     defaultValue: DataTypes.NOW,
+    field: 'created_at',
   },
 }, {
-  tableName: 'sensordata',
+  tableName: 'sensor_data',
   timestamps: false,
   underscored: true,
 });

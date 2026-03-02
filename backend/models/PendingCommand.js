@@ -13,6 +13,11 @@ const PendingCommand = sequelize.define('PendingCommand', {
     allowNull: false,
     field: 'device_id',
   },
+  command: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    field: 'command',
+  },
   desiredState: {
     type: DataTypes.JSON,
     allowNull: true,

@@ -253,29 +253,3 @@ router.get('/verify', require('../middleware/auth').auth, (req, res) => {
 router.post('/verify-token', require('../middleware/auth').auth, (req, res) => res.json({ success: true, message: 'Token is valid', data: { user: { id: req.user.id, username: req.user.username, role: req.user.role } } }));
 
 module.exports = router;
-
-// --- Dev-only debug endpoint (disabled by default) ---
-// To enable this endpoint for local debugging set ENABLE_DEBUG_USERS=true in your local .env (do NOT enable in production).
-try {
-  const enableDebugUsers = (process.env.ENABLE_DEBUG_USERS === 'true');
-  if (enableDebugUsers && (process.env.NODE_ENV || 'development') !== 'production') {
-    // Inspect raw body for debugging client payload shapes
-    router.post('/debug-raw-body', (req, res) => {
-      try {
-        return res.json({ success: true, rawBodyType: typeof req.body, rawBody: req.body });
-      } catch (e) {
-        return res.status(500).json({ success: false, message: 'Could not inspect body', error: e && e.message });
-      }
-    });
-    router.get('/debug-users', async (req, res) => {
-      try {
-        const users = await User.findAll({ attributes: ['id', 'username', 'password', 'role'] });
-        return res.json({ success: true, data: users.map(u => ({ id: u.id, username: u.username, hasPassword: !!u.password, role: u.role })) });
-      } catch (e) {
-        return res.status(500).json({ success: false, message: 'Could not list users', error: e && e.message });
-      }
-    });
-  }
-} catch (e) {
-  // ignore if User is not defined or other issues
-}

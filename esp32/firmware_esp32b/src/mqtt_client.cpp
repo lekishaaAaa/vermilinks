@@ -78,10 +78,12 @@ void mqttPublishTelemetry(const SensorSnapshot& snapshot) {
     return;
   }
   String payload = "{";
-  payload += "\"tempC\":" + String(snapshot.tempC, 1) + ",";
+  payload += "\"deviceId\":\"esp32b\",";
+  payload += "\"temperature\":" + String(snapshot.tempC, 1) + ",";
   payload += "\"humidity\":" + String(snapshot.humidity, 1) + ",";
-  payload += "\"soil\":" + String(snapshot.soil) + ",";
-  payload += "\"waterTempC\":" + String(snapshot.waterTempC, 1) + ",";
+  payload += "\"soilMoisture\":" + String(snapshot.soil) + ",";
+  payload += "\"soilTemp\":" + String(snapshot.waterTempC, 1) + ",";
+  payload += "\"signalStrength\":" + String(WiFi.RSSI()) + ",";
   payload += "\"ts\":" + String(static_cast<long>(time(nullptr))) + "";
   payload += "}";
   mqttClient.publish(TOPIC_TELEMETRY, payload.c_str(), false);
@@ -92,6 +94,7 @@ void mqttPublishStatus(bool online) {
     return;
   }
   String payload = "{";
+  payload += "\"deviceId\":\"esp32b\",";
   payload += "\"online\":" + String(online ? "true" : "false") + ",";
   payload += "\"rssi\":" + String(WiFi.RSSI()) + ",";
   payload += "\"uptime\":" + String(millis() / 1000) + ",";

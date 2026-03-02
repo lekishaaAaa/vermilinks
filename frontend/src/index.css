@@ -151,8 +151,9 @@ header.admin-fixed {
   left: 0 !important;
   right: 0 !important;
   width: 100% !important;
-  z-index: 9999 !important; /* reasonable high value */
+  z-index: 2147483000 !important;
   transform: none !important;
+  pointer-events: auto !important;
 }
 
 /* Custom component styles */
@@ -331,9 +332,10 @@ header.admin-fixed {
     left: 0 !important;
     right: 0 !important;
     width: 100% !important;
-    z-index: 9999 !important;
+    z-index: 2147483000 !important;
     box-shadow: 0 8px 30px -12px rgba(2,6,23,0.45);
     backdrop-filter: blur(6px);
+    pointer-events: auto !important;
   }
 
   /* Global enforcement: keep header at viewport top even if nested in transforms */
@@ -345,11 +347,12 @@ header.admin-fixed {
     left: 0 !important;
     right: 0 !important;
     width: 100% !important;
-    z-index: 9998 !important;
+    z-index: 2147483000 !important;
     transform: translateZ(0) !important;
     will-change: transform;
     min-height: var(--admin-header-height);
     height: auto !important;
+    pointer-events: auto !important;
   }
 
   /* Explicitly ensure non-admin site headers are not positioned fixed to avoid accidental overlays */

@@ -96,7 +96,6 @@ const ActuatorControls: React.FC = () => {
       [key]: !desiredState[key],
     };
 
-    setDesiredState(nextState);
     setLoading(true);
     setErrorMessage(null);
 

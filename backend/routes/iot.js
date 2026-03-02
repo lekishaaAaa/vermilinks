@@ -52,7 +52,7 @@ router.get('/alerts', async (req, res) => {
   }
 });
 
-router.patch('/alerts/:id', async (req, res) => {
+router.patch('/alerts/:id', auth, adminOnly, requireOtpVerified, async (req, res) => {
   try {
     const alert = await Alert.findByPk(req.params.id);
     if (!alert) {
@@ -67,7 +67,7 @@ router.patch('/alerts/:id', async (req, res) => {
   }
 });
 
-router.delete('/alerts', async (req, res) => {
+router.delete('/alerts', auth, adminOnly, requireOtpVerified, async (req, res) => {
   try {
     const now = new Date();
     const result = await Alert.update({ isResolved: true, resolvedAt: now }, { where: { isResolved: false } });
