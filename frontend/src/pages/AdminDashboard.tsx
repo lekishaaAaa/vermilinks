@@ -1113,32 +1113,23 @@ export default function AdminDashboard(): React.ReactElement {
               <span className="h-2 w-2 rounded-full bg-emerald-500" />
               Realtime control active
             </div>
+            <button
+              type="button"
+              onClick={() => setShowLogoutConfirm(true)}
+              className="rounded-lg border border-coffee-200 bg-white px-3 py-2 text-sm font-medium text-coffee-700 shadow-sm transition-colors hover:border-coffee-300 hover:text-coffee-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+              style={{ pointerEvents: 'auto' }}
+            >
+              Logout
+            </button>
+            <div className="rounded-lg bg-white/90 p-1 shadow-sm dark:bg-slate-900/90" style={{ pointerEvents: 'auto' }}>
+              <DarkModeToggle />
+            </div>
           </div>
         )}
       />,
       document.body
     );
   };
-
-  const AdminQuickActions: React.FC = () => createPortal(
-    <div
-      className="fixed right-6 bottom-6 flex items-center gap-2"
-      style={{ zIndex: 2147483647, pointerEvents: 'auto' }}
-    >
-      <button
-        type="button"
-        onClick={() => setShowLogoutConfirm(true)}
-        className="rounded-lg border border-coffee-200 bg-white px-3 py-2 text-sm font-medium text-coffee-700 shadow-sm transition-colors hover:border-coffee-300 hover:text-coffee-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-        style={{ pointerEvents: 'auto' }}
-      >
-        Logout
-      </button>
-      <div className="rounded-lg bg-white/90 p-1 shadow-sm dark:bg-slate-900/90" style={{ pointerEvents: 'auto' }}>
-        <DarkModeToggle />
-      </div>
-    </div>,
-    document.body
-  );
 
   const [activeTab, setActiveTab] = useState<'overview' | 'devices' | 'monitoring' | 'management'>('overview');
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -1218,8 +1209,6 @@ export default function AdminDashboard(): React.ReactElement {
       )}
   {/* header rendered to body via portal (AdminHeader) */}
   <AdminHeader />
-  {/* always-clickable top-right admin actions */}
-  <AdminQuickActions />
   {/* Logout confirmation modal (portal) */}
   <LogoutConfirmModal />
 
