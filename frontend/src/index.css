@@ -167,6 +167,10 @@ body.has-admin-header header.admin-fixed button {
   pointer-events: auto !important;
 }
 
+body.has-admin-header header.admin-fixed * {
+  pointer-events: auto !important;
+}
+
 /* Custom component styles */
 @layer components {
   .btn {

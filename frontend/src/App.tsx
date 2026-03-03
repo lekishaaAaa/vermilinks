@@ -26,9 +26,7 @@ import { ToastProvider } from './contexts/ToastContext';
 
 // Import components
 import ProtectedRoute from './components/ProtectedRoute';
-import OnboardingTour from './components/OnboardingTour';
 import ToastContainer from './components/ToastContainer';
-import tourSteps from './components/OnboardingTour/tourConfig';
 
 function App() {
   return (
@@ -38,7 +36,6 @@ function App() {
           <ToastProvider>
             <Router>
               <div className="App">
-                <OnboardingTour steps={tourSteps} />
                 <Routes>
                 <Route path="/" element={<HomePage />} />
                 <Route path="/dashboard" element={<UserDashboard />} />
