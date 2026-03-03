@@ -635,7 +635,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
         setIsLoading(false);
       }
     }
-  }, [ensureBackendBase, handleTelemetryPayload, telemetryDisabled, deviceStatuses]);
+  }, [ensureBackendBase, handleTelemetryPayload, telemetryDisabled]);
 
   const refreshSensors = useCallback(async (options?: { background?: boolean }) => {
     await refreshTelemetry(options);
