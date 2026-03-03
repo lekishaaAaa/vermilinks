@@ -1204,7 +1204,7 @@ export default function AdminDashboard(): React.ReactElement {
           </div>
         </div>
       )}
-  {/* header rendered to body via portal (AdminHeader) */}
+  {/* header rendered inline (AdminHeader) */}
   <AdminHeader />
   {/* Logout confirmation modal (portal) */}
   <LogoutConfirmModal />
