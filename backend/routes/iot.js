@@ -41,7 +41,7 @@ router.get('/latest', async (req, res) => {
   }
 });
 
-router.get('/alerts', async (req, res) => {
+router.get('/alerts', auth, adminOnly, async (req, res) => {
   try {
     const activeOnly = (req.query.active || 'true').toString().toLowerCase() !== 'false';
     const where = activeOnly ? { isResolved: false } : {};

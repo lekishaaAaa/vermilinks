@@ -50,11 +50,13 @@ const iotRoutes = require('./routes/iot');
 
 // Import middleware
 const { errorHandler } = require('./middleware/errorHandler');
+const { auth, adminOnly } = require('./middleware/auth');
 
 const app = express();
 // Render and other proxies populate X-Forwarded-* headers; trust the first hop for accurate rate limiting/IP logging
 app.set('trust proxy', 1);
 const server = http.createServer(app);
+let pollerRuntime = null;
 
 const rateLimitWindowMs = parseInt(process.env.RATE_LIMIT_WINDOW_MS || process.env.API_RATE_LIMIT_WINDOW_MS || '900000', 10);
 const rateLimitMax = parseInt(process.env.RATE_LIMIT_MAX || process.env.API_RATE_LIMIT_MAX_REQUESTS || '5', 10);
@@ -526,8 +528,9 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
-app.get('/api/system/info', (req, res) => {
+app.get('/api/system/info', auth, adminOnly, (req, res) => {
   try {
+    console.log('SYSTEM INFO ROUTE HIT - AUTH VERIFIED');
     const appVersion = require('./package.json').version || '0.0.0';
     return res.status(200).json({
       status: 'ok',
@@ -618,16 +621,17 @@ app.use('*', (req, res) => {
 app.use(errorHandler);
 
 // Start the server
-// Default to 8000 as requested for new deployments; keep override via PORT env var
-const PORT = process.env.PORT || 10000;
+const rawPort = (process.env.PORT || '').toString().trim();
+if (!rawPort) {
+  throw new Error('PORT environment variable is required.');
+}
+const configuredPort = Number(rawPort);
+if (!Number.isInteger(configuredPort) || configuredPort <= 0) {
+  throw new Error(`Invalid PORT value: ${rawPort}`);
+}
 
 // Bind to 0.0.0.0 in development so localhost resolves (IPv4/IPv6) from browsers reliably
 const BIND_HOST = (process.env.BIND_HOST || '0.0.0.0');
-
-// Resilient binding: try PORT and fall back across a small range if the port is in use
-const configuredPort = Number(process.env.PORT || PORT || 10000);
-const MAX_TRIES = 10;
-let attempts = 0;
 
 function onBound(boundPort) {
   if ((process.env.NODE_ENV || 'development') !== 'test') {
@@ -676,37 +680,48 @@ function onBound(boundPort) {
 }
 
 function tryListen(port) {
-  attempts++;
   server.listen(port, BIND_HOST, () => onBound(port));
   server.once('error', (err) => {
-    if (err && err.code === 'EADDRINUSE') {
-      logger.warn(`Port ${port} in use (EADDRINUSE)`);
-      server.removeAllListeners('error');
-      if (attempts < MAX_TRIES) {
-        const next = port + 1;
-        logger.info(`Attempting to bind to port ${next} (try ${attempts + 1}/${MAX_TRIES})`);
-        tryListen(next);
-      } else {
-        logger.error('Exhausted port retry attempts. Continuing in development mode.');
-        if ((process.env.NODE_ENV || 'development') === 'production') {
-          process.exit(1);
-        }
-      }
-    } else {
-      logger.error('Server listen error', err);
-      logger.warn('Continuing to run despite server error (development mode)');
-      // Don't exit in development - just log the error
-      if ((process.env.NODE_ENV || 'development') === 'production') {
-        process.exit(1);
-      }
-    }
+    logger.error('Server listen error', err);
+    process.exit(1);
   });
+}
+
+async function validateSensorDataSchema() {
+  const [tableRows] = await sequelize.query(
+    `SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'sensor_data' LIMIT 1`
+  );
+
+  if (!Array.isArray(tableRows) || tableRows.length === 0) {
+    throw new Error('Schema drift: required table sensor_data is missing.');
+  }
+
+  const [columnRows] = await sequelize.query(
+    `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'sensor_data'`
+  );
+
+  const requiredColumns = ['temperature', 'humidity', 'moisture', 'soil_temperature', 'created_at'];
+  const existingColumns = new Set((Array.isArray(columnRows) ? columnRows : []).map((row) => String(row.column_name || '').toLowerCase()));
+  const missing = requiredColumns.filter((column) => !existingColumns.has(column));
+
+  if (missing.length > 0) {
+    throw new Error(`Schema drift: sensor_data is missing columns: ${missing.join(', ')}`);
+  }
 }
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
   logger.info('SIGTERM received, shutting down gracefully');
   const cleanupTasks = [];
+
+  if (pollerRuntime && typeof pollerRuntime.stopLoop === 'function') {
+    cleanupTasks.push(Promise.resolve().then(() => pollerRuntime.stopLoop()));
+  }
+  if (pollerRuntime && pollerRuntime.server && typeof pollerRuntime.server.close === 'function') {
+    cleanupTasks.push(new Promise((resolve) => {
+      pollerRuntime.server.close(() => resolve());
+    }));
+  }
 
   Promise.all(cleanupTasks).finally(() => {
     server.close(() => {
@@ -723,6 +738,11 @@ process.on('unhandledRejection', (reason, promise) => {
   if ((process.env.NODE_ENV || 'development') === 'production') {
     process.exit(1);
   }
+});
+
+process.on('SIGINT', () => {
+  logger.info('SIGINT received, shutting down gracefully');
+  process.emit('SIGTERM');
 });
 
 // Catch uncaught exceptions
@@ -750,13 +770,14 @@ if ((process.env.NODE_ENV || 'development') !== 'production') {
 
 // Optionally start the sensor poller inline when RUN_POLLER is enabled.
 // This keeps the poller in-process for simple local dev flows and PM2 will manage it when desired.
-if (process.env.RUN_POLLER === 'true' || process.env.RUN_POLLER === '1') {
+if ((process.env.NODE_ENV || 'development') === 'development' && (process.env.RUN_POLLER === 'true' || process.env.RUN_POLLER === '1')) {
   try {
     const poller = require('./services/sensor-poller');
     const internalPort = process.env.POLLER_INTERNAL_PORT ? Number(process.env.POLLER_INTERNAL_PORT) : (process.env.INTERNAL_PORT ? Number(process.env.INTERNAL_PORT) : 3100);
+    let pollerServer = null;
     // start the internal HTTP server for poller metrics
     try {
-      poller.startServer(internalPort);
+      pollerServer = poller.startServer(internalPort);
       logger.info(`Started sensor poller internal server on port ${internalPort}`);
     } catch (e) {
       logger.warn('Sensor poller internal server failed to start:', e && e.message ? e.message : e);
@@ -766,6 +787,10 @@ if (process.env.RUN_POLLER === 'true' || process.env.RUN_POLLER === '1') {
     poller.runLoop().catch((err) => {
       logger.error('Sensor poller loop exited with error:', err && err.message ? err.message : err);
     });
+    pollerRuntime = {
+      server: pollerServer,
+      stopLoop: typeof poller.stopLoop === 'function' ? poller.stopLoop : null,
+    };
     logger.info('Sensor poller started (runLoop)');
   } catch (e) {
     logger.warn('Could not start sensor poller inline:', e && e.message ? e.message : e);
@@ -779,21 +804,32 @@ module.exports.schemaReady = schemaReady;
 
 // Simple server startup for development
 if ((process.env.NODE_ENV || 'development') !== 'test') {
-  connectDB()
-    .then(() => {
+  (async () => {
+    try {
+      await connectDB();
       logger.info('Database connection verified during startup');
-    })
-    .catch((error) => {
+
+      try {
+        await validateSensorDataSchema();
+        logger.info('Schema validation passed for sensor_data table');
+      } catch (schemaError) {
+        logger.error('Schema drift validation failed:', schemaError && schemaError.message ? schemaError.message : schemaError);
+        if ((process.env.NODE_ENV || 'development') === 'production') {
+          process.exit(1);
+          return;
+        }
+      }
+    } catch (error) {
       logger.error('Database connection failed at startup:', error && error.message ? error.message : error);
       if ((process.env.NODE_ENV || 'development') === 'production') {
         process.exit(1);
-      } else {
-        logger.warn('Continuing to start server without database connectivity; routes that require the database may fail until it reconnects.');
+        return;
       }
-    })
-    .finally(() => {
-      tryListen(configuredPort);
-    });
+      logger.warn('Continuing to start server without database connectivity; routes that require the database may fail until it reconnects.');
+    }
+
+    tryListen(configuredPort);
+  })();
 } else {
   // In test mode we avoid calling server.listen() to prevent open handles during Jest runs.
   // Tests should use the exported `app` with Supertest which does not require the server to listen.
