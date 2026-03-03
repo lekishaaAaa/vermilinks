@@ -9,8 +9,8 @@ const router = express.Router();
 
 // @route   GET /api/alerts
 // @desc    Get alerts with pagination and filtering
-// @access  Private
-router.get('/', auth, [
+// @access  Private (admin only)
+router.get('/', [auth, adminOnly], [
   query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100'),
   query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
   query('severity').optional().isIn(['low', 'medium', 'high', 'critical']).withMessage('Invalid severity level'),

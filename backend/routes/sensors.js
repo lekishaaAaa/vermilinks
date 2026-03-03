@@ -7,7 +7,7 @@ const Device = require('../models/Device');
 const SensorSnapshot = require('../models/SensorSnapshot');
 const ActuatorLog = require('../models/ActuatorLog');
 const deviceManager = require('../services/deviceManager');
-const { auth } = require('../middleware/auth');
+const { auth, adminOnly } = require('../middleware/auth');
 const {
   toPlainObject,
   ensureIsoString,
@@ -302,8 +302,8 @@ router.get('/latest', async (req, res) => {
 
 // @route   GET /api/sensors
 // @desc    Get paginated sensor readings (newest first)
-// @access  Public
-router.get('/', [
+// @access  Private (admin only)
+router.get('/', auth, adminOnly, [
   query('limit').optional().isInt({ min: 1, max: 1000 }).withMessage('Limit must be between 1 and 1000'),
   query('since').optional().isISO8601().withMessage('since must be ISO-8601 timestamp'),
   query('device_id').optional().isString().trim().notEmpty().withMessage('device_id must be a non-empty string'),
@@ -442,11 +442,19 @@ router.get('/history', auth, async (req, res) => {
     if (deviceId) {
       where.deviceId = deviceId;
     }
-    if (start && !Number.isNaN(start.getTime())) {
-      where.timestamp = { ...(where.timestamp || {}), [Op.gte]: start };
-    }
-    if (end && !Number.isNaN(end.getTime())) {
-      where.timestamp = { ...(where.timestamp || {}), [Op.lte]: end };
+    const hasValidStart = Boolean(start && !Number.isNaN(start.getTime()));
+    const hasValidEnd = Boolean(end && !Number.isNaN(end.getTime()));
+
+    if (hasValidStart && hasValidEnd) {
+      where.createdAt = { [Op.between]: [start, end] };
+      where.timestamp = { ...(where.timestamp || {}), [Op.gte]: start, [Op.lte]: end };
+    } else {
+      if (hasValidStart) {
+        where.timestamp = { ...(where.timestamp || {}), [Op.gte]: start };
+      }
+      if (hasValidEnd) {
+        where.timestamp = { ...(where.timestamp || {}), [Op.lte]: end };
+      }
     }
 
     const readings = await SensorData.findAll({
