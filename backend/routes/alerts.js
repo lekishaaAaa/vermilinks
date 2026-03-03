@@ -247,6 +247,39 @@ router.patch('/:id', [auth, adminOnly], async (req, res) => {
   }
 });
 
+// @route   PUT /api/alerts/:id/acknowledge
+// @desc    Acknowledge an alert (compatibility endpoint)
+// @access  Private (Admin only)
+router.put('/:id/acknowledge', [auth, adminOnly], async (req, res) => {
+  try {
+    const alert = await Alert.findByPk(req.params.id);
+
+    if (!alert) {
+      return res.status(404).json({
+        success: false,
+        message: 'Alert not found'
+      });
+    }
+
+    alert.status = 'read';
+    alert.acknowledgedBy = req.user.username;
+    alert.acknowledgedAt = new Date();
+    await alert.save();
+
+    return res.json({
+      success: true,
+      message: 'Alert acknowledged successfully',
+      data: alert,
+    });
+  } catch (error) {
+    console.error('Error acknowledging alert:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error acknowledging alert',
+    });
+  }
+});
+
 // @route   GET /api/alerts/stats
 // @desc    Get alert statistics
 // @access  Private

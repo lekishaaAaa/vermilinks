@@ -526,6 +526,25 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
+app.get('/api/system/info', (req, res) => {
+  try {
+    const appVersion = require('./package.json').version || '0.0.0';
+    return res.status(200).json({
+      status: 'ok',
+      uptime: process.uptime(),
+      version: appVersion,
+      environment: process.env.NODE_ENV || 'development',
+    });
+  } catch (e) {
+    return res.status(200).json({
+      status: 'ok',
+      uptime: process.uptime(),
+      version: '0.0.0',
+      environment: process.env.NODE_ENV || 'development',
+    });
+  }
+});
+
 // Lightweight internal ping for debugging connectivity (temporary)
 app.get('/internal/ping', (req, res) => {
   res.status(200).send('pong');
@@ -557,9 +576,7 @@ const devicesRoutes = require('./routes/devices');
 app.use('/api/devices', devicesRoutes);
 
 // API Routes
-app.use('/api/auth', authRoutes);
 app.use('/api/alerts', alertRoutes);
-app.use('/api/settings', settingsRoutes);
 app.use('/api/notifications', notificationRoutes);
 const deviceEventsRoutes = require('./routes/deviceEvents');
 app.use('/api/device-events', deviceEventsRoutes);

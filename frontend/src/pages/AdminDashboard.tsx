@@ -723,14 +723,14 @@ export default function AdminDashboard(): React.ReactElement {
 
   function acknowledgeReminder(id: string) {
     setReminders(prev => prev.map(r => r.id === id ? { ...r, acknowledged: true } : r));
-    fetch(`/api/maintenance/ack/${encodeURIComponent(id)}`, { method: 'POST' }).catch(() => { /* ignore */ });
+    api.post(`/maintenance/ack/${encodeURIComponent(id)}`).catch(() => { /* ignore */ });
   }
 
   function scheduleReminder(id: string) {
     const rem = reminders.find(r => r.id === id);
     const when = prompt(`Schedule maintenance for '${rem?.title}'. Enter date (YYYY-MM-DD) or days from now:`);
     if (!when) return;
-    fetch(`/api/maintenance/schedule/${encodeURIComponent(id)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ when }) }).catch(() => { /* ignore */ });
+    api.post(`/maintenance/schedule/${encodeURIComponent(id)}`, { when }).catch(() => { /* ignore */ });
     alert('Schedule requested (best-effort).');
   }
 

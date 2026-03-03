@@ -410,7 +410,7 @@ export const sensorService = {
     startDate?: string;
     endDate?: string;
   }) =>
-    api.get<PaginatedResponse<SensorData>>('/sensors/data', { params }),
+    api.get<PaginatedResponse<SensorData>>('/sensors', { params }),
   
   getLatestData: async (deviceId?: string): Promise<LatestSnapshot | null> => {
     try {
@@ -446,7 +446,7 @@ export const sensorService = {
     }>>('/sensors/daily', { params }),
   
   submitData: (data: Omit<SensorData, '_id'>) =>
-    api.post<ApiResponse<SensorData>>('/sensors/data', data),
+    api.post<ApiResponse<SensorData>>('/sensors', data),
 };
 
 export const sensorLogService = {

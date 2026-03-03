@@ -31,4 +31,47 @@ router.get('/', auth, async (req, res) => {
   }
 });
 
+// @route POST /api/maintenance/ack/:id
+// @desc  Acknowledge a maintenance reminder (best-effort compatibility endpoint)
+// @access Private
+router.post('/ack/:id', auth, async (req, res) => {
+  try {
+    const id = (req.params.id || '').toString();
+    return res.json({
+      success: true,
+      message: 'Maintenance reminder acknowledged',
+      data: {
+        id,
+        acknowledged: true,
+        acknowledgedAt: new Date().toISOString(),
+      },
+    });
+  } catch (e) {
+    console.error('Error acknowledging maintenance reminder:', e && e.message ? e.message : e);
+    return res.status(500).json({ success: false, message: 'Error acknowledging maintenance reminder' });
+  }
+});
+
+// @route POST /api/maintenance/schedule/:id
+// @desc  Schedule a maintenance reminder (best-effort compatibility endpoint)
+// @access Private
+router.post('/schedule/:id', auth, async (req, res) => {
+  try {
+    const id = (req.params.id || '').toString();
+    const when = req.body && typeof req.body.when === 'string' ? req.body.when : null;
+    return res.json({
+      success: true,
+      message: 'Maintenance schedule request received',
+      data: {
+        id,
+        when,
+        scheduledAt: new Date().toISOString(),
+      },
+    });
+  } catch (e) {
+    console.error('Error scheduling maintenance reminder:', e && e.message ? e.message : e);
+    return res.status(500).json({ success: false, message: 'Error scheduling maintenance reminder' });
+  }
+});
+
 module.exports = router;

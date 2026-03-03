@@ -16,6 +16,30 @@ const DEFAULT_ALERT_RULES = Settings.DEFAULT_ALERT_RULES || {
 
 const truthyValues = new Set(['true', '1', 'yes', 'on', 'enabled']);
 
+const findSettingRecord = async (key) => Settings.findOne({ where: { key } });
+
+const upsertSettingValue = async (key, value) => {
+  const serialized = typeof value === 'string' ? value : JSON.stringify(value);
+  const existing = await findSettingRecord(key);
+  if (existing) {
+    existing.value = serialized;
+    await existing.save();
+    return;
+  }
+  await Settings.create({ key, value: serialized });
+};
+
+const parseSettingValue = (raw, fallback) => {
+  if (!raw || typeof raw.value !== 'string') {
+    return fallback;
+  }
+  try {
+    return JSON.parse(raw.value);
+  } catch {
+    return fallback;
+  }
+};
+
 const parseBoolean = (value, fallback) => {
   if (value === undefined || value === null) return fallback;
   if (typeof value === 'boolean') return value;
@@ -76,6 +100,35 @@ router.get('/alerts', auth, async (req, res) => {
   } catch (error) {
     console.error('Error fetching alert configuration:', error);
     res.status(500).json({ success: false, message: 'Failed to load alert configuration' });
+  }
+});
+
+// @route   PUT /api/settings
+// @desc    Update settings with partial payload
+// @access  Private (Admin only)
+router.put('/', [auth, adminOnly], async (req, res) => {
+  try {
+    const payload = req.body && typeof req.body === 'object' ? req.body : {};
+    const updatableKeys = ['thresholds', 'alerts', 'sms', 'monitoring', 'vermitea', 'system'];
+
+    for (const key of updatableKeys) {
+      if (Object.prototype.hasOwnProperty.call(payload, key) && payload[key] && typeof payload[key] === 'object') {
+        await upsertSettingValue(key, payload[key]);
+      }
+    }
+
+    const settings = await Settings.getSettings();
+    res.json({
+      success: true,
+      message: 'Settings updated successfully',
+      data: settings,
+    });
+  } catch (error) {
+    console.error('Error updating settings:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error updating settings',
+    });
   }
 });
 
@@ -320,6 +373,164 @@ router.put('/alerts', [auth, adminOnly], async (req, res) => {
   } catch (error) {
     console.error('Error updating alert configuration:', error);
     res.status(500).json({ success: false, message: 'Failed to update alert configuration' });
+  }
+});
+
+// @route   PUT /api/settings/notifications
+// @desc    Compatibility endpoint for notification preferences
+// @access  Private (Admin only)
+router.put('/notifications', [auth, adminOnly], async (req, res) => {
+  try {
+    const payload = req.body && typeof req.body === 'object' ? req.body : {};
+    const nextNotifications = {
+      email: parseBoolean(payload.email, false),
+      sms: parseBoolean(payload.sms, false),
+      criticalOnly: parseBoolean(payload.criticalOnly, false),
+      emailAddress: typeof payload.emailAddress === 'string' ? payload.emailAddress.trim() : '',
+    };
+
+    await upsertSettingValue('notifications', nextNotifications);
+
+    const currentAlertsRecord = await findSettingRecord('alerts');
+    const alertsConfig = {
+      ...DEFAULT_ALERT_RULES,
+      ...(parseSettingValue(currentAlertsRecord, DEFAULT_ALERT_RULES) || {}),
+      emailNotifications: Boolean(nextNotifications.email),
+    };
+    await upsertSettingValue('alerts', alertsConfig);
+
+    res.json({
+      success: true,
+      message: 'Notification settings updated successfully',
+      data: nextNotifications,
+    });
+  } catch (error) {
+    console.error('Error updating notification settings:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error updating notification settings',
+    });
+  }
+});
+
+// @route   POST /api/settings/phone-numbers
+// @desc    Compatibility endpoint for adding SMS phone numbers
+// @access  Private (Admin only)
+router.post('/phone-numbers', [auth, adminOnly], [
+  body('name').notEmpty().withMessage('Name is required'),
+  body('number').matches(/^\+[1-9]\d{1,14}$/).withMessage('Phone number must be in international format (+1234567890)')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array(),
+      });
+    }
+
+    const smsRecord = await findSettingRecord('sms');
+    const smsConfig = parseSettingValue(smsRecord, { enabled: false, rateLimitMinutes: 15, phoneNumbers: [] }) || { enabled: false, rateLimitMinutes: 15, phoneNumbers: [] };
+    const phoneNumbers = Array.isArray(smsConfig.phoneNumbers) ? smsConfig.phoneNumbers : [];
+
+    if (phoneNumbers.some((phone) => phone && phone.number === req.body.number)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Phone number already exists',
+      });
+    }
+
+    const entry = {
+      id: `phone_${Date.now()}`,
+      name: req.body.name,
+      number: req.body.number,
+      createdAt: new Date().toISOString(),
+    };
+
+    const nextSmsConfig = {
+      ...smsConfig,
+      phoneNumbers: [...phoneNumbers, entry],
+    };
+
+    await upsertSettingValue('sms', nextSmsConfig);
+
+    return res.status(201).json({
+      success: true,
+      message: 'Phone number added successfully',
+      data: nextSmsConfig.phoneNumbers,
+    });
+  } catch (error) {
+    console.error('Error adding compatibility phone number:', error);
+    return res.status(500).json({ success: false, message: 'Error adding phone number' });
+  }
+});
+
+// @route   DELETE /api/settings/phone-numbers/:phoneId
+// @desc    Compatibility endpoint for removing SMS phone numbers
+// @access  Private (Admin only)
+router.delete('/phone-numbers/:phoneId', [auth, adminOnly], async (req, res) => {
+  try {
+    const smsRecord = await findSettingRecord('sms');
+    const smsConfig = parseSettingValue(smsRecord, { enabled: false, rateLimitMinutes: 15, phoneNumbers: [] }) || { enabled: false, rateLimitMinutes: 15, phoneNumbers: [] };
+    const phoneNumbers = Array.isArray(smsConfig.phoneNumbers) ? smsConfig.phoneNumbers : [];
+
+    const nextPhoneNumbers = phoneNumbers.filter((phone) => {
+      const id = phone && (phone.id || phone._id);
+      return String(id) !== String(req.params.phoneId);
+    });
+
+    if (nextPhoneNumbers.length === phoneNumbers.length) {
+      return res.status(404).json({ success: false, message: 'Phone number not found' });
+    }
+
+    const nextSmsConfig = {
+      ...smsConfig,
+      phoneNumbers: nextPhoneNumbers,
+    };
+    await upsertSettingValue('sms', nextSmsConfig);
+
+    return res.json({
+      success: true,
+      message: 'Phone number removed successfully',
+      data: nextSmsConfig.phoneNumbers,
+    });
+  } catch (error) {
+    console.error('Error removing compatibility phone number:', error);
+    return res.status(500).json({ success: false, message: 'Error removing phone number' });
+  }
+});
+
+// @route   POST /api/settings/test-sms
+// @desc    Compatibility endpoint for test SMS requests
+// @access  Private (Admin only)
+router.post('/test-sms', [auth, adminOnly], [
+  body('phoneNumber').optional().isString().isLength({ min: 1 }).withMessage('phoneNumber is required when provided'),
+  body('message').optional().isString().isLength({ min: 1, max: 500 }).withMessage('message must be between 1 and 500 characters')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array(),
+      });
+    }
+
+    const { phoneNumber = null, message = 'BeanToBin test SMS' } = req.body || {};
+
+    return res.json({
+      success: true,
+      message: 'Test SMS request accepted',
+      data: {
+        phoneNumber,
+        message,
+      },
+    });
+  } catch (error) {
+    console.error('Error handling test SMS request:', error);
+    return res.status(500).json({ success: false, message: 'Error handling test SMS request' });
   }
 });
 
