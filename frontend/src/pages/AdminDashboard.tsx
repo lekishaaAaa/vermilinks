@@ -1090,43 +1090,45 @@ export default function AdminDashboard(): React.ReactElement {
     }, []);
 
     return createPortal(
-      <HeaderFrame
-        className="admin-fixed"
-        titleSuffix="Admin"
-        badgeLabel="Admin Dashboard"
-        badgeTone="emerald"
-        contextTag={(
-          <div className={`hidden sm:flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${hasLiveTelemetry
-            ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
-            : 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-200'}`}>
-            <span className={`inline-flex h-2 w-2 rounded-full ${hasLiveTelemetry ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
-            {hasLiveTelemetry ? 'Sensors Online' : 'Awaiting Sensors'}
-          </div>
-        )}
-        rightSlot={(
-          <div className="relative z-[2147483001] flex w-full items-center justify-end gap-3 sm:gap-4 pointer-events-auto">
-            <div className="hidden md:flex items-center gap-2 rounded-full border border-emerald-200 bg-white px-3 py-1 text-xs font-semibold text-emerald-700 shadow-sm dark:border-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200">
-              <span className="font-medium">Latency:</span>
-              <span>{systemStatus.apiLatency}ms</span>
+      <div className="fixed inset-x-0 top-0 pointer-events-auto" style={{ zIndex: 2147483647 }}>
+        <HeaderFrame
+          className="admin-fixed"
+          titleSuffix="Admin"
+          badgeLabel="Admin Dashboard"
+          badgeTone="emerald"
+          contextTag={(
+            <div className={`hidden sm:flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${hasLiveTelemetry
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
+              : 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-200'}`}>
+              <span className={`inline-flex h-2 w-2 rounded-full ${hasLiveTelemetry ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+              {hasLiveTelemetry ? 'Sensors Online' : 'Awaiting Sensors'}
             </div>
-            <div className="hidden md:flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200">
-              <span className="h-2 w-2 rounded-full bg-emerald-500" />
-              Realtime control active
+          )}
+          rightSlot={(
+            <div className="relative z-[2147483001] flex w-full items-center justify-end gap-3 sm:gap-4 pointer-events-auto">
+              <div className="hidden md:flex items-center gap-2 rounded-full border border-emerald-200 bg-white px-3 py-1 text-xs font-semibold text-emerald-700 shadow-sm dark:border-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200">
+                <span className="font-medium">Latency:</span>
+                <span>{systemStatus.apiLatency}ms</span>
+              </div>
+              <div className="hidden md:flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200">
+                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                Realtime control active
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowLogoutConfirm(true)}
+                className="rounded-lg border border-coffee-200 bg-white px-3 py-2 text-sm font-medium text-coffee-700 shadow-sm transition-colors hover:border-coffee-300 hover:text-coffee-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                style={{ pointerEvents: 'auto' }}
+              >
+                Logout
+              </button>
+              <div className="rounded-lg bg-white/90 p-1 shadow-sm dark:bg-slate-900/90" style={{ pointerEvents: 'auto' }}>
+                <DarkModeToggle />
+              </div>
             </div>
-            <button
-              type="button"
-              onClick={() => setShowLogoutConfirm(true)}
-              className="rounded-lg border border-coffee-200 bg-white px-3 py-2 text-sm font-medium text-coffee-700 shadow-sm transition-colors hover:border-coffee-300 hover:text-coffee-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-              style={{ pointerEvents: 'auto' }}
-            >
-              Logout
-            </button>
-            <div className="rounded-lg bg-white/90 p-1 shadow-sm dark:bg-slate-900/90" style={{ pointerEvents: 'auto' }}>
-              <DarkModeToggle />
-            </div>
-          </div>
-        )}
-      />,
+          )}
+        />
+      </div>,
       document.body
     );
   };
@@ -1184,8 +1186,8 @@ export default function AdminDashboard(): React.ReactElement {
   return (
     <div className="min-h-screen pt-24 p-6 bg-gray-50 dark:bg-gray-900">
       {searchOpen && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center p-6">
-          <div className="w-full max-w-3xl bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700">
+        <div className="fixed inset-0 z-50 flex items-start justify-center p-6 pointer-events-none">
+          <div className="w-full max-w-3xl bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 pointer-events-auto">
             <div className="p-4">
               <div className="flex items-center gap-3">
                 <input ref={searchInputRef} value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search alerts, sensors... (Press Esc to close)" className="w-full px-4 py-3 rounded-lg border text-sm bg-gray-50 dark:bg-gray-900/60" />

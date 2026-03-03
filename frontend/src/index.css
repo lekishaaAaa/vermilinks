@@ -156,6 +156,17 @@ header.admin-fixed {
   pointer-events: auto !important;
 }
 
+/* Hardening for portal-mounted admin header controls: keep header in its own
+   stacking context and explicitly allow interaction targets. */
+body.has-admin-header header.admin-fixed {
+  isolation: isolate;
+}
+
+body.has-admin-header header.admin-fixed a,
+body.has-admin-header header.admin-fixed button {
+  pointer-events: auto !important;
+}
+
 /* Custom component styles */
 @layer components {
   .btn {
