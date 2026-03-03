@@ -1144,13 +1144,10 @@ export default function AdminDashboard(): React.ReactElement {
     }
   }, [activeTab, location.search]);
 
-  const handleLogoutConfirm = useCallback(async () => {
+  const handleLogoutConfirm = useCallback(() => {
     setShowLogoutConfirm(false);
-    try {
-      await logout();
-    } finally {
-      navigate('/admin/login', { replace: true });
-    }
+    void logout();
+    navigate('/admin/login', { replace: true });
   }, [logout, navigate]);
 
   const handleLogoutCancel = useCallback(() => {
@@ -1237,18 +1234,6 @@ export default function AdminDashboard(): React.ReactElement {
               <div className="flex items-center gap-2">
                 <span className={`h-2 w-2 rounded-full ${devicesOnline > 0 ? 'bg-emerald-500' : 'bg-amber-500'}`} />
                 ESP32 {devicesOnline > 0 ? 'active' : 'awaiting heartbeat'}
-              </div>
-            </div>
-            <div className="flex items-center gap-2 self-start sm:self-end">
-              <button
-                type="button"
-                onClick={() => setShowLogoutConfirm(true)}
-                className="rounded-lg border border-coffee-200 bg-white px-3 py-2 text-sm font-medium text-coffee-700 shadow-sm transition-colors hover:border-coffee-300 hover:text-coffee-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-              >
-                Logout
-              </button>
-              <div className="rounded-lg border border-gray-200 bg-white/90 p-1 shadow-sm dark:border-gray-700 dark:bg-slate-900/90">
-                <DarkModeToggle />
               </div>
             </div>
             <Link
