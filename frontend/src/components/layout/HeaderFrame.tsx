@@ -26,7 +26,7 @@ export const HeaderFrame: React.FC<HeaderFrameProps> = ({
   contextTag,
   rightSlot,
 }) => {
-  const headerClassNames = ['site-header'];
+  const headerClassNames = ['site-header', 'relative', 'z-[2147483647]', 'pointer-events-auto'];
   if (className) headerClassNames.push(className);
 
   // Centralize the shared header layout so both dashboards stay visually in sync.
@@ -34,7 +34,7 @@ export const HeaderFrame: React.FC<HeaderFrameProps> = ({
     <header className={headerClassNames.join(' ')} role="banner">
       <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-5 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:gap-8 lg:px-8">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-6">
-          <Link to="/" className="group relative inline-flex shrink-0">
+          <Link to="/" className="group relative z-[2147483647] inline-flex shrink-0 pointer-events-auto">
             <div className="letran-coffee-gradient rounded-xl p-3 shadow-sm transition-transform duration-200 group-hover:-translate-y-1 group-hover:shadow-md">
               <Leaf className="h-6 w-6 text-white" />
             </div>
@@ -58,7 +58,7 @@ export const HeaderFrame: React.FC<HeaderFrameProps> = ({
         </div>
 
         {/* Right slot stays flexible so each role can surface its own controls without breaking structure. */}
-        <div className="flex w-full flex-col gap-4 sm:flex-row sm:items-center sm:justify-end">
+        <div className="relative z-[2147483647] pointer-events-auto flex w-full flex-col gap-4 sm:flex-row sm:items-center sm:justify-end">
           {rightSlot}
         </div>
       </div>

@@ -19,6 +19,13 @@ const OnboardingTour: React.FC<Props> = ({ steps, storageKey = 'onboarding_seen'
   const location = useLocation();
 
   useEffect(() => {
+    if (location.pathname !== '/') {
+      return;
+    }
+
+    let intro: any;
+    let startTimer: ReturnType<typeof setTimeout> | null = null;
+
     // Add keyboard shortcut to manually start tour for testing
     const handleKeyPress = (event: KeyboardEvent) => {
       if (event.ctrlKey && event.key === 't') {
@@ -30,13 +37,6 @@ const OnboardingTour: React.FC<Props> = ({ steps, storageKey = 'onboarding_seen'
 
     document.addEventListener('keydown', handleKeyPress);
 
-    // Only show tour on the home page
-    if (location.pathname !== '/') {
-      console.log('Tour: Not on homepage, skipping tour');
-      return;
-    }
-
-    let intro: any;
     try {
       const seen = localStorage.getItem(storageKey);
       console.log('Tour: localStorage check for', storageKey, ':', seen);
@@ -70,7 +70,7 @@ const OnboardingTour: React.FC<Props> = ({ steps, storageKey = 'onboarding_seen'
         });
         console.log('Tour: About to start intro.js');
         // Add a longer delay to ensure DOM is fully ready
-        setTimeout(() => {
+        startTimer = setTimeout(() => {
           // Check if target elements exist before starting
           const navElement = document.querySelector('nav');
           const dashboardElement = document.querySelector('#dashboard-card');
@@ -104,6 +104,9 @@ const OnboardingTour: React.FC<Props> = ({ steps, storageKey = 'onboarding_seen'
 
     return () => {
       document.removeEventListener('keydown', handleKeyPress);
+      if (startTimer) {
+        clearTimeout(startTimer);
+      }
       try {
         if (intro && intro.exit) {
           console.log('Tour: Cleaning up intro instance');
