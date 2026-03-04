@@ -112,6 +112,10 @@ async function runLoop() {
   }
 }
 
+function stopLoop() {
+  running = false;
+}
+
 // Retry helper: attempt pollOnce with exponential backoff until success or attempts exhausted
 async function retryPollWithBackoff(maxAttempts = 5, baseMs = 1000) {
   let attempt = 0;
@@ -151,4 +155,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { normalize, pollOnce, runLoop, startServer, retryPollWithBackoff };
+module.exports = { normalize, pollOnce, runLoop, stopLoop, startServer, retryPollWithBackoff };

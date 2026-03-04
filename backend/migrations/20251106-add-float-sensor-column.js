@@ -5,7 +5,7 @@ const { DataTypes } = require('sequelize');
 module.exports = {
   up: async (sequelize) => {
     const queryInterface = sequelize.getQueryInterface();
-    const table = 'sensordata';
+    const table = 'sensor_data';
 
     try {
       await queryInterface.addColumn(table, 'float_sensor', {
@@ -21,6 +21,6 @@ module.exports = {
 
   down: async (sequelize) => {
     const queryInterface = sequelize.getQueryInterface();
-    await queryInterface.removeColumn('sensordata', 'float_sensor');
+    await queryInterface.removeColumn('sensor_data', 'float_sensor');
   },
 };

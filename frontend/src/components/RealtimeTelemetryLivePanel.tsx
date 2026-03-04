@@ -11,7 +11,7 @@ interface MetricConfig {
 }
 
 const METRICS: MetricConfig[] = [
-  { key: 'temperature', label: 'Temperature', unit: '°C', precision: 1 },
+  { key: 'temperature', label: 'External Temperature', unit: '°C', precision: 1 },
   { key: 'humidity', label: 'Humidity', unit: '%', precision: 1 },
   { key: 'moisture', label: 'Soil Moisture', unit: '%', precision: 1 },
   { key: 'soilTemperature', label: 'Soil Temperature', unit: '°C', precision: 1 },

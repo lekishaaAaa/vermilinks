@@ -19,6 +19,7 @@ const TOPICS = {
 };
 
 let client = null;
+let lastConnectionState = 'disconnected';
 
 function safeJsonParse(payload) {
   if (!payload) return null;
@@ -75,15 +76,41 @@ function normalizeFloatState(value) {
   if (typeof value === 'string') {
     const normalized = value.trim().toUpperCase();
     if (!normalized) return null;
+    if (['LOW', 'EMPTY', 'MIN', 'L'].includes(normalized)) return 'LOW';
+    if (['FULL', 'HIGH', 'MAX', 'F'].includes(normalized)) return 'FULL';
+    if (['NORMAL', 'OK', 'MID', 'MEDIUM', 'N'].includes(normalized)) return 'NORMAL';
     return normalized;
   }
   if (typeof value === 'number') {
-    return value <= 0 ? 'LOW' : 'HIGH';
+    if (!Number.isFinite(value)) return null;
+    if (value <= 0) return 'LOW';
+    if (value >= 2) return 'FULL';
+    return 'NORMAL';
   }
   if (typeof value === 'boolean') {
-    return value ? 'HIGH' : 'LOW';
+    return value ? 'NORMAL' : 'LOW';
   }
   return null;
+}
+
+async function createReservoirLowAlert(deviceId, sensorData) {
+  const where = { type: 'water_reservoir_low', deviceId: deviceId || null, isResolved: false };
+  const recent = await Alert.findOne({ where, order: [['createdAt', 'DESC']] }).catch(() => null);
+  if (recent && recent.createdAt) {
+    const createdAt = new Date(recent.createdAt).getTime();
+    if (Number.isFinite(createdAt) && (Date.now() - createdAt) < 5 * 60 * 1000) {
+      return recent;
+    }
+  }
+  return Alert.createAlert({
+    type: 'water_reservoir_low',
+    severity: 'high',
+    message: 'Layer 4 water reservoir is low. Please refill the reservoir manually.',
+    deviceId: deviceId || null,
+    sensorData: sensorData || null,
+    status: 'new',
+    createdAt: new Date(),
+  });
 }
 
 function toNullableNumber(value) {
@@ -143,7 +170,7 @@ async function handleStateMessage(payload) {
     logger.warn('iotMqtt: invalid state payload ignored');
     return;
   }
-  const rawDeviceId = payload.deviceId;
+  const rawDeviceId = payload.deviceId || payload.device_id;
   if (typeof rawDeviceId !== 'string' || rawDeviceId.trim().length === 0) {
     logger.warn('iotMqtt: state payload rejected (missing deviceId)');
     return;
@@ -152,14 +179,18 @@ async function handleStateMessage(payload) {
   const now = new Date();
   const deviceId = rawDeviceId.trim();
   const floatState = normalizeFloatState(payload.float) || 'UNKNOWN';
+  const isReservoirLow = floatState === 'LOW';
+  const isReservoirFull = floatState === 'FULL';
+  const requestedPumpState = Boolean(payload.pump);
+  const enforcedPumpState = (isReservoirLow || isReservoirFull) ? false : requestedPumpState;
   const statePayload = {
-    pump: payload.pump,
+    pump: enforcedPumpState,
     valve1: payload.valve1,
     valve2: payload.valve2,
     valve3: payload.valve3,
     float: floatState,
     requestId: payload.requestId || null,
-    source: payload.source || 'applied',
+    source: (isReservoirLow || isReservoirFull) && requestedPumpState ? 'safety_override' : (payload.source || 'applied'),
     ts: payload.ts ? new Date(payload.ts * 1000).toISOString() : now.toISOString(),
     online: true,
     lastSeen: now.toISOString(),
@@ -261,13 +292,27 @@ async function handleStateMessage(payload) {
   });
 
   const floatIsLow = floatState === 'LOW';
-  const floatNumeric = floatIsLow ? 0 : 1;
+  const floatNumeric = floatState === 'LOW' ? 0 : (floatState === 'FULL' ? 2 : 1);
   await checkThresholds({
     deviceId,
     floatSensor: floatNumeric,
+    waterLevel: floatNumeric,
     pump: statePayload.pump,
     timestamp: now,
   });
+
+  if (isReservoirLow) {
+    try {
+      const reservoirAlert = await createReservoirLowAlert(deviceId, {
+        floatSensor: floatNumeric,
+        pump: false,
+        floatState,
+      });
+      emitRealtime(REALTIME_EVENTS.ALERT_NEW, reservoirAlert);
+    } catch (alertErr) {
+      logger.warn('iotMqtt: water_reservoir_low alert create failed', alertErr && alertErr.message ? alertErr.message : alertErr);
+    }
+  }
 
   if (floatIsLow && priorPump) {
     try {
@@ -319,8 +364,9 @@ async function handleAckMessage(payload) {
     },
   );
 
-  const ackDeviceId = (typeof payload.deviceId === 'string' && payload.deviceId.trim())
-    ? payload.deviceId.trim()
+  const ackPayloadDeviceId = payload.deviceId || payload.device_id;
+  const ackDeviceId = (typeof ackPayloadDeviceId === 'string' && ackPayloadDeviceId.trim())
+    ? ackPayloadDeviceId.trim()
     : 'esp32a';
 
   emitRealtime(REALTIME_EVENTS.ACTUATOR_UPDATE, {
@@ -341,7 +387,7 @@ async function handleStatusMessage(payload) {
     return;
   }
 
-  const rawDeviceId = payload.deviceId;
+  const rawDeviceId = payload.deviceId || payload.device_id;
   if (typeof rawDeviceId !== 'string' || rawDeviceId.trim().length === 0) {
     return;
   }
@@ -438,6 +484,8 @@ async function handleTelemetryMessage(payload) {
     humidity: telemetry.humidity,
     moisture: telemetry.moisture,
     soilTemperature: telemetry.soilTemperature,
+    waterLevel: telemetry.waterLevel,
+    floatSensor: telemetry.floatSensor,
     signalStrength: telemetry.signalStrength,
     timestamp,
   });
@@ -455,6 +503,8 @@ async function handleTelemetryMessage(payload) {
       humidity: telemetry.humidity,
       moisture: telemetry.moisture,
       soilTemperature: telemetry.soilTemperature,
+      waterLevel: telemetry.waterLevel,
+      floatSensor: telemetry.floatSensor,
       signalStrength: telemetry.signalStrength,
     },
     origin: 'mqtt',
@@ -469,20 +519,30 @@ function buildTelemetryRecord(payload) {
     return null;
   }
 
-  const rawDeviceId = payload.deviceId;
+  const normalizedPayload = {
+    ...payload,
+    device_id: payload.device_id ?? payload.deviceId,
+    timestamp: payload.timestamp ?? payload.ts ?? payload.time,
+    soil_moisture: payload.soil_moisture ?? payload.soilMoisture ?? payload.moisture ?? payload.soil,
+    soil_temperature: payload.soil_temperature ?? payload.soilTemp ?? payload.soilTemperature ?? payload.waterTempC,
+  };
+
+  const rawDeviceId = normalizedPayload.device_id;
   if (typeof rawDeviceId !== 'string' || rawDeviceId.trim().length === 0) {
     return null;
   }
 
   const now = new Date();
-  const timestamp = resolveTelemetryTimestamp(payload, now);
+  const timestamp = resolveTelemetryTimestamp(normalizedPayload, now);
   return {
     deviceId: rawDeviceId.trim(),
-    temperature: toNullableNumber(payload.temperature ?? payload.tempC ?? payload.temp),
-    humidity: toNullableNumber(payload.humidity),
-    moisture: toNullableNumber(payload.soilMoisture ?? payload.soil ?? payload.moisture),
-    soilTemperature: toNullableNumber(payload.soilTemp ?? payload.soilTemperature ?? payload.waterTempC),
-    signalStrength: toNullableNumber(payload.signalStrength ?? payload.rssi),
+    temperature: toNullableNumber(normalizedPayload.temperature ?? normalizedPayload.tempC ?? normalizedPayload.temp),
+    humidity: toNullableNumber(normalizedPayload.humidity),
+    moisture: toNullableNumber(normalizedPayload.soil_moisture),
+    soilTemperature: toNullableNumber(normalizedPayload.soil_temperature),
+    waterLevel: toNullableNumber(normalizedPayload.water_level ?? normalizedPayload.waterLevel ?? normalizedPayload.float_state ?? normalizedPayload.floatSensor),
+    floatSensor: toNullableNumber(normalizedPayload.float_state ?? normalizedPayload.floatSensor ?? normalizedPayload.float),
+    signalStrength: toNullableNumber(normalizedPayload.signalStrength ?? normalizedPayload.rssi),
     timestamp,
     source: 'mqtt',
     rawPayload: payload,
@@ -509,6 +569,7 @@ function startIotMqtt() {
   });
 
   client.on('connect', () => {
+    lastConnectionState = 'connected';
     logger.info('iotMqtt connected', { broker: BROKER });
     client.subscribe([
       TOPICS.state,
@@ -574,10 +635,12 @@ function startIotMqtt() {
   });
 
   client.on('error', (error) => {
+    lastConnectionState = 'error';
     logger.warn('iotMqtt error', error && error.message ? error.message : error);
   });
 
   client.on('close', () => {
+    lastConnectionState = 'disconnected';
     logger.info('iotMqtt connection closed');
   });
 
@@ -592,9 +655,18 @@ function publishCommand(commandPayload) {
   client.publish(TOPICS.command, message, { qos: 1, retain: false });
 }
 
+function getConnectionStatus() {
+  return {
+    broker: BROKER || null,
+    connected: Boolean(client && client.connected),
+    state: Boolean(client && client.connected) ? 'connected' : lastConnectionState,
+  };
+}
+
 module.exports = {
   startIotMqtt,
   publishCommand,
+  getConnectionStatus,
   __testHooks: {
     buildTelemetryRecord,
     handleTelemetryMessage,

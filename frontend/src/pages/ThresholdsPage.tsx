@@ -95,7 +95,7 @@ export default function ThresholdsPage() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <h3 className="text-md font-medium text-gray-700 dark:text-gray-200 mb-3">Temperature (°C)</h3>
+              <h3 className="text-md font-medium text-gray-700 dark:text-gray-200 mb-3">External Temperature (°C)</h3>
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <label className="text-sm w-16">Warning:</label>

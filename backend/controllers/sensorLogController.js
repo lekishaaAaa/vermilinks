@@ -2,6 +2,8 @@ const { Op, literal } = require('sequelize');
 const SensorLog = require('../models/SensorLog');
 const sensorLogService = require('../services/sensorLogService');
 
+const DEVICE_METRIC_DB_KEYS = ['uptime', 'ts', 'online', 'signalStrength', 'signal_strength', 'rssi'];
+
 const getLikeOperator = () => {
   try {
     const dialect = SensorLog.sequelize.getDialect();
@@ -54,7 +56,14 @@ exports.list = async (req, res) => {
 
   const sensorName = req.query.sensor ? req.query.sensor.toString().trim() : '';
   if (sensorName) {
-    where.sensorName = sensorName;
+    where.sensorName = sensorLogService.normalizeKey(sensorName);
+  }
+
+  const requestedCategory = req.query.category ? req.query.category.toString().trim().toLowerCase() : 'environmental';
+  if (requestedCategory === 'device' || requestedCategory === 'device_metrics' || requestedCategory === 'device-metrics') {
+    where.sensorName = { [Op.in]: DEVICE_METRIC_DB_KEYS };
+  } else if (requestedCategory !== 'all') {
+    where.sensorName = { [Op.notIn]: DEVICE_METRIC_DB_KEYS };
   }
 
   const origin = req.query.origin ? req.query.origin.toString().trim() : '';
@@ -106,10 +115,13 @@ exports.list = async (req, res) => {
 
     const items = rows.map((row) => {
       const plain = typeof row.get === 'function' ? row.get({ plain: true }) : row;
+      const normalizedSensorName = sensorLogService.normalizeKey(plain.sensorName) || plain.sensorName;
+      const category = sensorLogService.classifySensorCategory(normalizedSensorName);
       return {
         id: plain.id,
         deviceId: plain.deviceId,
-        sensorName: plain.sensorName,
+        sensorName: normalizedSensorName,
+        category,
         value: plain.value,
         unit: plain.unit,
         origin: plain.origin,
@@ -132,6 +144,7 @@ exports.list = async (req, res) => {
       },
       meta: {
         sensors: Object.keys(sensorLogService.SENSOR_UNITS),
+        categories: ['Environmental Sensors', 'Device Metrics'],
       },
     });
   } catch (error) {
@@ -261,5 +274,32 @@ exports.remove = async (req, res) => {
     return res.json({ success: true, data: { deleted: 1, id: parsedId } });
   } catch (error) {
     return res.status(500).json({ success: false, message: 'Unable to delete sensor log', error: error && error.message ? error.message : error });
+  }
+};
+
+exports.bulkRemove = async (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
+  const normalizedIds = ids
+    .map((id) => Number.parseInt(id, 10))
+    .filter((id) => Number.isFinite(id) && id > 0);
+
+  if (!normalizedIds.length) {
+    return res.status(400).json({ success: false, message: 'Provide a non-empty ids array.' });
+  }
+
+  try {
+    const deleted = await SensorLog.destroy({ where: { id: { [Op.in]: normalizedIds } } });
+    return res.json({ success: true, data: { deleted, ids: normalizedIds } });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Unable to bulk delete sensor logs', error: error && error.message ? error.message : error });
+  }
+};
+
+exports.removeAll = async (req, res) => {
+  try {
+    const deleted = await SensorLog.destroy({ where: {}, truncate: false });
+    return res.json({ success: true, data: { deleted } });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Unable to delete all sensor logs', error: error && error.message ? error.message : error });
   }
 };

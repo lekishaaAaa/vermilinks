@@ -45,24 +45,25 @@ CREATE TABLE IF NOT EXISTS public.devices (
 );
 
 -- Time-series sensor readings
-CREATE TABLE IF NOT EXISTS public.sensordata (
+CREATE TABLE IF NOT EXISTS public.sensor_data (
   id               BIGSERIAL PRIMARY KEY,
-  deviceId         VARCHAR(255) NOT NULL,
+  device_id        VARCHAR(255) NOT NULL,
   temperature      DOUBLE PRECISION,
   humidity         DOUBLE PRECISION,
   moisture         DOUBLE PRECISION,
+  soil_temperature DOUBLE PRECISION,
   ph               DOUBLE PRECISION,
   ec               DOUBLE PRECISION,
   nitrogen         DOUBLE PRECISION,
   phosphorus       DOUBLE PRECISION,
   potassium        DOUBLE PRECISION,
-  waterLevel       INTEGER,
-  batteryLevel     DOUBLE PRECISION,
-  signalStrength   DOUBLE PRECISION,
-  isOfflineData    BOOLEAN NOT NULL DEFAULT FALSE,
-  timestamp        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  CONSTRAINT fk_sensordata_device FOREIGN KEY (deviceId)
-    REFERENCES public.devices(deviceId)
+  water_level      INTEGER,
+  battery_level    DOUBLE PRECISION,
+  signal_strength  DOUBLE PRECISION,
+  is_offline_data  BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT fk_sensor_data_device FOREIGN KEY (device_id)
+    REFERENCES public.devices(deviceid)
     ON UPDATE CASCADE ON DELETE SET NULL
 );
 
@@ -112,11 +113,11 @@ CREATE TABLE IF NOT EXISTS public.actuator_logs (
 );
 
 -- Helpful indexes for query performance
-CREATE INDEX IF NOT EXISTS idx_sensordata_device_ts
-  ON public.sensordata (deviceId, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_sensor_data_device_created_at
+  ON public.sensor_data (device_id, created_at DESC);
 
-CREATE INDEX IF NOT EXISTS idx_sensordata_timestamp
-  ON public.sensordata (timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_sensor_data_created_at
+  ON public.sensor_data (created_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_alerts_device_status
   ON public.alerts (deviceId, status, createdAt DESC);

@@ -379,6 +379,41 @@ const checkThresholds = async (sensorData, ioInstance) => {
       });
     };
 
+    const outOfRangeIssues = [];
+    const validateRange = (metricKey, label, value, min, max, unit = '') => {
+      if (typeof value !== 'number' || Number.isNaN(value)) {
+        return;
+      }
+      if (value < min || value > max) {
+        outOfRangeIssues.push({ metricKey, label, value, min, max, unit });
+      }
+    };
+
+    validateRange('temperature', 'Temperature', plainSensor.temperature, 15, 35, '°C');
+    validateRange('humidity', 'Humidity', plainSensor.humidity, 50, 90, '%');
+    validateRange('moisture', 'Soil Moisture', plainSensor.moisture, 300, 800, '');
+    validateRange('soilTemperature', 'Soil Temperature', plainSensor.soilTemperature, 18, 32, '°C');
+
+    if (outOfRangeIssues.length > 0) {
+      const summary = outOfRangeIssues
+        .map((issue) => `${issue.label}=${issue.value}${issue.unit}`)
+        .join(', ');
+      pushAlert({
+        type: 'sensor_out_of_range',
+        severity: 'high',
+        message: `Sensor value out of expected range (${summary})`,
+        threshold: {
+          ranges: outOfRangeIssues.map((issue) => ({
+            metric: issue.metricKey,
+            min: issue.min,
+            max: issue.max,
+            value: issue.value,
+          })),
+          operator: 'outside',
+        },
+      });
+    }
+
     const temperatureThresholds = thresholds.temperature || {};
     if (typeof plainSensor.temperature === 'number') {
       const { warning, critical, lowWarning, lowCritical } = temperatureThresholds;

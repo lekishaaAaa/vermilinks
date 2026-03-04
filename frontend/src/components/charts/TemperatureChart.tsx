@@ -43,7 +43,7 @@ const TemperatureChart: React.FC<TemperatureChartProps> = ({
         <div className={`${isDark ? 'bg-gray-800 text-gray-100 border-gray-700' : 'bg-white text-coffee-900 border-coffee-200'} p-4 rounded-lg shadow-lg border`}>
           <p className="font-medium">{formatTooltipTime(label)}</p>
           <p>
-            <span className="font-medium">Temperature:</span> {data.temperature.toFixed(1)}°C
+            <span className="font-medium">External Temperature:</span> {data.temperature.toFixed(1)}°C
           </p>
           <p className="text-sm">Device: {data.deviceId}</p>
           <div className="flex items-center mt-2">

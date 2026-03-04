@@ -262,7 +262,17 @@ const SensorLogsPage: React.FC = () => {
       </header>
 
       <main className="mx-auto max-w-7xl px-6 py-8">
-        <section className="rounded-2xl border border-white/60 bg-white/80 p-6 shadow-xl shadow-rose-100/30 backdrop-blur dark:border-gray-800/60 dark:bg-gray-900/70">
+        <section className="rounded-2xl border border-white/60 bg-white/85 p-6 shadow-xl shadow-rose-100/30 backdrop-blur dark:border-gray-800/60 dark:bg-gray-900/70">
+          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-wide font-semibold text-gray-500 dark:text-gray-400">Filter panel</p>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Search and manage sensor logs</h2>
+            </div>
+            <span className="inline-flex items-center rounded-full border border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-900/70 px-3 py-1 text-xs font-semibold text-gray-600 dark:text-gray-300 w-fit">
+              Live table controls
+            </span>
+          </div>
+
           <div className="flex flex-wrap items-center gap-4">
             <div className="relative flex-1 min-w-[200px]">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -271,7 +281,7 @@ const SensorLogsPage: React.FC = () => {
                 placeholder="Search device, sensor, origin, or payload"
                 value={filters.search}
                 onChange={(event) => handleFilterChange('search', event.target.value)}
-                className="w-full rounded-lg border border-gray-200 bg-white/80 py-2 pl-9 pr-3 text-sm text-gray-800 shadow-inner focus:border-primary-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-100"
+                className="w-full rounded-xl border border-gray-200 bg-white/90 py-2.5 pl-9 pr-3 text-sm text-gray-800 shadow-sm focus:border-primary-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-100"
               />
             </div>
             <input
@@ -279,12 +289,12 @@ const SensorLogsPage: React.FC = () => {
               placeholder="Device ID"
               value={filters.deviceId}
               onChange={(event) => handleFilterChange('deviceId', event.target.value)}
-              className="min-w-[160px] rounded-lg border border-gray-200 bg-white/80 px-3 py-2 text-sm text-gray-800 shadow-inner focus:border-primary-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-100"
+              className="min-w-[160px] rounded-xl border border-gray-200 bg-white/90 px-3 py-2.5 text-sm text-gray-800 shadow-sm focus:border-primary-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-100"
             />
             <select
               value={filters.sensor}
               onChange={(event) => handleFilterChange('sensor', event.target.value)}
-              className="min-w-[160px] rounded-lg border border-gray-200 bg-white/80 px-3 py-2 text-sm text-gray-800 shadow-inner focus:border-primary-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-100"
+              className="min-w-[160px] rounded-xl border border-gray-200 bg-white/90 px-3 py-2.5 text-sm text-gray-800 shadow-sm focus:border-primary-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-100"
             >
               <option value="">Any sensor</option>
               {sensorOptions.map((sensor) => (
@@ -294,7 +304,7 @@ const SensorLogsPage: React.FC = () => {
             <select
               value={filters.category}
               onChange={(event) => handleFilterChange('category', event.target.value as Filters['category'])}
-              className="min-w-[180px] rounded-lg border border-gray-200 bg-white/80 px-3 py-2 text-sm text-gray-800 shadow-inner focus:border-primary-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-100"
+              className="min-w-[180px] rounded-xl border border-gray-200 bg-white/90 px-3 py-2.5 text-sm text-gray-800 shadow-sm focus:border-primary-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-100"
             >
               <option value="environmental">Environmental Sensors</option>
               <option value="device">Device Metrics</option>
@@ -303,7 +313,7 @@ const SensorLogsPage: React.FC = () => {
             <select
               value={filters.origin}
               onChange={(event) => handleFilterChange('origin', event.target.value)}
-              className="min-w-[160px] rounded-lg border border-gray-200 bg-white/80 px-3 py-2 text-sm text-gray-800 shadow-inner focus:border-primary-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-100"
+              className="min-w-[160px] rounded-xl border border-gray-200 bg-white/90 px-3 py-2.5 text-sm text-gray-800 shadow-sm focus:border-primary-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-100"
             >
               {ORIGIN_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>{option.label}</option>
@@ -323,7 +333,7 @@ const SensorLogsPage: React.FC = () => {
                 type="datetime-local"
                 value={filters.start}
                 onChange={(event) => handleFilterChange('start', event.target.value)}
-                className="w-full rounded-lg border border-gray-200 bg-white/80 px-3 py-2 text-sm text-gray-800 focus:border-primary-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-100"
+                className="w-full rounded-xl border border-gray-200 bg-white/90 px-3 py-2.5 text-sm text-gray-800 shadow-sm focus:border-primary-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-100"
               />
             </div>
             <div className="space-y-1">
@@ -332,14 +342,14 @@ const SensorLogsPage: React.FC = () => {
                 type="datetime-local"
                 value={filters.end}
                 onChange={(event) => handleFilterChange('end', event.target.value)}
-                className="w-full rounded-lg border border-gray-200 bg-white/80 px-3 py-2 text-sm text-gray-800 focus:border-primary-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-100"
+                className="w-full rounded-xl border border-gray-200 bg-white/90 px-3 py-2.5 text-sm text-gray-800 shadow-sm focus:border-primary-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-100"
               />
             </div>
             <div className="flex items-end gap-3">
               <button
                 type="button"
                 onClick={fetchLogs}
-                className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow hover:border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-semibold text-gray-700 shadow-sm hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700"
                 disabled={loading}
               >
                 <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
@@ -348,7 +358,7 @@ const SensorLogsPage: React.FC = () => {
               <button
                 type="button"
                 onClick={handleClearFilters}
-                className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow hover:border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-semibold text-gray-700 shadow-sm hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700"
               >
                 <Filter className="h-4 w-4" />
                 Clear
@@ -358,7 +368,7 @@ const SensorLogsPage: React.FC = () => {
               <button
                 type="button"
                 onClick={handleDeleteSelected}
-                className="inline-flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 shadow hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-semibold text-rose-700 shadow-sm hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
                 disabled={!selectedIds.size || bulkDeleting || loading}
               >
                 <Trash2 className="h-4 w-4" />
@@ -367,7 +377,7 @@ const SensorLogsPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setShowDeleteAllModal(true)}
-                className="inline-flex items-center gap-2 rounded-lg border border-rose-300 bg-white px-4 py-2 text-sm font-semibold text-rose-700 shadow hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-xl border border-rose-300 bg-white px-4 py-2.5 text-sm font-semibold text-rose-700 shadow-sm hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
                 disabled={!logs.length || loading}
               >
                 <Trash2 className="h-4 w-4" />
@@ -376,7 +386,7 @@ const SensorLogsPage: React.FC = () => {
               <button
                 type="button"
                 onClick={handleExport}
-                className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-primary-500"
+                className="inline-flex items-center gap-2 rounded-xl bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-primary-500"
                 disabled={!logs.length}
               >
                 <Download className="h-4 w-4" />
@@ -386,13 +396,13 @@ const SensorLogsPage: React.FC = () => {
           </div>
         </section>
 
-        <section className="mt-6 rounded-2xl border border-white/60 bg-white/90 shadow-lg shadow-rose-100/30 backdrop-blur dark:border-gray-800/60 dark:bg-gray-900/80">
-          <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4 dark:border-gray-800">
+        <section className="mt-6 rounded-2xl border border-white/60 bg-white/90 shadow-lg shadow-rose-100/30 backdrop-blur dark:border-gray-800/60 dark:bg-gray-900/80 overflow-hidden">
+          <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4 dark:border-gray-800 bg-white/70 dark:bg-gray-900/60">
             <div>
-              <p className="text-sm font-medium text-gray-600 dark:text-gray-300">Total logs</p>
+              <p className="text-xs uppercase tracking-wide font-semibold text-gray-500 dark:text-gray-400">Log summary</p>
               <p className="text-2xl font-semibold text-gray-900 dark:text-white">{pagination?.total ?? 0}</p>
             </div>
-            <div className="text-sm text-gray-500 dark:text-gray-400">
+            <div className="inline-flex items-center rounded-full border border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-900/70 px-3 py-1 text-sm text-gray-600 dark:text-gray-300">
               Page {page} of {totalPages}
             </div>
           </div>
@@ -403,11 +413,11 @@ const SensorLogsPage: React.FC = () => {
             </div>
           )}
 
-          <div className="overflow-x-auto">
+          <div className="max-h-[70vh] overflow-auto bg-white/40 dark:bg-gray-900/20">
             <table className="min-w-full divide-y divide-gray-100 text-sm text-gray-700 dark:divide-gray-800 dark:text-gray-200">
-              <thead className="bg-gray-50/70 text-xs uppercase tracking-wider text-gray-500 dark:bg-gray-900/60 dark:text-gray-400">
+              <thead className="sticky top-0 z-10 bg-gray-50/95 text-xs uppercase tracking-wider text-gray-500 dark:bg-gray-900/95 dark:text-gray-400 backdrop-blur">
                 <tr>
-                  <th className="px-4 py-3 text-left">
+                  <th className="px-4 py-3 text-left font-semibold">
                     <input
                       type="checkbox"
                       checked={allSelected}
@@ -415,15 +425,15 @@ const SensorLogsPage: React.FC = () => {
                       aria-label="Select all"
                     />
                   </th>
-                  <th className="px-4 py-3 text-left">Timestamp</th>
-                  <th className="px-4 py-3 text-left">Device</th>
-                  <th className="px-4 py-3 text-left">Sensor</th>
-                  <th className="px-4 py-3 text-left">Category</th>
-                  <th className="px-4 py-3 text-left">Value</th>
-                  <th className="px-4 py-3 text-left">Origin</th>
-                  <th className="px-4 py-3 text-left">Topic</th>
-                  <th className="px-4 py-3 text-left">Payload</th>
-                  <th className="px-4 py-3 text-left">Actions</th>
+                  <th className="px-4 py-3 text-left font-semibold">Timestamp</th>
+                  <th className="px-4 py-3 text-left font-semibold">Device</th>
+                  <th className="px-4 py-3 text-left font-semibold">Sensor</th>
+                  <th className="px-4 py-3 text-left font-semibold">Category</th>
+                  <th className="px-4 py-3 text-left font-semibold">Value</th>
+                  <th className="px-4 py-3 text-left font-semibold">Origin</th>
+                  <th className="px-4 py-3 text-left font-semibold">Topic</th>
+                  <th className="px-4 py-3 text-left font-semibold">Payload</th>
+                  <th className="px-4 py-3 text-left font-semibold">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
@@ -440,11 +450,11 @@ const SensorLogsPage: React.FC = () => {
                     </td>
                   </tr>
                 ) : (
-                  logs.map((log) => {
+                  logs.map((log, rowIndex) => {
                     const isExpanded = expandedRow === log.id;
                     return (
                       <React.Fragment key={log.id}>
-                        <tr className="hover:bg-gray-50/70 dark:hover:bg-gray-800/60">
+                        <tr className={`${rowIndex % 2 === 0 ? 'bg-white/90 dark:bg-gray-900/35' : 'bg-gray-50/70 dark:bg-gray-900/55'} hover:bg-primary-50/50 dark:hover:bg-gray-800/70 transition-colors`}>
                           <td className="px-4 py-3">
                             <input
                               type="checkbox"
@@ -457,9 +467,9 @@ const SensorLogsPage: React.FC = () => {
                             {formatTimestamp(log.recordedAt)}
                           </td>
                           <td className="px-4 py-3 text-gray-900 dark:text-gray-100">{log.deviceId}</td>
-                          <td className="px-4 py-3">{log.sensorName}</td>
+                          <td className="px-4 py-3 font-medium text-gray-800 dark:text-gray-100">{log.sensorName}</td>
                           <td className="px-4 py-3">
-                            <span className={`rounded-full px-2 py-1 text-xs font-medium ${log.category === 'Device Metrics' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-200' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200'}`}>
+                            <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${log.category === 'Device Metrics' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-200' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200'}`}>
                               {log.category || 'Environmental Sensors'}
                             </span>
                           </td>
@@ -468,7 +478,7 @@ const SensorLogsPage: React.FC = () => {
                             {log.unit ? <span className="ml-1 text-xs text-gray-500">{log.unit}</span> : null}
                           </td>
                           <td className="px-4 py-3">
-                            <span className="rounded-full bg-gray-100 px-2 py-1 text-xs font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                            <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-600 dark:bg-gray-800 dark:text-gray-300">
                               {log.origin || 'n/a'}
                             </span>
                           </td>
@@ -478,7 +488,7 @@ const SensorLogsPage: React.FC = () => {
                               <button
                                 type="button"
                                 onClick={() => setExpandedRow(isExpanded ? null : log.id)}
-                                className="text-xs font-semibold text-primary-600 hover:underline dark:text-primary-300"
+                                className="inline-flex items-center rounded-full border border-primary-200 dark:border-primary-800 px-2.5 py-1 text-xs font-semibold text-primary-700 hover:bg-primary-50 dark:text-primary-300 dark:hover:bg-primary-900/30"
                               >
                                 {isExpanded ? 'Hide JSON' : 'View JSON'}
                               </button>
@@ -500,7 +510,7 @@ const SensorLogsPage: React.FC = () => {
                         </tr>
                         {isExpanded && log.rawPayload && (
                           <tr>
-                            <td colSpan={10} className="bg-gray-50/70 px-4 py-3 text-xs text-gray-700 dark:bg-gray-800/50 dark:text-gray-200">
+                            <td colSpan={10} className="bg-gray-50/80 px-4 py-3 text-xs text-gray-700 dark:bg-gray-800/60 dark:text-gray-200">
                               <pre className="overflow-x-auto rounded-lg bg-gray-900/90 p-3 text-[11px] text-gray-100">
                                 {JSON.stringify(log.rawPayload, null, 2)}
                               </pre>

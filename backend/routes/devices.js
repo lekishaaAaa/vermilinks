@@ -2,6 +2,7 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const Device = require('../models/Device');
 const SensorData = require('../models/SensorData');
+const SensorSnapshot = require('../models/SensorSnapshot');
 // SensorSnapshot reserved for future device snapshot usage.
 const { markDeviceOnline, resetOfflineTimer } = require('../services/deviceManager');
 const devicePortsService = require('../services/devicePortsService');
@@ -13,6 +14,9 @@ const {
 } = require('../utils/sensorFormatting');
 
 const router = express.Router();
+
+const DEVICE_ONLINE_WINDOW_MS = 15 * 1000;
+const MONITORED_DEVICE_IDS = ['esp32A', 'esp32B'];
 
 const DEVICE_STATUS_TIMEOUT_MS = Math.max(
   2000,
@@ -36,6 +40,21 @@ const toPlainDevice = (record) => {
     return record.toJSON();
   }
   return record;
+};
+
+const toTimestampMs = (value) => {
+  if (!value) {
+    return null;
+  }
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const resolveOnlineStatus = (lastSeenTimestamp, nowMs) => {
+  if (!Number.isFinite(lastSeenTimestamp)) {
+    return false;
+  }
+  return (nowMs - lastSeenTimestamp) < DEVICE_ONLINE_WINDOW_MS;
 };
 
 const isDeviceFreshOnline = (device) => {
@@ -81,6 +100,84 @@ router.get('/', optionalAuth, async (req, res) => {
     res.json({ success: true, data: normalizedDevices });
   } catch (e) {
     res.status(500).json({ success: false, message: 'Failed to list devices' });
+  }
+});
+
+// GET /api/devices/status - lightweight online/offline status by last seen message
+router.get('/status', optionalAuth, async (req, res) => {
+  try {
+    const now = Date.now();
+    const includeSet = new Set(MONITORED_DEVICE_IDS.map((value) => value.toLowerCase()));
+    const normalizedId = (value) => (value || '').toString().trim();
+
+    const [devices, snapshots] = await Promise.all([
+      Device.findAll({ order: [['lastHeartbeat', 'DESC']] }).catch(() => []),
+      SensorSnapshot.findAll({ raw: true }).catch(() => []),
+    ]);
+
+    const statusMap = new Map();
+
+    (devices || []).forEach((record) => {
+      const plain = toPlainDevice(record);
+      const deviceId = normalizedId(plain?.deviceId);
+      if (!deviceId) return;
+      if (!includeSet.has(deviceId.toLowerCase())) return;
+
+      const heartbeatTs = toTimestampMs(plain?.lastHeartbeat);
+      const lastSeenTs = toTimestampMs(plain?.lastSeen ?? plain?.last_seen);
+      const lastSeenTimestamp = [heartbeatTs, lastSeenTs].filter((value) => Number.isFinite(value)).sort((a, b) => b - a)[0] ?? null;
+
+      statusMap.set(deviceId.toLowerCase(), {
+        device_id: deviceId,
+        online: resolveOnlineStatus(lastSeenTimestamp, now),
+        last_seen: Number.isFinite(lastSeenTimestamp) ? new Date(lastSeenTimestamp).toISOString() : null,
+        signalStrength: null,
+      });
+    });
+
+    (snapshots || []).forEach((snapshot) => {
+      const deviceId = normalizedId(snapshot?.deviceId || snapshot?.device_id);
+      if (!deviceId) return;
+      if (!includeSet.has(deviceId.toLowerCase())) return;
+
+      const snapshotTs = toTimestampMs(snapshot?.timestamp);
+      const existing = statusMap.get(deviceId.toLowerCase()) || {
+        device_id: deviceId,
+        online: false,
+        last_seen: null,
+        signalStrength: null,
+      };
+      const existingTs = toTimestampMs(existing.last_seen);
+      const lastSeenTimestamp = [existingTs, snapshotTs].filter((value) => Number.isFinite(value)).sort((a, b) => b - a)[0] ?? null;
+
+      statusMap.set(deviceId.toLowerCase(), {
+        ...existing,
+        device_id: deviceId,
+        online: resolveOnlineStatus(lastSeenTimestamp, now),
+        last_seen: Number.isFinite(lastSeenTimestamp) ? new Date(lastSeenTimestamp).toISOString() : null,
+        signalStrength: snapshot?.signalStrength ?? snapshot?.signal_strength ?? existing.signalStrength ?? null,
+      });
+    });
+
+    MONITORED_DEVICE_IDS.forEach((deviceId) => {
+      if (!statusMap.has(deviceId.toLowerCase())) {
+        statusMap.set(deviceId.toLowerCase(), {
+          device_id: deviceId,
+          online: false,
+          last_seen: null,
+          signalStrength: null,
+        });
+      }
+    });
+
+    const devicesPayload = Array.from(statusMap.values()).sort((a, b) => {
+      return a.device_id.localeCompare(b.device_id);
+    });
+
+    return res.json({ devices: devicesPayload });
+  } catch (error) {
+    console.error('devices: status endpoint failed', error);
+    return res.status(500).json({ message: 'Unable to load device status' });
   }
 });
 

@@ -23,6 +23,15 @@ const SensorData = sequelize.define('SensorData', {
     type: DataTypes.FLOAT,
     allowNull: true,
   },
+  soil_moisture: {
+    type: DataTypes.VIRTUAL,
+    get() {
+      return this.getDataValue('moisture');
+    },
+    set(val) {
+      this.setDataValue('moisture', val);
+    },
+  },
   soilTemperature: {
     type: DataTypes.FLOAT,
     allowNull: true,
@@ -78,6 +87,12 @@ const SensorData = sequelize.define('SensorData', {
     type: rawPayloadType,
     allowNull: true,
     field: 'raw_payload',
+  },
+  createdAt: {
+    type: DataTypes.DATE,
+    allowNull: false,
+    defaultValue: DataTypes.NOW,
+    field: 'created_at',
   },
   timestamp: {
     type: DataTypes.DATE,

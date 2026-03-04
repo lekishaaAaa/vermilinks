@@ -102,11 +102,19 @@ async function createCommand({ deviceId = 'esp32a', desiredState, actor = null, 
   const stateRow = await ActuatorState.findOne({ where: { actuatorKey: deviceId } });
   const state = stateRow && stateRow.state ? stateRow.state : null;
   const floatState = state ? (state.float || state.floatState || null) : null;
-  if (floatState && String(floatState).toUpperCase() === 'LOW' && desiredState.pump) {
+  const normalizedFloatState = floatState ? String(floatState).toUpperCase() : null;
+  if (normalizedFloatState === 'LOW' && desiredState.pump) {
     return {
       ok: false,
       status: 409,
       message: 'Pump locked out due to low float sensor.',
+    };
+  }
+  if (normalizedFloatState === 'FULL' && desiredState.pump) {
+    return {
+      ok: false,
+      status: 409,
+      message: 'Pump locked out because reservoir is FULL.',
     };
   }
 

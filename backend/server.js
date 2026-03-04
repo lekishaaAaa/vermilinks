@@ -14,6 +14,8 @@ const { validateEnv } = require('./utils/validateEnv');
 validateEnv();
 const logger = require('./utils/logger');
 const database = require('./services/database_pg');
+const Device = require('./models/Device');
+const SensorSnapshot = require('./models/SensorSnapshot');
 const { connectMongo } = require('./db/mongo');
 const sequelize = database;
 const connectDB = typeof sequelize.connectDB === 'function' ? sequelize.connectDB : async () => {
@@ -528,15 +530,63 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
-app.get('/api/system/info', auth, adminOnly, (req, res) => {
+app.get('/api/system/info', auth, adminOnly, async (req, res) => {
   try {
     console.log('SYSTEM INFO ROUTE HIT - AUTH VERIFIED');
     const appVersion = require('./package.json').version || '0.0.0';
+    const iotMqtt = require('./services/iotMqtt');
+    const mqttStatus = typeof iotMqtt.getConnectionStatus === 'function'
+      ? iotMqtt.getConnectionStatus()
+      : { connected: false, state: 'unknown', broker: null };
+
+    let dbStatus = 'unknown';
+    try {
+      if (database && typeof database.authenticate === 'function') {
+        await database.authenticate();
+        dbStatus = 'connected';
+      }
+    } catch (error) {
+      dbStatus = 'disconnected';
+    }
+
+    const trackedDeviceIds = ['esp32A', 'esp32B'];
+    const now = Date.now();
+    const onlineWindowMs = 15 * 1000;
+    const [devices, snapshots] = await Promise.all([
+      Device.findAll({ raw: true }).catch(() => []),
+      SensorSnapshot.findAll({ raw: true }).catch(() => []),
+    ]);
+
+    const snapshotByDevice = new Map();
+    (snapshots || []).forEach((item) => {
+      const id = (item.deviceId || item.device_id || '').toString().trim();
+      if (!id) return;
+      snapshotByDevice.set(id.toLowerCase(), item);
+    });
+
+    const devicesPayload = trackedDeviceIds.map((deviceId) => {
+      const match = (devices || []).find((device) => (device.deviceId || '').toString().toLowerCase() === deviceId.toLowerCase());
+      const snapshot = snapshotByDevice.get(deviceId.toLowerCase());
+      const heartbeatTs = match && match.lastHeartbeat ? new Date(match.lastHeartbeat).getTime() : NaN;
+      const seenTs = match && match.lastSeen ? new Date(match.lastSeen).getTime() : NaN;
+      const snapshotTs = snapshot && snapshot.timestamp ? new Date(snapshot.timestamp).getTime() : NaN;
+      const latestTs = [heartbeatTs, seenTs, snapshotTs].filter((value) => Number.isFinite(value)).sort((a, b) => b - a)[0];
+      return {
+        device_id: deviceId,
+        online: Number.isFinite(latestTs) ? (now - latestTs < onlineWindowMs) : false,
+        last_seen: Number.isFinite(latestTs) ? new Date(latestTs).toISOString() : null,
+        signalStrength: snapshot ? (snapshot.signalStrength ?? snapshot.signal_strength ?? null) : null,
+      };
+    });
+
     return res.status(200).json({
       status: 'ok',
       uptime: process.uptime(),
       version: appVersion,
       environment: process.env.NODE_ENV || 'development',
+      database: dbStatus,
+      mqtt: mqttStatus,
+      devices: devicesPayload,
     });
   } catch (e) {
     return res.status(200).json({
@@ -544,7 +594,49 @@ app.get('/api/system/info', auth, adminOnly, (req, res) => {
       uptime: process.uptime(),
       version: '0.0.0',
       environment: process.env.NODE_ENV || 'development',
+      database: 'unknown',
+      mqtt: { connected: false, state: 'unknown', broker: null },
+      devices: [],
     });
+  }
+});
+
+app.get('/api/devices/status', async (req, res) => {
+  try {
+    const trackedDeviceIds = ['esp32A', 'esp32B'];
+    const now = Date.now();
+    const onlineWindowMs = 15 * 1000;
+    const [devices, snapshots] = await Promise.all([
+      Device.findAll({ raw: true }).catch(() => []),
+      SensorSnapshot.findAll({ raw: true }).catch(() => []),
+    ]);
+
+    const snapshotByDevice = new Map();
+    (snapshots || []).forEach((item) => {
+      const id = (item.deviceId || item.device_id || '').toString().trim();
+      if (!id) return;
+      snapshotByDevice.set(id.toLowerCase(), item);
+    });
+
+    const payload = trackedDeviceIds.map((deviceId) => {
+      const device = (devices || []).find((item) => (item.deviceId || '').toString().toLowerCase() === deviceId.toLowerCase());
+      const snapshot = snapshotByDevice.get(deviceId.toLowerCase());
+      const heartbeatTs = device && device.lastHeartbeat ? new Date(device.lastHeartbeat).getTime() : NaN;
+      const seenTs = device && device.lastSeen ? new Date(device.lastSeen).getTime() : NaN;
+      const snapshotTs = snapshot && snapshot.timestamp ? new Date(snapshot.timestamp).getTime() : NaN;
+      const latestTs = [heartbeatTs, seenTs, snapshotTs].filter((value) => Number.isFinite(value)).sort((a, b) => b - a)[0];
+
+      return {
+        device_id: deviceId,
+        online: Number.isFinite(latestTs) ? (now - latestTs < onlineWindowMs) : false,
+        last_seen: Number.isFinite(latestTs) ? new Date(latestTs).toISOString() : null,
+        signalStrength: snapshot ? (snapshot.signalStrength ?? snapshot.signal_strength ?? null) : null,
+      };
+    });
+
+    return res.status(200).json({ devices: payload });
+  } catch (error) {
+    return res.status(500).json({ message: 'Unable to load device status' });
   }
 });
 
@@ -621,12 +713,13 @@ app.use('*', (req, res) => {
 app.use(errorHandler);
 
 // Start the server
-const rawPort = (process.env.PORT || '').toString().trim();
-if (!rawPort) {
+const isTestEnv = (process.env.NODE_ENV || 'development') === 'test';
+const rawPort = (process.env.PORT || (isTestEnv ? '0' : '')).toString().trim();
+if (!rawPort && !isTestEnv) {
   throw new Error('PORT environment variable is required.');
 }
-const configuredPort = Number(rawPort);
-if (!Number.isInteger(configuredPort) || configuredPort <= 0) {
+const configuredPort = Number(rawPort || '0');
+if (!Number.isInteger(configuredPort) || configuredPort < 0 || (!isTestEnv && configuredPort <= 0)) {
   throw new Error(`Invalid PORT value: ${rawPort}`);
 }
 

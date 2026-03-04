@@ -3,12 +3,14 @@ const logger = require('../utils/logger');
 
 const RAW_LIMIT = Math.max(1024, Number.parseInt(process.env.SENSOR_LOG_RAW_LIMIT || '8192', 10));
 const SENSOR_ALIAS = {
-  soil_moisture: 'moisture',
-  'soil-moisture': 'moisture',
-  soilmoisture: 'moisture',
-  soil_temperature: 'soilTemperature',
-  'soil-temperature': 'soilTemperature',
-  soiltemperature: 'soilTemperature',
+  moisture: 'soil_moisture',
+  soil_moisture: 'soil_moisture',
+  'soil-moisture': 'soil_moisture',
+  soilmoisture: 'soil_moisture',
+  soiltemp: 'soil_temperature',
+  soil_temperature: 'soil_temperature',
+  'soil-temperature': 'soil_temperature',
+  soiltemperature: 'soil_temperature',
   float: 'floatSensor',
   float_sensor: 'floatSensor',
   floatstate: 'floatSensor',
@@ -24,8 +26,8 @@ const SENSOR_ALIAS = {
 const SENSOR_UNITS = {
   temperature: 'C',
   humidity: '%',
-  moisture: '%',
-  soilTemperature: 'C',
+  soil_moisture: '%',
+  soil_temperature: 'C',
   ph: 'pH',
   ec: 'mS/cm',
   nitrogen: 'ppm',
@@ -36,6 +38,7 @@ const SENSOR_UNITS = {
   batteryLevel: '%',
   signalStrength: 'dBm',
 };
+const DEVICE_METRIC_KEYS = new Set(['uptime', 'ts', 'online', 'signalStrength', 'signal_strength', 'rssi']);
 const RESERVED_KEYS = new Set(['timestamp', 'deviceId', 'device_id', 'metrics', 'source']);
 
 const clampRawPayload = (payload) => {
@@ -69,6 +72,14 @@ const normalizeKey = (key) => {
     return SENSOR_ALIAS[aliasKey];
   }
   return trimmed;
+};
+
+const classifySensorCategory = (sensorName) => {
+  const normalized = normalizeKey(sensorName);
+  if (!normalized) {
+    return 'Environmental Sensors';
+  }
+  return DEVICE_METRIC_KEYS.has(normalized) ? 'Device Metrics' : 'Environmental Sensors';
 };
 
 const toNumber = (value) => {
@@ -141,8 +152,10 @@ async function recordSensorLogs({
 
 module.exports = {
   SENSOR_UNITS,
+  DEVICE_METRIC_KEYS,
   clampRawPayload,
   recordSensorLogs,
+  classifySensorCategory,
   RESERVED_KEYS,
   normalizeKey,
   RAW_LIMIT,

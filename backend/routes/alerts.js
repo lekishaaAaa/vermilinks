@@ -7,6 +7,42 @@ const { REALTIME_EVENTS, emitRealtime } = require('../utils/realtime');
 
 const router = express.Router();
 
+// @route   GET /api/alerts/debug
+// @desc    Lightweight audit/debug visibility for sensor_out_of_range generation
+// @access  Public (read-only summary)
+router.get('/debug', async (_req, res) => {
+  try {
+    const rangeWhere = { type: 'sensor_out_of_range' };
+    const reservoirWhere = { type: 'water_reservoir_low' };
+    const [alertsGenerated, reservoirLowGenerated, latestRangeAlert, latestReservoirAlert] = await Promise.all([
+      Alert.count({ where: rangeWhere }),
+      Alert.count({ where: reservoirWhere }),
+      Alert.findOne({ where: rangeWhere, order: [['createdAt', 'DESC']] }),
+      Alert.findOne({ where: reservoirWhere, order: [['createdAt', 'DESC']] }),
+    ]);
+
+    const latestAlert = (() => {
+      if (!latestRangeAlert) return latestReservoirAlert;
+      if (!latestReservoirAlert) return latestRangeAlert;
+      const rangeTs = latestRangeAlert.createdAt ? new Date(latestRangeAlert.createdAt).getTime() : 0;
+      const reservoirTs = latestReservoirAlert.createdAt ? new Date(latestReservoirAlert.createdAt).getTime() : 0;
+      return reservoirTs > rangeTs ? latestReservoirAlert : latestRangeAlert;
+    })();
+
+    return res.json({
+      success: true,
+      alerts_generated: alertsGenerated,
+      water_reservoir_low_generated: reservoirLowGenerated,
+      latest_alert: latestAlert ? sanitizeAlertPayload(latestAlert) : null,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: 'Error fetching alert debug summary',
+    });
+  }
+});
+
 // @route   GET /api/alerts
 // @desc    Get alerts with pagination and filtering
 // @access  Private (admin only)

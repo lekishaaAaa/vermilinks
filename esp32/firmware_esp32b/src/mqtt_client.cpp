@@ -77,14 +77,19 @@ void mqttPublishTelemetry(const SensorSnapshot& snapshot) {
   if (!mqttConnected()) {
     return;
   }
+  const long unixTs = static_cast<long>(time(nullptr));
   String payload = "{";
-  payload += "\"deviceId\":\"esp32b\",";
+  payload += "\"deviceId\":\"" + String(DEVICE_ID) + "\",";
+  payload += "\"device_id\":\"" + String(DEVICE_ID) + "\",";
   payload += "\"temperature\":" + String(snapshot.tempC, 1) + ",";
   payload += "\"humidity\":" + String(snapshot.humidity, 1) + ",";
+  payload += "\"soil_moisture\":" + String(snapshot.soil) + ",";
+  payload += "\"soil_temperature\":" + String(snapshot.waterTempC, 1) + ",";
   payload += "\"soilMoisture\":" + String(snapshot.soil) + ",";
   payload += "\"soilTemp\":" + String(snapshot.waterTempC, 1) + ",";
   payload += "\"signalStrength\":" + String(WiFi.RSSI()) + ",";
-  payload += "\"ts\":" + String(static_cast<long>(time(nullptr))) + "";
+  payload += "\"timestamp\":" + String(unixTs) + ",";
+  payload += "\"ts\":" + String(unixTs) + "";
   payload += "}";
   mqttClient.publish(TOPIC_TELEMETRY, payload.c_str(), false);
 }
@@ -93,12 +98,15 @@ void mqttPublishStatus(bool online) {
   if (!mqttConnected()) {
     return;
   }
+  const long unixTs = static_cast<long>(time(nullptr));
   String payload = "{";
-  payload += "\"deviceId\":\"esp32b\",";
+  payload += "\"deviceId\":\"" + String(DEVICE_ID) + "\",";
+  payload += "\"device_id\":\"" + String(DEVICE_ID) + "\",";
   payload += "\"online\":" + String(online ? "true" : "false") + ",";
   payload += "\"rssi\":" + String(WiFi.RSSI()) + ",";
   payload += "\"uptime\":" + String(millis() / 1000) + ",";
-  payload += "\"ts\":" + String(static_cast<long>(time(nullptr))) + "";
+  payload += "\"timestamp\":" + String(unixTs) + ",";
+  payload += "\"ts\":" + String(unixTs) + "";
   payload += "}";
   mqttClient.publish(TOPIC_STATUS, payload.c_str(), false);
 }

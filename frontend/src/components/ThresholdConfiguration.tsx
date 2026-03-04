@@ -254,7 +254,7 @@ export const ThresholdConfiguration: React.FC<ThresholdConfigurationProps> = ({ 
   const sensorConfigs: Array<{ key: MetricKey; label: string; unit: string; description: string; step: string }> = [
     {
       key: 'temperature',
-      label: 'Temperature',
+      label: 'External Temperature',
       unit: '°C',
       description: 'Optimal range: 18-30°C',
       step: '0.1',

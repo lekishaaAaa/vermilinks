@@ -1421,7 +1421,7 @@ export default function AdminDashboard(): React.ReactElement {
                 Management
               </button>
               {/* Reports tab removed */}
-              {/* Alerts tab intentionally removed — alerts are managed inside Monitoring */}
+              {/* Alerts tab intentionally removed — alerts are managed inside Management */}
             </nav>
           </div>
 
@@ -1431,54 +1431,6 @@ export default function AdminDashboard(): React.ReactElement {
               <div className="space-y-6">
                 <SensorSummaryPanel />
                 <ActuatorControls />
-                <div className="bg-white dark:bg-gray-900/70 border border-gray-200 dark:border-gray-800 rounded-xl shadow p-6">
-                  <div className="flex items-center justify-between gap-3">
-                    <h4 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Notifications & Alerts</h4>
-                    <button
-                      type="button"
-                      onClick={handleRefreshActiveAlerts}
-                      className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-                    >
-                      <RefreshCw className="h-4 w-4" /> Refresh
-                    </button>
-                  </div>
-                  <div className="mt-4 space-y-3">
-                    {latestAlerts.length === 0 ? (
-                      <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-6 text-center text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800/50 dark:text-gray-400">
-                        No active alerts.
-                      </div>
-                    ) : (
-                      latestAlerts.slice(0, 12).map((alert: any, index: number) => {
-                        const alertId = alert.id || alert._id || `${index}`;
-                        return (
-                          <div key={alertId} className="rounded-lg border border-gray-200 bg-white/80 px-4 py-3 dark:border-gray-700 dark:bg-gray-900/50">
-                            <div className="text-xs text-gray-500 dark:text-gray-400">
-                              Type: {(alert.type || alert.severity || 'alert').toString()} • {formatAlertTimestamp(alert.createdAt || alert.timestamp || alert.updatedAt)}
-                            </div>
-                            <p className="mt-1 text-sm font-medium text-gray-800 dark:text-gray-100">{alert.message || alert.title || 'Alert triggered'}</p>
-                            <div className="mt-3 flex items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={() => markAlertAsRead(alertId)}
-                                disabled={acknowledgingAlertId === alertId}
-                                className="rounded-md bg-blue-600 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
-                              >
-                                {acknowledgingAlertId === alertId ? 'Marking…' : 'Mark as read'}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => deleteAlertNotification(alertId)}
-                                className="rounded-md border border-rose-200 px-3 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50 dark:border-rose-700 dark:text-rose-200 dark:hover:bg-rose-900/30"
-                              >
-                                Delete alert
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-                </div>
               </div>
             )}
 
@@ -1500,7 +1452,7 @@ export default function AdminDashboard(): React.ReactElement {
                 <div className="text-center py-8">
                   <Activity className="w-12 h-12 mx-auto mb-4 text-gray-400" />
                   <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-2">System Monitoring</h3>
-                  <p className="text-gray-600 dark:text-gray-400">Configure thresholds and manage alerts</p>
+                  <p className="text-gray-600 dark:text-gray-400">Track device inventory and realtime telemetry graphs</p>
                 </div>
 
                 <div className="bg-white dark:bg-gray-900/70 border border-gray-200 dark:border-gray-800 rounded-xl shadow p-6">
@@ -1576,6 +1528,19 @@ export default function AdminDashboard(): React.ReactElement {
                   refreshing={realtimeRefreshing}
                   telemetryDisabled={false}
                 />
+              </div>
+            )}
+
+            {/* Management Tab */}
+            {activeTab === 'management' && (
+              <div className="space-y-6">
+                <div className="text-center py-8">
+                  <Settings className="w-12 h-12 mx-auto mb-4 text-gray-400" />
+                  <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-2">System Management</h3>
+                  <p className="text-gray-600 dark:text-gray-400">Manage sensor configurations</p>
+                </div>
+
+                <ActuatorControls />
 
                 <div className="bg-white dark:bg-gray-900/70 border border-gray-200 dark:border-gray-800 rounded-xl shadow p-6">
                   <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -1682,19 +1647,6 @@ export default function AdminDashboard(): React.ReactElement {
                     )}
                   </div>
                 </div>
-              </div>
-            )}
-
-            {/* Management Tab */}
-            {activeTab === 'management' && (
-              <div className="space-y-6">
-                <div className="text-center py-8">
-                  <Settings className="w-12 h-12 mx-auto mb-4 text-gray-400" />
-                  <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-2">System Management</h3>
-                  <p className="text-gray-600 dark:text-gray-400">Manage sensor configurations</p>
-                </div>
-
-                <ActuatorControls />
 
                 {/* Management sensors panel */}
                 <div className="bg-white/80 dark:bg-gray-800/80 border border-gray-100 dark:border-gray-700 rounded-lg shadow">

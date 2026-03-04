@@ -1,8 +1,9 @@
 #pragma once
 
 // WiFi
-static const char* WIFI_SSID = "YOUR_WIFI_SSID";
-static const char* WIFI_PASS = "YOUR_WIFI_PASSWORD";
+#define WIFI_SSID "Knights_IOT"
+#define WIFI_PASS "smbcr-5540"
+#define DEVICE_ID "esp32B"
 
 // MQTT
 static const char* MQTT_HOST = "YOUR_MQTT_HOST";
@@ -15,29 +16,29 @@ static const char* TOPIC_STATUS = "vermilinks/esp32b/status";
 
 // GPIO pins (ESP32 DevKit V1 30-pin safe mapping)
 // DHT22 data pins (external 10kΩ pull-up from data to 3.3V required per sensor)
-static const int PIN_DHT1 = 16;
-static const int PIN_DHT2 = 17;
+static const int PIN_DHT1 = 4;
+static const int PIN_DHT2 = 16;
 
 // Soil moisture analog pins (ADC1 only; do NOT use ADC2 with Wi-Fi)
-static const int PIN_SOIL1 = 32; // ADC1
-static const int PIN_SOIL2 = 33; // ADC1
-static const int PIN_SOIL3 = 34; // ADC1, input-only
-static const int PIN_SOIL4 = 35; // ADC1, input-only
+static const int PIN_SOIL1 = 34; // ADC1, input-only
+static const int PIN_SOIL2 = 35; // ADC1, input-only
+static const int PIN_SOIL3 = 32; // ADC1
+static const int PIN_SOIL4 = 33; // ADC1
 
 // DS18B20 one-wire bus pin (all 4 probes share this bus)
 // External 4.7kΩ pull-up from one-wire data line to 3.3V is required.
-static const int PIN_DS18B20_BUS = 18;
+static const int PIN_DS18B20_BUS = 17;
 
 // Optional MQTT status LED
 static const int PIN_STATUS_LED = 13;
 
-static const int LOCKED_PIN_DHT1 = 16;
-static const int LOCKED_PIN_DHT2 = 17;
-static const int LOCKED_PIN_SOIL1 = 32;
-static const int LOCKED_PIN_SOIL2 = 33;
-static const int LOCKED_PIN_SOIL3 = 34;
-static const int LOCKED_PIN_SOIL4 = 35;
-static const int LOCKED_PIN_DS18B20_BUS = 18;
+static const int LOCKED_PIN_DHT1 = 4;
+static const int LOCKED_PIN_DHT2 = 16;
+static const int LOCKED_PIN_SOIL1 = 34;
+static const int LOCKED_PIN_SOIL2 = 35;
+static const int LOCKED_PIN_SOIL3 = 32;
+static const int LOCKED_PIN_SOIL4 = 33;
+static const int LOCKED_PIN_DS18B20_BUS = 17;
 
 static_assert(PIN_DHT1 == LOCKED_PIN_DHT1, "GPIO lock violation: PIN_DHT1");
 static_assert(PIN_DHT2 == LOCKED_PIN_DHT2, "GPIO lock violation: PIN_DHT2");

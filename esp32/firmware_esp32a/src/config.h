@@ -1,8 +1,9 @@
 #pragma once
 
 // WiFi
-static const char* WIFI_SSID = "YOUR_WIFI_SSID";
-static const char* WIFI_PASS = "YOUR_WIFI_PASSWORD";
+#define WIFI_SSID "Knights_IOT"
+#define WIFI_PASS "smbcr-5540"
+#define DEVICE_ID "esp32A"
 
 // MQTT
 static const char* MQTT_HOST = "YOUR_MQTT_HOST";

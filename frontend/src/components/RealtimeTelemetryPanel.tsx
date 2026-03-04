@@ -101,6 +101,7 @@ const RealtimeTelemetryPanel: React.FC<RealtimeTelemetryPanelProps> = ({ latest,
   });
   const [deviceOnline, setDeviceOnline] = useState<boolean | null>(null);
   const [polledHistory, setPolledHistory] = useState<SensorData[]>([]);
+  const [lastTelemetry, setLastTelemetry] = useState<SensorData | null>(null);
 
   useEffect(() => {
     if (telemetryDisabled) {
@@ -130,10 +131,21 @@ const RealtimeTelemetryPanel: React.FC<RealtimeTelemetryPanelProps> = ({ latest,
       const incoming: SensorData = {
         ...payload,
         deviceId: payload.deviceId || TARGET_DEVICE_ID,
+        waterLevel: typeof (payload as any).waterLevel === 'number'
+          ? (payload as any).waterLevel
+          : typeof (payload as any).water_level === 'number'
+            ? (payload as any).water_level
+            : undefined,
+        floatSensor: typeof (payload as any).floatSensor === 'number'
+          ? (payload as any).floatSensor
+          : typeof (payload as any).float_state === 'number'
+            ? (payload as any).float_state
+            : undefined,
         timestamp,
       } as SensorData;
 
       setLiveLatest(incoming);
+      setLastTelemetry(incoming);
       setLiveHistory((prev) => [...prev, incoming].slice(-336));
     };
 
@@ -173,7 +185,16 @@ const RealtimeTelemetryPanel: React.FC<RealtimeTelemetryPanelProps> = ({ latest,
       deviceId: entry.deviceId || entry.device_id || TARGET_DEVICE_ID,
       moisture: typeof entry.moisture === 'number' ? entry.moisture : entry.soil_moisture,
       soilTemperature: typeof entry.soilTemperature === 'number' ? entry.soilTemperature : entry.soil_temperature,
-      waterLevel: typeof entry.waterLevel === 'number' ? entry.waterLevel : entry.water_level,
+      waterLevel: typeof entry.waterLevel === 'number'
+        ? entry.waterLevel
+        : typeof entry.water_level === 'number'
+          ? entry.water_level
+          : (typeof entry.float_state === 'number' ? entry.float_state : undefined),
+      floatSensor: typeof entry.floatSensor === 'number'
+        ? entry.floatSensor
+        : typeof entry.float_state === 'number'
+          ? entry.float_state
+          : undefined,
       batteryLevel: typeof entry.batteryLevel === 'number' ? entry.batteryLevel : entry.battery_level,
       signalStrength: typeof entry.signalStrength === 'number' ? entry.signalStrength : entry.signal_strength,
       timestamp: entry.timestamp || entry.updated_at || new Date().toISOString(),
@@ -186,7 +207,11 @@ const RealtimeTelemetryPanel: React.FC<RealtimeTelemetryPanelProps> = ({ latest,
         if (!mounted || !Array.isArray(readings)) {
           return;
         }
-        setPolledHistory(readings.map(normalize));
+        const normalizedReadings = readings.map(normalize);
+        setPolledHistory(normalizedReadings);
+        if (normalizedReadings.length > 0) {
+          setLastTelemetry(normalizedReadings[normalizedReadings.length - 1]);
+        }
       } catch (error) {
         // Keep existing socket/prop data if history endpoint is unavailable for this session
       }
@@ -208,7 +233,7 @@ const RealtimeTelemetryPanel: React.FC<RealtimeTelemetryPanelProps> = ({ latest,
       .slice(-336);
   }, [history, liveHistory, polledHistory]);
 
-  const effectiveLatest = liveLatest ?? latest;
+  const effectiveLatest = liveLatest ?? latest ?? lastTelemetry ?? (mergedHistory.length ? mergedHistory[mergedHistory.length - 1] : null);
   const hasTelemetryData = Boolean(effectiveLatest) || mergedHistory.length > 0;
   const showPausedNotice = Boolean(telemetryDisabled) && !hasTelemetryData;
   const latestTimestamp = effectiveLatest?.timestamp || (mergedHistory.length ? mergedHistory[mergedHistory.length - 1].timestamp : null);
@@ -281,7 +306,7 @@ const RealtimeTelemetryPanel: React.FC<RealtimeTelemetryPanelProps> = ({ latest,
           Telemetry panels are paused until physical sensors report in. You will not see live metrics until hardware is online.
         </div>
       ) : (
-        <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-6 grid grid-cols-5 gap-5" style={{ gridTemplateColumns: 'repeat(5, 1fr)' }}>
           {metricSummaries.map(({ config, latestValue, trend, range, sparkline, isWaterLevel, waterLevelState }) => (
             <div key={config.key as string} className="rounded-lg border border-gray-100 bg-gray-50/60 p-4 dark:border-gray-800 dark:bg-gray-900/50">
               <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">

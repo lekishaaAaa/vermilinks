@@ -106,6 +106,27 @@ router.patch('/:id/mark-unread', [auth, adminOnly], async (req, res) => {
   }
 });
 
+router.patch('/mark-all-read', [auth, adminOnly], async (req, res) => {
+  try {
+    const username = req.user && req.user.username ? req.user.username : null;
+    const now = new Date();
+    const [updated] = await Alert.update({
+      status: 'read',
+      acknowledgedBy: username,
+      acknowledgedAt: now,
+      updatedAt: now,
+    }, {
+      where: { status: 'new' },
+    });
+
+    emitNotificationUpdate({ type: 'bulk_mark_read', updated, timestamp: now.toISOString() });
+    res.json({ success: true, data: { updated } });
+  } catch (error) {
+    console.error('notifications: mark-all-read failed', error);
+    res.status(500).json({ success: false, message: 'Failed to mark all notifications as read' });
+  }
+});
+
 router.delete('/:id', [auth, adminOnly], async (req, res) => {
   try {
     const alert = await Alert.findByPk(req.params.id);

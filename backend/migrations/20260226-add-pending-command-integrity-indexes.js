@@ -83,10 +83,6 @@ module.exports = {
       }
     }
 
-    if ((await tableExists(queryInterface, 'sensordata')) && !(await tableExists(queryInterface, 'sensor_data'))) {
-      await queryInterface.renameTable('sensordata', 'sensor_data');
-    }
-
     if (await tableExists(queryInterface, 'sensor_data')) {
       const tableDescription = await queryInterface.describeTable('sensor_data');
       if (tableDescription.deviceId && !tableDescription.device_id) {

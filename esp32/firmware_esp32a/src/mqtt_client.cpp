@@ -98,8 +98,14 @@ void mqttPublishState(const ActuatorState& state, bool retained) {
   if (!mqttConnected()) {
     return;
   }
+  const long unixTs = static_cast<long>(time(nullptr));
   String payload = "{";
-  payload += "\"deviceId\":\"esp32a\",";
+  payload += "\"deviceId\":\"" + String(DEVICE_ID) + "\",";
+  payload += "\"device_id\":\"" + String(DEVICE_ID) + "\",";
+  payload += "\"temperature\":null,";
+  payload += "\"humidity\":null,";
+  payload += "\"soil_moisture\":null,";
+  payload += "\"soil_temperature\":null,";
   payload += "\"pump\":" + String(state.pump ? "true" : "false") + ",";
   payload += "\"valve1\":" + String(state.valve1 ? "true" : "false") + ",";
   payload += "\"valve2\":" + String(state.valve2 ? "true" : "false") + ",";
@@ -107,7 +113,8 @@ void mqttPublishState(const ActuatorState& state, bool retained) {
   payload += "\"float\":\"" + state.floatState + "\",";
   payload += "\"requestId\":\"" + state.requestId + "\",";
   payload += "\"source\":\"" + state.source + "\",";
-  payload += "\"ts\":" + String(static_cast<long>(time(nullptr))) + "";
+  payload += "\"timestamp\":" + String(unixTs) + ",";
+  payload += "\"ts\":" + String(unixTs) + "";
   payload += "}";
   mqttClient.publish(TOPIC_STATE, payload.c_str(), retained);
 }
@@ -116,12 +123,15 @@ void mqttPublishStatus(bool online) {
   if (!mqttConnected()) {
     return;
   }
+  const long unixTs = static_cast<long>(time(nullptr));
   String payload = "{";
-  payload += "\"deviceId\":\"esp32a\",";
+  payload += "\"deviceId\":\"" + String(DEVICE_ID) + "\",";
+  payload += "\"device_id\":\"" + String(DEVICE_ID) + "\",";
   payload += "\"online\":" + String(online ? "true" : "false") + ",";
   payload += "\"rssi\":" + String(WiFi.RSSI()) + ",";
   payload += "\"uptime\":" + String(millis() / 1000) + ",";
-  payload += "\"ts\":" + String(static_cast<long>(time(nullptr))) + "";
+  payload += "\"timestamp\":" + String(unixTs) + ",";
+  payload += "\"ts\":" + String(unixTs) + "";
   payload += "}";
   mqttClient.publish(TOPIC_STATUS, payload.c_str(), false);
 }
@@ -179,7 +189,8 @@ void mqttHandleCommand(const char* payload) {
   mqttPublishState(*stateRef, true);
 
   String ackPayload = "{";
-  ackPayload += "\"deviceId\":\"esp32a\",";
+  ackPayload += "\"deviceId\":\"" + String(DEVICE_ID) + "\",";
+  ackPayload += "\"device_id\":\"" + String(DEVICE_ID) + "\",";
   ackPayload += "\"requestId\":\"" + stateRef->requestId + "\",";
   ackPayload += "\"ack\":true,";
   ackPayload += "\"pump\":" + String(stateRef->pump ? "true" : "false") + ",";

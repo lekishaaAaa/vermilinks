@@ -15,7 +15,7 @@ module.exports = {
   up: async (sequelize) => {
     const queryInterface = sequelize.getQueryInterface();
 
-    const sensorDataTable = 'sensordata';
+    const sensorDataTable = 'sensor_data';
     if (!(await columnExists(queryInterface, sensorDataTable, 'soil_temperature'))) {
       await queryInterface.addColumn(sensorDataTable, 'soil_temperature', {
         type: DataTypes.FLOAT,
@@ -35,7 +35,7 @@ module.exports = {
   down: async (sequelize) => {
     const queryInterface = sequelize.getQueryInterface();
     try {
-      await queryInterface.removeColumn('sensordata', 'soil_temperature');
+      await queryInterface.removeColumn('sensor_data', 'soil_temperature');
     } catch (error) {
       // ignore
     }

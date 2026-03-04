@@ -64,12 +64,10 @@ if (isTestEnv) {
 		console.error('[SAFE URL PARSE ERROR] Database URL:', databaseUrl, err.message);
 		throw err;
 	}
-	const sslFlagFromUrl = /[?&]sslmode=require/i.test(databaseUrl);
-	const sslFlagFromEnv = (process.env.PGSSLMODE || '').toLowerCase() === 'require';
-	const shouldRequireSsl = sslFlagFromUrl || sslFlagFromEnv;
-	usesSsl = shouldRequireSsl;
+	const isProduction = process.env.NODE_ENV === 'production';
+	usesSsl = isProduction;
 
-	const dialectOptions = shouldRequireSsl
+	const dialectOptions = isProduction
 		? { ssl: { require: true, rejectUnauthorized: false } }
 		: {};
 
