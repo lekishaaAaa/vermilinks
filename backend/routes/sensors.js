@@ -40,7 +40,10 @@ const formatLatestSnapshot = (snapshot) => {
   }
   const toNumber = (value) => (value === null || value === undefined ? null : Number(value));
   const timestamp = snapshot.timestamp || snapshot.updated_at || snapshot.created_at;
+  const normalizedDeviceId = (snapshot.deviceId || snapshot.device_id || '').toString().trim() || null;
   return {
+    deviceId: normalizedDeviceId,
+    device_id: normalizedDeviceId,
     temperature: toNumber(snapshot.temperature),
     humidity: toNumber(snapshot.humidity),
     soil_moisture: toNumber(snapshot.moisture ?? snapshot.soil_moisture),
@@ -56,6 +59,7 @@ const formatLatestSnapshot = (snapshot) => {
       : (snapshot.float_state !== undefined && snapshot.float_state !== null ? Number(snapshot.float_state) : null),
     battery_level: toNumber(snapshot.batteryLevel ?? snapshot.battery_level),
     signal_strength: toNumber(snapshot.signalStrength ?? snapshot.signal_strength),
+    timestamp: ensureIsoString(timestamp),
     updated_at: ensureIsoString(timestamp),
   };
 };
@@ -278,6 +282,7 @@ router.get('/latest', async (req, res) => {
       }
       const latest = await SensorData.findOne({ where, order: [['timestamp', 'DESC']], raw: true });
       formatted = latest ? formatLatestSnapshot({
+        deviceId: latest.deviceId,
         temperature: latest.temperature,
         humidity: latest.humidity,
         moisture: latest.moisture,
