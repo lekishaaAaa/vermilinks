@@ -1523,6 +1523,112 @@ export default function AdminDashboard(): React.ReactElement {
                   refreshing={realtimeRefreshing}
                   telemetryDisabled={false}
                 />
+
+                <div className="bg-white dark:bg-gray-900/70 border border-gray-200 dark:border-gray-800 rounded-xl shadow p-6">
+                  <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <h4 className="text-lg font-semibold text-gray-800 dark:text-gray-100">System Alerts & Notifications</h4>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">Latest alert feed with acknowledge, mark-read, and clear actions.</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2 text-xs font-semibold">
+                      <span className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-rose-700 dark:border-rose-800 dark:bg-rose-900/30 dark:text-rose-200">Critical: {alertsSummary.critical}</span>
+                      <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-amber-700 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-200">Warning: {alertsSummary.warning}</span>
+                      <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-blue-700 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-200">Info: {alertsSummary.info}</span>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={handleRefreshActiveAlerts}
+                      disabled={alertsRefreshing || alertsClearing}
+                      className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                    >
+                      <RefreshCw className={`h-4 w-4 ${alertsRefreshing ? 'animate-spin' : ''}`} />
+                      {alertsRefreshing ? 'Refreshing…' : 'Refresh Alerts'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={markAllAlertsAsRead}
+                      disabled={alertsRefreshing}
+                      className="inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-60 dark:border-blue-700 dark:bg-blue-900/30 dark:text-blue-200"
+                    >
+                      <Check className="h-4 w-4" />
+                      Mark All Read
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleClearAllAlerts}
+                      disabled={alertsClearing || latestAlerts.length === 0}
+                      className="inline-flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700 hover:bg-rose-100 disabled:opacity-60 dark:border-rose-700 dark:bg-rose-900/30 dark:text-rose-200"
+                    >
+                      {alertsClearing ? 'Clearing…' : 'Clear All'}
+                    </button>
+                  </div>
+
+                  {alertsActionError && (
+                    <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-800 dark:bg-rose-900/30 dark:text-rose-200">
+                      {alertsActionError}
+                    </div>
+                  )}
+                  {alertsActionMessage && (
+                    <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200">
+                      {alertsActionMessage}
+                    </div>
+                  )}
+
+                  <div className="mt-5 space-y-3">
+                    {latestAlerts.length === 0 ? (
+                      <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-6 text-center text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800/50 dark:text-gray-400">
+                        No active notifications.
+                      </div>
+                    ) : (
+                      latestAlerts.slice(0, 12).map((alert: any, idx: number) => {
+                        const alertId = alert.id || alert._id || `${idx}`;
+                        const severity = classifySeverity(alert?.severity ?? alert?.level ?? alert?.type);
+                        const isRead = ['read', 'acknowledged', 'resolved', 'cleared'].includes(String(alert?.status || '').toLowerCase());
+                        const badgeTone = severity === 'critical'
+                          ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-200'
+                          : severity === 'warning'
+                            ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-200'
+                            : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-200';
+                        return (
+                          <div key={alertId} className="rounded-lg border border-gray-200 bg-white/80 px-4 py-3 dark:border-gray-700 dark:bg-gray-900/50">
+                            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold ${badgeTone}`}>{severity.toUpperCase()}</span>
+                                  <span className="text-xs text-gray-500 dark:text-gray-400">{formatAlertTimestamp(alert.createdAt || alert.timestamp || alert.updatedAt)}</span>
+                                </div>
+                                <p className="mt-2 text-sm font-medium text-gray-800 dark:text-gray-100">{alert.title || alert.message || 'Alert triggered'}</p>
+                                {alert.deviceId && <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Device: {alert.deviceId}</p>}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {!isRead && (
+                                  <button
+                                    type="button"
+                                    onClick={() => markAlertAsRead(alertId)}
+                                    disabled={acknowledgingAlertId === alertId}
+                                    className="rounded-md bg-blue-600 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+                                  >
+                                    {acknowledgingAlertId === alertId ? 'Acknowledging…' : 'Acknowledge'}
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => deleteAlertNotification(alertId)}
+                                  className="rounded-md border border-rose-200 px-3 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50 dark:border-rose-700 dark:text-rose-200 dark:hover:bg-rose-900/30"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
               </div>
             )}
 

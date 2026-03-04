@@ -194,6 +194,7 @@ const SensorLogsPage: React.FC = () => {
     if (!selectedIds.size) {
       return;
     }
+    const ids = Array.from(selectedIds);
     const confirmed = window.confirm(`Delete ${selectedIds.size} selected log(s)? This cannot be undone.`);
     if (!confirmed) {
       return;
@@ -201,10 +202,20 @@ const SensorLogsPage: React.FC = () => {
     setBulkDeleting(true);
     setError(null);
     try {
-      await sensorLogService.bulkRemove(Array.from(selectedIds));
+      await sensorLogService.bulkRemove(ids);
       await fetchLogs();
     } catch (err: any) {
-      setError(err?.response?.data?.message || err?.message || 'Failed to delete selected logs');
+      const status = Number(err?.response?.status || 0);
+      if ([404, 405, 410].includes(status)) {
+        const outcomes = await Promise.allSettled(ids.map((id) => sensorLogService.remove(id)));
+        const failed = outcomes.filter((result) => result.status === 'rejected').length;
+        await fetchLogs();
+        if (failed > 0) {
+          setError(`Deleted ${ids.length - failed}/${ids.length} selected logs. Some entries could not be removed.`);
+        }
+      } else {
+        setError(err?.response?.data?.message || err?.message || 'Failed to delete selected logs');
+      }
     } finally {
       setBulkDeleting(false);
     }
