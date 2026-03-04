@@ -51,6 +51,7 @@ export interface SensorLogEntry {
   id: number;
   deviceId: string;
   sensorName: string;
+  category?: 'Environmental Sensors' | 'Device Metrics' | string;
   value: number;
   unit?: string | null;
   origin?: string | null;
@@ -59,11 +60,18 @@ export interface SensorLogEntry {
   rawPayload?: Record<string, unknown> | null;
 }
 
+export interface DeviceStatusSnapshot {
+  device_id: string;
+  online: boolean;
+  last_seen: string | null;
+  signalStrength?: number | null;
+}
+
 export interface SensorSummaryItem {
   key: string;
   label: string;
   unit?: string | null;
-  value: number | Record<string, number | null>;
+  value: number | string | Record<string, number | null>;
   timestamp?: string;
 }
 

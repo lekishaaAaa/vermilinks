@@ -14,10 +14,11 @@ import { useAuth } from '../contexts/AuthContext';
 import { useData } from '../contexts/DataContext';
 import { useToast } from '../contexts/ToastContext';
 import weatherService from '../services/weatherService';
-import api, { alertService } from '../services/api';
-import { SensorData as SensorDataType } from '../types';
+import api, { alertService, deviceService, notificationService } from '../services/api';
+import { DeviceStatusSnapshot, SensorData as SensorDataType } from '../types';
 import { socket as sharedSocket } from '../socket';
 import RealtimeTelemetryPanel from '../components/RealtimeTelemetryPanel';
+import { formatMetric } from '../utils/metricFormatter';
 
 type Sensor = {
   id: string;
@@ -140,6 +141,8 @@ export default function AdminDashboard(): React.ReactElement {
   const [deviceInventory, setDeviceInventory] = useState<DeviceSummary[]>([]);
   const [deviceError, setDeviceError] = useState<string | null>(null);
   const [healthStatus, setHealthStatus] = useState<any | null>(null);
+  const [mqttConnected, setMqttConnected] = useState<boolean>(false);
+  const [deviceStatusSnapshots, setDeviceStatusSnapshots] = useState<DeviceStatusSnapshot[]>([]);
   const [actuatorStatuses, setActuatorStatuses] = useState<Record<string, ActuatorSnapshot>>({});
   const [actuatorTimeline, setActuatorTimeline] = useState<ActuatorSnapshot[]>([]);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -161,19 +164,22 @@ export default function AdminDashboard(): React.ReactElement {
   const [alertsActionError, setAlertsActionError] = useState<string | null>(null);
   const [acknowledgingAlertId, setAcknowledgingAlertId] = useState<string | null>(null);
   const [realtimeRefreshing, setRealtimeRefreshing] = useState(false);
+  const [exportStartDate, setExportStartDate] = useState<string>('');
+  const [exportEndDate, setExportEndDate] = useState<string>('');
+  const simulatorActive = process.env.NODE_ENV !== 'production';
 
   const hasLiveTelemetry = useMemo(() => {
-    if (telemetryDisabled) {
-      return false;
-    }
     if (ctxTelemetry) {
       return true;
     }
     if (Array.isArray(ctxSensorBuffer) && ctxSensorBuffer.length > 0) {
       return true;
     }
+    if (latestSensor) {
+      return true;
+    }
     return sensorHistory.length > 0;
-  }, [ctxSensorBuffer, ctxTelemetry, sensorHistory, telemetryDisabled]);
+  }, [ctxSensorBuffer, ctxTelemetry, latestSensor, sensorHistory]);
 
   const classifySeverity = useCallback((value: unknown): 'critical' | 'warning' | 'info' => {
     const normalized = (value || '').toString().toLowerCase();
@@ -347,6 +353,19 @@ export default function AdminDashboard(): React.ReactElement {
       return `${days}d ago`;
     }
     return new Date(timestamp).toLocaleString();
+  }, []);
+
+  const getSignalStrengthTone = useCallback((value?: number | null) => {
+    if (value === null || value === undefined || Number.isNaN(Number(value))) {
+      return 'text-gray-500 dark:text-gray-400';
+    }
+    if (value > -60) {
+      return 'text-emerald-600 dark:text-emerald-300';
+    }
+    if (value >= -75) {
+      return 'text-amber-600 dark:text-amber-300';
+    }
+    return 'text-rose-600 dark:text-rose-300';
   }, []);
 
   const normalizeActuatorSnapshot = useCallback((payload: any): ActuatorSnapshot | null => {
@@ -544,6 +563,29 @@ export default function AdminDashboard(): React.ReactElement {
     }
   }, [loadLatestAlerts]);
 
+  const markAllAlertsAsRead = useCallback(async () => {
+    setAlertsActionError(null);
+    setAlertsActionMessage(null);
+    try {
+      const response = await notificationService.markAllAsRead();
+      const updated = Number(response?.data?.data?.updated || 0);
+      setAlertsActionMessage(updated > 0 ? `Marked ${updated} notification(s) as read.` : 'All notifications already read.');
+      await loadLatestAlerts();
+    } catch (error) {
+      setAlertsActionError('Failed to mark all notifications as read.');
+    }
+  }, [loadLatestAlerts]);
+
+  const deleteAlertNotification = useCallback(async (alertId?: string) => {
+    if (!alertId) return;
+    try {
+      await notificationService.remove(alertId);
+      await loadLatestAlerts();
+    } catch (error) {
+      setAlertsActionError('Failed to delete notification.');
+    }
+  }, [loadLatestAlerts]);
+
   const handleRealtimeRefresh = useCallback(async () => {
     if (telemetryDisabled) {
       info('Telemetry Disabled', 'Live data will remain hidden until sensors come online.');
@@ -589,24 +631,46 @@ export default function AdminDashboard(): React.ReactElement {
     }
   }, [alertsClearing, loadLatestAlerts]);
 
-  const handleExportSensorData = useCallback(() => {
+  const exportFilteredHistory = useMemo(() => {
     if (!sensorHistory.length) {
+      return [];
+    }
+
+    if (!exportStartDate && !exportEndDate) {
+      return sensorHistory;
+    }
+
+    const startMs = exportStartDate
+      ? new Date(`${exportStartDate}T00:00:00.000Z`).getTime()
+      : Number.NEGATIVE_INFINITY;
+    const endMs = exportEndDate
+      ? new Date(`${exportEndDate}T23:59:59.999Z`).getTime()
+      : Number.POSITIVE_INFINITY;
+
+    return sensorHistory.filter((entry) => {
+      const ts = new Date(entry.timestamp || entry.lastSeen || '').getTime();
+      if (Number.isNaN(ts)) {
+        return false;
+      }
+      return ts >= startMs && ts <= endMs;
+    });
+  }, [sensorHistory, exportStartDate, exportEndDate]);
+
+  const handleExportSensorData = useCallback(() => {
+    if (!exportFilteredHistory.length) {
       warning('Export Failed', 'No sensor data available to export');
       return;
     }
 
     try {
-      const headers = ['Timestamp', 'Temperature (°C)', 'Soil Temperature (°C)', 'Soil Moisture (%)', 'pH', 'EC (mS/cm)', 'Water Level', 'Battery (%)', 'Signal (dBm)'];
-      const csvData = sensorHistory.map((entry) => [
+      const headers = ['Timestamp', 'External Temperature (°C)', 'Humidity (%)', 'Soil Temperature (°C)', 'Soil Moisture (%)', 'Water Level'];
+      const csvData = exportFilteredHistory.map((entry) => [
         entry.timestamp || entry.lastSeen || '',
         entry.temperature ?? '',
+        entry.humidity ?? '',
         entry.soilTemperature ?? '',
         entry.moisture ?? '',
-        entry.ph ?? '',
-        entry.ec ?? '',
         entry.waterLevel ?? '',
-        entry.batteryLevel ?? '',
-        entry.signalStrength ?? '',
       ]);
 
       const csvContent = [headers, ...csvData]
@@ -624,30 +688,27 @@ export default function AdminDashboard(): React.ReactElement {
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
 
-      success('Export Complete', `Exported ${sensorHistory.length} sensor readings to CSV`);
+      success('Export Complete', `Exported ${exportFilteredHistory.length} sensor readings to CSV`);
     } catch (err) {
       console.error('Export failed:', err);
       error('Export Failed', 'Unable to export sensor data');
     }
-  }, [sensorHistory, success, error, warning]);
+  }, [exportFilteredHistory, success, error, warning]);
 
   const handleExportExcel = useCallback(() => {
-    if (!sensorHistory.length) {
+    if (!exportFilteredHistory.length) {
       warning('Export Failed', 'No sensor data available to export');
       return;
     }
     try {
-      const headers = ['Timestamp', 'Temperature (°C)', 'Soil Temperature (°C)', 'Soil Moisture (%)', 'pH', 'EC (mS/cm)', 'Water Level', 'Battery (%)', 'Signal (dBm)'];
-      const rows = sensorHistory.map((entry) => [
+      const headers = ['Timestamp', 'External Temperature (°C)', 'Humidity (%)', 'Soil Temperature (°C)', 'Soil Moisture (%)', 'Water Level'];
+      const rows = exportFilteredHistory.map((entry) => [
         entry.timestamp || entry.lastSeen || '',
         entry.temperature ?? '',
+        entry.humidity ?? '',
         entry.soilTemperature ?? '',
         entry.moisture ?? '',
-        entry.ph ?? '',
-        entry.ec ?? '',
         entry.waterLevel ?? '',
-        entry.batteryLevel ?? '',
-        entry.signalStrength ?? '',
       ]);
 
       const tableRows = [headers, ...rows]
@@ -674,21 +735,21 @@ export default function AdminDashboard(): React.ReactElement {
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
 
-      success('Export Complete', `Exported ${sensorHistory.length} sensor readings to Excel`);
+      success('Export Complete', `Exported ${exportFilteredHistory.length} sensor readings to Excel`);
     } catch (exportError) {
       console.error('Excel export failed:', exportError);
       error('Export Failed', 'Unable to export Excel report');
     }
-  }, [sensorHistory, success, error, warning]);
+  }, [exportFilteredHistory, success, error, warning]);
 
   const handleExportPdf = useCallback(() => {
-    if (!sensorHistory.length) {
+    if (!exportFilteredHistory.length) {
       warning('Export Failed', 'No sensor data available to export');
       return;
     }
-    const lines = sensorHistory.slice(-200).map((entry) => {
+    const lines = exportFilteredHistory.slice(-200).map((entry) => {
       const ts = entry.timestamp || entry.lastSeen || '';
-      return `${ts} | T:${entry.temperature ?? '-'} | H:${entry.humidity ?? '-'} | M:${entry.moisture ?? '-'} | SoilT:${entry.soilTemperature ?? '-'} | pH:${entry.ph ?? '-'} | EC:${entry.ec ?? '-'} | WL:${entry.waterLevel ?? '-'} | Batt:${entry.batteryLevel ?? '-'} | RSSI:${entry.signalStrength ?? '-'}`;
+      return `${ts} | External Temperature:${entry.temperature ?? '-'} | Humidity:${entry.humidity ?? '-'} | Soil Moisture:${entry.moisture ?? '-'} | Soil Temperature:${entry.soilTemperature ?? '-'} | Water Level:${entry.waterLevel ?? '-'}`;
     });
 
     const reportWindow = window.open('', '_blank', 'width=1024,height=768');
@@ -710,7 +771,7 @@ export default function AdminDashboard(): React.ReactElement {
         </head>
         <body>
           <h1>VermiLinks Sensor Report</h1>
-          <div class="meta">Generated: ${new Date().toLocaleString()} | Records: ${sensorHistory.length}</div>
+          <div class="meta">Generated: ${new Date().toLocaleString()} | Records: ${exportFilteredHistory.length}</div>
           <pre>${lines.join('\n')}</pre>
         </body>
       </html>
@@ -719,7 +780,7 @@ export default function AdminDashboard(): React.ReactElement {
     reportWindow.focus();
     reportWindow.print();
     success('Export Complete', 'PDF print dialog opened. Save as PDF to download.');
-  }, [sensorHistory, success, error, warning]);
+  }, [exportFilteredHistory, success, error, warning]);
 
   function acknowledgeReminder(id: string) {
     setReminders(prev => prev.map(r => r.id === id ? { ...r, acknowledged: true } : r));
@@ -737,6 +798,13 @@ export default function AdminDashboard(): React.ReactElement {
   // Search UI state
 
   function fmtLastSeen(iso?: string | null) { if (!iso) return 'No data'; try { return new Date(iso).toLocaleString(); } catch { return String(iso); } }
+  function formatNumber(value?: number | null) {
+    if (value === null || value === undefined || Number.isNaN(Number(value))) return '--';
+    return Number(value).toFixed(2);
+  }
+  function formatMetricValue(value?: number | null, unit?: string) {
+    return formatMetric(value, unit);
+  }
 
   useEffect(() => {
     let mounted = true;
@@ -814,25 +882,55 @@ export default function AdminDashboard(): React.ReactElement {
 
     async function loadHealth() {
       try {
-        const res = await fetch('/api/health');
+        const [healthRes, systemInfoRes] = await Promise.all([
+          fetch('/api/health').catch(() => null),
+          api.get('/system/info').catch(() => null),
+        ]);
         if (!mounted) return;
-        if (res.ok) {
-          const data = await res.json();
+        if (healthRes && healthRes.ok) {
+          const data = await healthRes.json();
           setHealthStatus(data);
+        }
+        const mqttConnectedFromSystem = Boolean(systemInfoRes?.data?.mqtt?.connected);
+        setMqttConnected(mqttConnectedFromSystem);
+        if (Array.isArray(systemInfoRes?.data?.devices)) {
+          setDeviceStatusSnapshots((systemInfoRes?.data?.devices || []) as DeviceStatusSnapshot[]);
         }
       } catch (e) { setHealthStatus(null); }
     }
 
-    loadLatest(); loadAlerts(); loadHealth(); loadReminders(); loadLatestAlerts();
+    async function loadDeviceStatusSnapshots() {
+      try {
+        const response = await deviceService.getStatus();
+        if (!mounted) return;
+        setDeviceStatusSnapshots(Array.isArray(response?.data?.devices) ? response.data.devices : []);
+      } catch (error) {
+        if (!mounted) return;
+        setDeviceStatusSnapshots([]);
+      }
+    }
+
+    loadLatest(); loadAlerts(); loadHealth(); loadReminders(); loadLatestAlerts(); loadDeviceStatusSnapshots();
     // load devices
     refreshDeviceInventory();
+    // fetch latest telemetry snapshot for metric cards
+    (async function loadLatestSensor() {
+      try {
+        const response = await api.get('/sensors/latest').catch(() => null);
+        if (!mounted || !response || !response.data) {
+          return;
+        }
+        const mapped = mapSensorDataToSensor(response.data as SensorDataType);
+        if (mapped) {
+          setLatestSensor(mapped);
+        }
+      } catch (e) {
+        // ignore snapshot failures; history fetch below can still populate telemetry
+      }
+    })();
+
     // also fetch initial history for charts
     (async function loadHistory() {
-      if (telemetryDisabled || !ctxTelemetry) {
-        setSensorHistory([]);
-        historyFetchedRef.current = false;
-        return;
-      }
       if (historyFetchedRef.current) {
         return;
       }
@@ -857,26 +955,27 @@ export default function AdminDashboard(): React.ReactElement {
           const bTime = new Date(b.timestamp || b.lastSeen || 0).getTime();
           return aTime - bTime;
         });
-        setSensorHistory(ordered.slice(-336));
+        const sliced = ordered.slice(-336);
+        setSensorHistory(sliced);
+        if (sliced.length > 0) {
+          setLatestSensor((prev) => prev || sliced[sliced.length - 1]);
+        }
         historyFetchedRef.current = true;
       } catch (e) {
         setSensorHistory([]);
       }
     })();
   const idDevices = setInterval(refreshDeviceInventory, 10000);
+    const idDeviceStatus = setInterval(loadDeviceStatusSnapshots, 5000);
     const id1 = setInterval(loadLatest, 5000);
-    const id2 = setInterval(loadAlerts, 15000);
+    const id2 = setInterval(loadAlerts, 5000);
     const id3 = setInterval(loadHealth, 10000);
     const id4 = setInterval(loadReminders, 60_000);
     const id5 = setInterval(loadLatestAlerts, 10000); // Poll for new alerts every 10 seconds
-    return () => { mounted = false; clearInterval(idDevices); clearInterval(id1); clearInterval(id2); clearInterval(id3); clearInterval(id4); clearInterval(id5); };
-  }, [refreshDeviceInventory, loadLatestAlerts, telemetryDisabled, ctxTelemetry]);
+    return () => { mounted = false; clearInterval(idDevices); clearInterval(idDeviceStatus); clearInterval(id1); clearInterval(id2); clearInterval(id3); clearInterval(id4); clearInterval(id5); };
+  }, [refreshDeviceInventory, loadLatestAlerts]);
 
   useEffect(() => {
-    if (telemetryDisabled) {
-      setSensorStatus('Awaiting physical sensors');
-      return;
-    }
     if (devicesOnline > 0) {
       setSensorStatus(`${devicesOnline} device${devicesOnline === 1 ? '' : 's'} online`);
     } else if (hasLiveTelemetry) {
@@ -884,14 +983,9 @@ export default function AdminDashboard(): React.ReactElement {
     } else {
       setSensorStatus('No sensors connected');
     }
-  }, [devicesOnline, hasLiveTelemetry, telemetryDisabled]);
+  }, [devicesOnline, hasLiveTelemetry]);
 
   useEffect(() => {
-    if (telemetryDisabled) {
-      setLatestSensor(null);
-      setSensorHistory([]);
-      return;
-    }
     if (!ctxTelemetry) {
       return;
     }
@@ -911,14 +1005,7 @@ export default function AdminDashboard(): React.ReactElement {
       info('Sensor Update', 'New telemetry data received');
       lastTelemetryToastRef.current = now;
     }
-  }, [ctxTelemetry, info, telemetryDisabled]);
-
-  useEffect(() => {
-    if (telemetryDisabled) {
-      setLatestSensor(null);
-      setSensorHistory([]);
-    }
-  }, [telemetryDisabled]);
+  }, [ctxTelemetry, info]);
 
   useEffect(() => {
     if (!alertsActionMessage) {
@@ -1179,7 +1266,7 @@ export default function AdminDashboard(): React.ReactElement {
 
   // Maintenance reminders handled in top-of-file declarations
 
-  const chartData = devicesOnline > 0 ? sensorHistory.map((s, i) => ({ time: `${i * 5}s`, temperature: s.temperature ?? 0, moisture: s.moisture ?? 0, ph: s.ph ?? 0, ec: s.ec ?? 0, waterLevel: s.waterLevel ?? 0 })) : [];
+  const chartData = devicesOnline > 0 ? sensorHistory.map((s, i) => ({ time: `${i * 5}s`, temperature: s.temperature ?? 0, moisture: s.moisture ?? 0, waterLevel: s.waterLevel ?? 0 })) : [];
 
   return (
     <div className="min-h-screen pt-24 p-6 bg-gray-50 dark:bg-gray-900">
@@ -1190,6 +1277,10 @@ export default function AdminDashboard(): React.ReactElement {
               <div className="flex items-center gap-3">
                 <input ref={searchInputRef} value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search alerts, sensors... (Press Esc to close)" className="w-full px-4 py-3 rounded-lg border text-sm bg-gray-50 dark:bg-gray-900/60" />
                 <button onClick={() => { setSearchOpen(false); setSearchQuery(''); }} className="px-3 py-2 text-sm rounded-md border">Close</button>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`h-2 w-2 rounded-full ${simulatorActive ? 'bg-amber-500' : 'bg-sky-500'}`} />
+                {simulatorActive ? 'Simulator Active' : 'Live Hardware Mode'}
               </div>
             </div>
             <div className="max-h-[60vh] overflow-auto border-t border-gray-100 dark:border-gray-700 p-4">
@@ -1244,6 +1335,20 @@ export default function AdminDashboard(): React.ReactElement {
               Review Sensor Logs
             </Link>
             <div className="flex flex-wrap gap-2">
+              <input
+                type="date"
+                value={exportStartDate}
+                onChange={(event) => setExportStartDate(event.target.value)}
+                className="rounded-lg border border-gray-200 bg-white/80 px-3 py-2 text-xs font-medium text-gray-700 shadow dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-100"
+                aria-label="Export start date"
+              />
+              <input
+                type="date"
+                value={exportEndDate}
+                onChange={(event) => setExportEndDate(event.target.value)}
+                className="rounded-lg border border-gray-200 bg-white/80 px-3 py-2 text-xs font-medium text-gray-700 shadow dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-100"
+                aria-label="Export end date"
+              />
               <button
                 type="button"
                 onClick={handleExportExcel}
@@ -1319,243 +1424,7 @@ export default function AdminDashboard(): React.ReactElement {
             {/* Overview Tab */}
             {activeTab === 'overview' && (
               <div className="space-y-6">
-                {/* Hero Metrics */}
-                {hasLiveTelemetry && latestSensor ? (
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                    {(() => {
-                      const formatNumber = (value?: number | null, suffix = '') => (value === null || value === undefined
-                        ? '--'
-                        : `${Number(value.toFixed ? value.toFixed(2) : value)}${suffix}`);
-                      const npk = latestSensor.npk;
-                      const heroMetrics = [
-                        {
-                          key: 'temperature',
-                          label: 'Temperature',
-                          value: latestSensor.temperature != null ? `${latestSensor.temperature.toFixed(1)}°C` : '--',
-                          accent: 'text-rose-600',
-                          detail: `Sensor: ${latestSensor.name ?? latestSensor.deviceId ?? '—'}`,
-                        },
-                        {
-                          key: 'moisture',
-                          label: 'Soil Moisture',
-                          value: latestSensor.moisture != null ? `${latestSensor.moisture.toFixed(1)}%` : '--',
-                          accent: 'text-green-600',
-                          detail: `Water Level: ${formatNumber(latestSensor.waterLevel, ' cm')}`,
-                        },
-                        {
-                          key: 'waterLevel',
-                          label: 'Water Level',
-                          value: latestSensor.waterLevel != null ? `${latestSensor.waterLevel} cm` : '--',
-                          accent: 'text-cyan-600',
-                          detail: `Float Sensor: ${latestSensor.floatSensor ?? '—'}`,
-                        },
-                        {
-                          key: 'ph',
-                          label: 'pH',
-                          value: latestSensor.ph != null ? latestSensor.ph.toFixed(2) : '--',
-                          accent: 'text-amber-600',
-                          detail: latestSensor.ec != null ? `EC: ${latestSensor.ec.toFixed(2)} mS/cm` : 'EC awaiting data',
-                        },
-                        {
-                          key: 'npk',
-                          label: 'NPK Balance',
-                          value: npk ? `N${npk.n ?? 0} · P${npk.p ?? 0} · K${npk.k ?? 0}` : '--',
-                          accent: 'text-purple-600',
-                          detail: 'mg/kg',
-                        },
-                        {
-                          key: 'battery',
-                          label: 'Battery',
-                          value: latestSensor.batteryLevel != null ? `${latestSensor.batteryLevel.toFixed(0)}%` : '--',
-                          accent: 'text-emerald-600',
-                          detail: latestSensor.signalStrength != null ? `Signal ${latestSensor.signalStrength} dBm` : 'Signal pending',
-                        },
-                        {
-                          key: 'signal',
-                          label: 'Signal Strength',
-                          value: latestSensor.signalStrength != null ? `${latestSensor.signalStrength} dBm` : '--',
-                          accent: 'text-indigo-600',
-                          detail: `Updated ${fmtLastSeen(latestSensor.lastSeen)}`,
-                        },
-                      ];
-                      return heroMetrics.map((metric) => (
-                        <div key={metric.key} className={`${cardClass} rounded-2xl flex flex-col items-start gap-2`}>
-                          <div className="text-xs text-gray-500">{metric.label}</div>
-                          <div className={`text-3xl md:text-4xl font-extrabold ${metric.accent}`}>{metric.value}</div>
-                          <div className="text-sm text-gray-500">{metric.detail}</div>
-                        </div>
-                      ));
-                    })()}
-                  </div>
-                ) : (
-                  <div className={`${cardClass} rounded-2xl text-center text-sm text-gray-500 dark:text-gray-400`}>
-                    <p className="text-base font-semibold text-gray-800 dark:text-gray-100">No telemetry yet</p>
-                    <p className="mt-1">Connect a VermiLinks sensor to unlock live temperature and moisture metrics.</p>
-                  </div>
-                )}
-
-                {/* System Overview & Notifications Row */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* System Health */}
-                  <div className="p-4 rounded-lg bg-white/80 dark:bg-gray-800/80 border border-gray-100 dark:border-gray-700 shadow">
-                    <SystemHealth items={[
-                      { label: 'Server', ok: systemStatus.server === 'online', details: `${systemStatus.apiLatency}ms` },
-                      { label: 'Database', ok: systemStatus.database === 'online' },
-                      { label: 'ESP32s', ok: hasLiveTelemetry, details: hasLiveTelemetry ? 'Streaming' : 'Awaiting signal' },
-                      { label: 'Cloud API', ok: !!weatherSummary }
-                    ]} />
-                  </div>
-
-                  {/* Notifications */}
-                  <div className="p-4 rounded-lg bg-white/80 dark:bg-gray-800/80 border border-gray-100 dark:border-gray-700 shadow">
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 flex items-center">
-                        <Bell className="w-5 h-5 mr-2" />
-                        Notifications
-                        {unreadCount > 0 && (
-                          <span className="ml-2 bg-red-500 text-white text-xs px-2 py-1 rounded-full">
-                            {unreadCount}
-                          </span>
-                        )}
-                      </h3>
-                    </div>
-                    <div className="space-y-3 max-h-96 overflow-y-auto">
-                      {latestAlerts.length === 0 ? (
-                        <div className="text-sm text-gray-500 text-center py-4">No notifications</div>
-                      ) : (
-                        latestAlerts.map((alert: any) => (
-                          <div key={alert._id} className={`p-3 rounded-lg border ${
-                            alert.status === 'new'
-                              ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-700'
-                              : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-600'
-                          }`}>
-                            <div className="flex items-start justify-between">
-                              <div className="flex-1">
-                                <div className="flex items-center space-x-2 mb-1">
-                                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                    alert.status === 'new'
-                                      ? 'bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-200'
-                                      : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
-                                  }`}>
-                                    {alert.type}
-                                  </span>
-                                  {alert.status === 'new' && (
-                                    <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
-                                  )}
-                                </div>
-                                <p className="text-sm text-gray-800 dark:text-gray-200">{alert.message}</p>
-                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                                  {new Date(alert.createdAt).toLocaleString()}
-                                </p>
-                              </div>
-                              {alert.status === 'new' && (
-                                <button
-                                  onClick={() => markAlertAsRead(alert._id)}
-                                  className="ml-2 p-1 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200"
-                                  title="Mark as read"
-                                >
-                                  <Check className="w-4 h-4" />
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <ActuatorControls />
-
-                <div className={`${cardClass} rounded-2xl`}>
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 flex items-center gap-2">
-                        <Settings className="w-5 h-5" />
-                        Actuator Activity
-                      </h3>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">
-                        Commands dispatched from VermiLinks Actuators update here instantly.
-                      </p>
-                    </div>
-                    <span className="inline-flex items-center rounded-full border border-gray-200 px-3 py-1 text-xs font-semibold text-gray-600 dark:border-gray-700 dark:text-gray-300">
-                      {actuatorCards.length} tracked
-                    </span>
-                  </div>
-
-                  {actuatorCards.length === 0 ? (
-                    <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">
-                      Waiting for the first actuator command. Manual overrides or scheduled automations will appear here.
-                    </p>
-                  ) : (
-                    <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-                      {actuatorCards.slice(0, 4).map((actuator) => (
-                        <div key={actuator.key} className="rounded-lg border border-gray-100 bg-gray-50/80 p-3 text-sm shadow-sm dark:border-gray-800 dark:bg-gray-900/40">
-                          <div className="flex items-center justify-between">
-                            <span className="font-semibold text-gray-800 dark:text-gray-100">{actuator.name || actuator.key}</span>
-                            <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${
-                              actuator.status === null
-                                ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200'
-                                : actuator.status
-                                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200'
-                                  : 'bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-300'
-                            }`}>
-                              {formatActuatorStatusLabel(actuator.status)}
-                            </span>
-                          </div>
-                          <div className="mt-2 flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
-                            <span>Mode: <span className="font-semibold text-gray-800 dark:text-gray-100 capitalize">{actuator.mode}</span></span>
-                            <span>{describeRelativeTime(actuator.updatedAt)}</span>
-                          </div>
-                          {actuator.deviceAck === false && (
-                            <div className="mt-2 text-xs text-amber-600 dark:text-amber-300">
-                              Awaiting device ack{actuator.deviceAckMessage ? ` — ${actuator.deviceAckMessage}` : ''}
-                            </div>
-                          )}
-                          {actuator.deviceAck && (
-                            <div className="mt-2 text-[11px] font-semibold text-emerald-600 dark:text-emerald-300">
-                              Device acknowledged
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {actuatorHistory.length > 0 && (
-                    <div className="mt-5 border-t border-gray-100 pt-4 dark:border-gray-800">
-                      <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-2">
-                        Recent Commands
-                      </div>
-                      <ul className="space-y-2 text-xs text-gray-600 dark:text-gray-300">
-                        {actuatorHistory.map((entry) => (
-                          <li key={`${entry.key}-${entry.updatedAt}`} className="flex items-center justify-between gap-3">
-                            <div>
-                              <div className="font-semibold text-gray-800 dark:text-gray-100">{entry.name || entry.key}</div>
-                              <div className="text-[11px] text-gray-500 dark:text-gray-400 capitalize">
-                                {formatActuatorStatusLabel(entry.status)} • {entry.mode}
-                                {entry.deviceAck === false && ' • pending ack'}
-                              </div>
-                              {entry.deviceAckMessage && (
-                                <div className="text-[11px] text-amber-600 dark:text-amber-300">{entry.deviceAckMessage}</div>
-                              )}
-                            </div>
-                            <span className="text-gray-500 dark:text-gray-400">{describeRelativeTime(entry.updatedAt)}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-
-                <RealtimeTelemetryPanel
-                  latest={realtimeSample}
-                  history={telemetryHistory}
-                  isConnected={Boolean(socketsConnected || hasLiveTelemetry)}
-                  onRefresh={handleRealtimeRefresh}
-                  refreshing={realtimeRefreshing}
-                  telemetryDisabled={telemetryDisabled}
-                />
+                <SensorSummaryPanel />
               </div>
             )}
 
@@ -1627,7 +1496,7 @@ export default function AdminDashboard(): React.ReactElement {
                           </div>
                           <div className="mt-3 space-y-2 text-xs text-gray-600 dark:text-gray-400">
                             {device.signalStrength !== null && device.signalStrength !== undefined && (
-                              <div>Signal strength: {device.signalStrength} dBm</div>
+                              <div className={getSignalStrengthTone(device.signalStrength)}>Signal Strength: {formatMetricValue(device.signalStrength, 'dBm')}</div>
                             )}
                             {device.metadata && Object.keys(device.metadata).length > 0 && (
                               <div>
@@ -1645,135 +1514,14 @@ export default function AdminDashboard(): React.ReactElement {
                     </div>
                   )}
                 </div>
-                <SensorSummaryPanel className="mt-6" />
-
-                <div className="bg-white dark:bg-gray-900/70 border border-gray-200 dark:border-gray-800 rounded-xl shadow p-6">
-                  <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                    <div>
-                      <h4 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Active Alerts</h4>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">Latest unresolved alerts requiring attention.</p>
-                    </div>
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
-                      <div className="flex gap-2 text-xs font-semibold">
-                        <span className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-rose-700 dark:border-rose-800 dark:bg-rose-900/30 dark:text-rose-200">Critical: {alertsSummary.critical}</span>
-                        <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-amber-700 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-200">Warning: {alertsSummary.warning}</span>
-                        <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-blue-700 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-200">Info: {alertsSummary.info}</span>
-                      </div>
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={handleRefreshActiveAlerts}
-                          disabled={alertsRefreshing || alertsClearing}
-                          className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition ${alertsRefreshing || alertsClearing ? 'cursor-not-allowed border border-gray-200 bg-gray-100 text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400' : 'border border-gray-200 bg-white text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'}`}
-                        >
-                          {alertsRefreshing ? 'Refreshing…' : 'Refresh'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleClearAllAlerts}
-                          disabled={alertsClearing || latestAlerts.length === 0}
-                          className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition ${alertsClearing || latestAlerts.length === 0 ? 'cursor-not-allowed border border-rose-200 bg-rose-100 text-rose-500 dark:border-rose-800 dark:bg-rose-900/20 dark:text-rose-300' : 'border border-rose-200 bg-rose-600 text-white hover:bg-rose-700 dark:border-rose-700'}`}
-                        >
-                          {alertsClearing ? 'Clearing…' : 'Clear All'}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  {alertsActionError && (
-                    <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-800 dark:bg-rose-900/30 dark:text-rose-200">
-                      {alertsActionError}
-                    </div>
-                  )}
-                  {alertsActionMessage && (
-                    <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200">
-                      {alertsActionMessage}
-                    </div>
-                  )}
-
-                  <div className="mt-6">
-                    {latestAlerts.length === 0 ? (
-                      <div className="text-center py-10 text-sm text-gray-500 dark:text-gray-400">
-                        No active alerts.
-                      </div>
-                    ) : (
-                      <div className="space-y-6">
-                        {(['critical', 'warning', 'info'] as const).map((bucket) => {
-                          const items = groupedActiveAlerts[bucket];
-                          if (!items || items.length === 0) {
-                            return null;
-                          }
-                          const bucketLabel = bucket === 'critical' ? 'Critical' : bucket === 'warning' ? 'Warning' : 'Info';
-                          const badgeTone = bucket === 'critical'
-                            ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-200'
-                            : bucket === 'warning'
-                              ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-200'
-                              : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-200';
-                          return (
-                            <div key={bucket}>
-                              <div className="flex items-center gap-3">
-                                <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${badgeTone}`}>
-                                  {bucketLabel}
-                                </span>
-                                <span className="text-xs text-gray-500 dark:text-gray-400">{items.length} active</span>
-                              </div>
-                              <ul className="mt-3 space-y-3">
-                                {items.map((alert: any, index: number) => {
-                                  const alertId = alert.id || alert._id || alert.uuid || alert.timestamp || `${bucket}-${index}`;
-                                  const status = (alert.status || alert.state || '').toString().toLowerCase();
-                                  const deviceLabel = alert.deviceId || alert.device || alert.sensorId;
-                                  const isAcknowledged = ['read', 'acknowledged', 'resolved', 'cleared'].includes(status);
-                                  return (
-                                    <li key={alertId} className="rounded-lg border border-gray-200 bg-white/80 px-4 py-3 dark:border-gray-700 dark:bg-gray-900/60">
-                                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                        <div className="space-y-2">
-                                          <div className="flex flex-wrap items-center gap-2">
-                                            <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold ${badgeTone}`}>
-                                              {bucketLabel}
-                                            </span>
-                                            {status === 'new' && (
-                                              <span className="inline-flex h-2 w-2 rounded-full bg-blue-500" aria-hidden="true" />
-                                            )}
-                                            <span className="text-xs text-gray-500 dark:text-gray-400">{formatAlertTimestamp(alert.createdAt || alert.timestamp || alert.updatedAt)}</span>
-                                          </div>
-                                          <p className="text-sm font-medium text-gray-800 dark:text-gray-100">
-                                            {alert.title || alert.message || 'Alert triggered'}
-                                          </p>
-                                          {alert.description && (
-                                            <p className="text-xs text-gray-600 dark:text-gray-300">{alert.description}</p>
-                                          )}
-                                          {deviceLabel && (
-                                            <p className="text-xs text-gray-500 dark:text-gray-400">Device: {deviceLabel}</p>
-                                          )}
-                                        </div>
-                                        <div className="flex items-center gap-2 self-start md:self-center">
-                                          {isAcknowledged ? (
-                                            <span className="inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200">
-                                              Acknowledged
-                                            </span>
-                                          ) : (
-                                            <button
-                                              type="button"
-                                              onClick={() => markAlertAsRead(alertId)}
-                                              disabled={acknowledgingAlertId === alertId}
-                                              className={`inline-flex items-center rounded-md px-3 py-1 text-xs font-medium transition ${acknowledgingAlertId === alertId ? 'cursor-not-allowed bg-gray-200 text-gray-500 dark:bg-gray-800 dark:text-gray-400' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
-                                            >
-                                              {acknowledgingAlertId === alertId ? 'Acknowledging…' : 'Acknowledge'}
-                                            </button>
-                                          )}
-                                        </div>
-                                      </div>
-                                    </li>
-                                  );
-                                })}
-                              </ul>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </div>
+                <RealtimeTelemetryPanel
+                  latest={realtimeSample}
+                  history={telemetryHistory}
+                  isConnected={Boolean(socketsConnected || hasLiveTelemetry)}
+                  onRefresh={handleRealtimeRefresh}
+                  refreshing={realtimeRefreshing}
+                  telemetryDisabled={false}
+                />
               </div>
             )}
 
@@ -1890,7 +1638,7 @@ export default function AdminDashboard(): React.ReactElement {
                         <div className="mt-4 flex gap-3 items-end">
                           <button
                             title="Export as PDF"
-                            onClick={() => window.print()}
+                            onClick={handleExportPdf}
                             className="px-4 py-2 text-sm rounded-md bg-primary-600 text-white"
                           >
                             Export PDF

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { fetchLatest, sendControl, DeviceStatePayload } from '../services/iotControl';
+import { fetchLatest, sendActuatorCommand, DeviceStatePayload } from '../services/iotControl';
 import { socket as sharedSocket } from '../socket';
 
 const initialState = {
@@ -7,6 +7,20 @@ const initialState = {
   valve1: false,
   valve2: false,
   valve3: false,
+};
+
+const ACTUATOR_COMMAND_MAP: Record<keyof typeof initialState, string> = {
+  pump: 'pump',
+  valve1: 'solenoid_1',
+  valve2: 'solenoid_2',
+  valve3: 'solenoid_3',
+};
+
+const ACTUATOR_LABEL_MAP: Record<keyof typeof initialState, string> = {
+  pump: 'Pump (Layer 4 Reservoir)',
+  valve1: 'Layer 1 Solenoid',
+  valve2: 'Layer 2 Solenoid',
+  valve3: 'Layer 3 Solenoid',
 };
 
 const ActuatorControls: React.FC = () => {
@@ -100,7 +114,11 @@ const ActuatorControls: React.FC = () => {
     setErrorMessage(null);
 
     try {
-      const result = await sendControl(nextState);
+      const result = await sendActuatorCommand({
+        device_id: 'esp32A',
+        actuator: ACTUATOR_COMMAND_MAP[key],
+        state: nextState[key] ? 'on' : 'off',
+      });
       if (result?.requestId) {
         setPendingRequestId(result.requestId);
       } else {
@@ -144,7 +162,7 @@ const ActuatorControls: React.FC = () => {
             disabled={loading || (key === 'pump' && floatLow) || !online}
             className={`flex flex-col gap-1 rounded-xl border px-4 py-3 text-left text-sm font-semibold transition ${loading || !online ? 'cursor-not-allowed border-gray-200 bg-gray-50 text-gray-400 dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-500' : desiredState[key] ? 'border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900/40 dark:text-gray-200'}`}
           >
-            <span className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">{key === 'pump' ? 'Pump' : key.replace('valve', 'Valve ')}</span>
+            <span className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">{ACTUATOR_LABEL_MAP[key]}</span>
             <span className="text-xl font-bold">{formatStatus(desiredState[key])}</span>
             {key === 'pump' && floatLow && (
               <span className="text-xs text-rose-600 dark:text-rose-300">Pump locked (float LOW)</span>

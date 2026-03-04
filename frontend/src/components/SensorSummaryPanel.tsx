@@ -40,34 +40,21 @@ const buildFallbackSummary = (latest: SensorData | null): SensorSummaryItem[] =>
     }
   };
 
-  pushNumeric('temperature', 'Temperature', latest.temperature, '°C');
+  pushNumeric('temperature', 'External Temperature', latest.temperature, '°C');
   pushNumeric('humidity', 'Humidity', latest.humidity, '%');
   pushNumeric('moisture', 'Soil Moisture', latest.moisture, '%');
   pushNumeric('soilTemperature', 'Soil Temperature', latest.soilTemperature, '°C');
-  pushNumeric('waterLevel', 'Water Level', latest.waterLevel, latest.waterLevel != null ? 'cm' : undefined);
-  pushNumeric('floatSensor', 'Float Sensor', typeof latest.floatSensor === 'number' ? latest.floatSensor : undefined);
-  pushNumeric('ph', 'pH', latest.ph);
-  pushNumeric('ec', 'EC', latest.ec, 'mS/cm');
-
-  const nitrogen = typeof latest.nitrogen === 'number' && Number.isFinite(latest.nitrogen) ? latest.nitrogen : null;
-  const phosphorus = typeof latest.phosphorus === 'number' && Number.isFinite(latest.phosphorus) ? latest.phosphorus : null;
-  const potassium = typeof latest.potassium === 'number' && Number.isFinite(latest.potassium) ? latest.potassium : null;
-  if (nitrogen !== null || phosphorus !== null || potassium !== null) {
-    items.push({
-      key: 'npk',
-      label: 'NPK',
-      unit: 'mg/kg',
-      value: {
-        nitrogen,
-        phosphorus,
-        potassium,
-      },
-      timestamp,
-    });
+  const rawWaterLevel = latest.floatSensor ?? latest.waterLevel;
+  if (rawWaterLevel !== null && typeof rawWaterLevel !== 'undefined') {
+    const normalized = String(rawWaterLevel).trim().toUpperCase();
+    let state: 'LOW' | 'NORMAL' | 'HIGH' = 'NORMAL';
+    if (['LOW', 'EMPTY', 'MIN'].includes(normalized) || Number(rawWaterLevel) <= 0) {
+      state = 'LOW';
+    } else if (['FULL', 'HIGH', 'MAX'].includes(normalized) || Number(rawWaterLevel) >= 2) {
+      state = 'HIGH';
+    }
+    items.push({ key: 'waterLevel', label: 'Water Level', value: state, timestamp });
   }
-
-  pushNumeric('batteryLevel', 'Battery', latest.batteryLevel, latest.batteryLevel != null ? '%' : undefined);
-  pushNumeric('signalStrength', 'Signal Strength', latest.signalStrength, 'dBm');
 
   return items;
 };
@@ -125,7 +112,21 @@ const SensorSummaryPanel: React.FC<SensorSummaryPanelProps> = ({ className = '',
 
   const summaryItems = useMemo(() => {
     if (latest && Array.isArray(latest.sensorSummary) && latest.sensorSummary.length > 0) {
-      return latest.sensorSummary;
+      const allowedKeys = new Set(['temperature', 'humidity', 'soilTemperature', 'moisture', 'waterLevel']);
+      return latest.sensorSummary
+        .filter((item) => allowedKeys.has(item.key))
+        .map((item) => ({
+          ...item,
+          label: item.key === 'temperature' ? 'External Temperature' : item.label,
+          value: item.key === 'waterLevel'
+            ? (() => {
+                const normalized = String(item.value ?? '').trim().toUpperCase();
+                if (['LOW', 'EMPTY', 'MIN'].includes(normalized) || Number(item.value) <= 0) return 'LOW';
+                if (['HIGH', 'FULL', 'MAX'].includes(normalized) || Number(item.value) >= 2) return 'HIGH';
+                return 'NORMAL';
+              })()
+            : item.value,
+        }));
     }
     return buildFallbackSummary(latest);
   }, [latest]);

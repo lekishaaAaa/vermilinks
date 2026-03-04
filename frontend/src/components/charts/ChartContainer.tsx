@@ -4,9 +4,6 @@ import { Calendar, Filter, TrendingUp, BarChart3 } from 'lucide-react';
 import { SensorData } from '../../types';
 import TemperatureChart from './TemperatureChart';
 import MoistureChart from './MoistureChart';
-import PhChart from './PhChart';
-import EcChart from './EcChart';
-import NpkChart from './NpkChart';
 import WaterLevelChart from './WaterLevelChart';
 import MultiSensorChart from './MultiSensorChart';
 import { useData } from '../../contexts/DataContext';
@@ -30,7 +27,7 @@ interface ChartContainerProps {
 }
 
 type TimeRange = '1h' | '6h' | '24h' | '7d' | '30d';
-type ChartType = 'temperature' | 'moisture' | 'ph' | 'ec' | 'npk' | 'waterLevel' | 'multi';
+type ChartType = 'temperature' | 'moisture' | 'waterLevel' | 'multi';
 
 const ChartContainer: React.FC<ChartContainerProps> = ({ data, title, deviceId }) => {
   const [timeRange, setTimeRange] = useState<TimeRange>('24h');
@@ -73,11 +70,8 @@ const ChartContainer: React.FC<ChartContainerProps> = ({ data, title, deviceId }
 
   const chartTypeOptions = [
     { value: 'multi', label: 'All Sensors', icon: BarChart3 },
-    { value: 'temperature', label: 'Temperature', icon: TrendingUp },
+    { value: 'temperature', label: 'External Temperature', icon: TrendingUp },
   { value: 'moisture', label: 'Moisture', icon: TrendingUp },
-  { value: 'ph', label: 'pH', icon: TrendingUp },
-  { value: 'ec', label: 'EC', icon: TrendingUp },
-  { value: 'npk', label: 'NPK', icon: TrendingUp },
   { value: 'waterLevel', label: 'Water Level', icon: TrendingUp },
   ];
 
@@ -89,12 +83,6 @@ const ChartContainer: React.FC<ChartContainerProps> = ({ data, title, deviceId }
         return <TemperatureChart data={filteredData} height={chartHeight} className="h-full" />;
       case 'moisture':
         return <MoistureChart data={filteredData} height={chartHeight} className="h-full" />;
-      case 'ph':
-        return <PhChart data={filteredData} height={chartHeight} className="h-full" />;
-      case 'ec':
-        return <EcChart data={filteredData} height={chartHeight} className="h-full" />;
-      case 'npk':
-        return <NpkChart data={filteredData} height={chartHeight} className="h-full" />;
       case 'waterLevel':
         return <WaterLevelChart data={filteredData} height={chartHeight} className="h-full" />;
       case 'multi':

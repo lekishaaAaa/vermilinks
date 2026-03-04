@@ -42,7 +42,7 @@ const MultiSensorChart: React.FC<MultiSensorChartProps> = ({
           <p className="font-medium">{formatTooltipTime(label || '')}</p>
           <div className="space-y-1">
             <p>
-              <span className="font-medium">Temperature:</span> {data.temperature.toFixed(1)}°C
+              <span className="font-medium">External Temperature:</span> {data.temperature.toFixed(1)}°C
             </p>
             <p>
               <span className="font-medium">Humidity:</span> {data.humidity.toFixed(1)}%
@@ -50,11 +50,6 @@ const MultiSensorChart: React.FC<MultiSensorChartProps> = ({
             <p>
               <span className="font-medium">Moisture:</span> {data.moisture.toFixed(1)}%
             </p>
-            {data.batteryLevel && (
-              <p>
-                <span className="font-medium">Battery:</span> {data.batteryLevel}%
-              </p>
-            )}
           </div>
           <p className="text-sm mt-2">Device: {data.deviceId || 'unknown'}</p>
         </div>
@@ -128,7 +123,7 @@ const MultiSensorChart: React.FC<MultiSensorChartProps> = ({
             strokeWidth={3}
             dot={{ fill: isDark ? '#8E44AD' : '#7C3AED', strokeWidth: 2, r: 4 }}
             activeDot={{ r: 6, fill: isDark ? '#8E44AD' : '#7C3AED' }}
-            name="Temperature (°C × 2.5)"
+            name="External Temperature (°C × 2.5)"
           />
         </ComposedChart>
       </ResponsiveContainer>

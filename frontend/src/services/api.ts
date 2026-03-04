@@ -12,6 +12,7 @@ import {
   NotificationItem,
   DeviceSensorSummary,
   LatestSnapshot,
+  DeviceStatusSnapshot,
 } from '../types';
 
 // Create axios instance with base configuration
@@ -455,6 +456,7 @@ export const sensorLogService = {
     limit?: number;
     deviceId?: string;
     sensor?: string;
+    category?: 'all' | 'environmental' | 'device';
     origin?: string;
     search?: string;
     start?: string;
@@ -462,6 +464,10 @@ export const sensorLogService = {
   }) => api.get<PaginatedResponse<SensorLogEntry>>('/sensor-logs', { params }),
   remove: (id: number | string) =>
     api.delete<ApiResponse<{ deleted: number; id: number }>>(`/sensor-logs/${encodeURIComponent(id)}`),
+  bulkRemove: (ids: Array<number | string>) =>
+    api.delete<ApiResponse<{ deleted: number; ids: number[] }>>('/sensor-logs/bulk', { data: { ids } }),
+  removeAll: () =>
+    api.delete<ApiResponse<{ deleted: number }>>('/sensor-logs/all'),
 };
 
 export const alertService = {
@@ -482,6 +488,9 @@ export const alertService = {
 
   getLatestAlerts: () =>
     api.get<ApiResponse<Alert[]>>('/alerts/latest'),
+
+  getDebugSummary: () =>
+    api.get<ApiResponse<{ alerts_generated: number; latest_alert: Alert | null }>>('/alerts/debug'),
 
   getActiveAlerts: (params?: { deviceId?: string; severity?: string; limit?: number; sort?: 'asc' | 'desc' }) =>
     api.get<ApiResponse<Alert[]>>('/alerts/active', { params }),
@@ -537,12 +546,16 @@ export const notificationService = {
   markAsUnread: (notificationId: string) =>
     api.patch<ApiResponse<NotificationItem>>(`/notifications/${notificationId}/mark-unread`),
 
+  markAllAsRead: () =>
+    api.patch<ApiResponse<{ updated: number }>>('/notifications/mark-all-read'),
+
   remove: (notificationId: string) =>
     api.delete<ApiResponse<NotificationItem>>(`/notifications/${notificationId}`),
 };
 
 export const deviceService = {
   list: () => api.get<ApiResponse<any[]>>('/devices'),
+  getStatus: () => api.get<{ devices: DeviceStatusSnapshot[] }>('/devices/status'),
   getSensors: (deviceId: string, params?: { limit?: number }) =>
     api.get<ApiResponse<DeviceSensorSummary>>(`/devices/${encodeURIComponent(deviceId)}/sensors`, { params }),
 };

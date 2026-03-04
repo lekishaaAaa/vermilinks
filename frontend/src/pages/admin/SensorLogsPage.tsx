@@ -9,6 +9,7 @@ interface Filters {
   search: string;
   deviceId: string;
   sensor: string;
+  category: 'all' | 'environmental' | 'device';
   origin: string;
   start: string;
   end: string;
@@ -18,6 +19,7 @@ const defaultFilters: Filters = {
   search: '',
   deviceId: '',
   sensor: '',
+  category: 'environmental',
   origin: '',
   start: '',
   end: '',
@@ -40,6 +42,10 @@ const SensorLogsPage: React.FC = () => {
   const [sensorOptions, setSensorOptions] = useState<string[]>([]);
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [showDeleteAllModal, setShowDeleteAllModal] = useState(false);
+  const [deleteAllLoading, setDeleteAllLoading] = useState(false);
 
   const limit = 25;
 
@@ -52,6 +58,7 @@ const SensorLogsPage: React.FC = () => {
         limit,
         deviceId: filters.deviceId || undefined,
         sensor: filters.sensor || undefined,
+        category: filters.category,
         origin: filters.origin || undefined,
         search: filters.search || undefined,
         start: filters.start || undefined,
@@ -62,9 +69,11 @@ const SensorLogsPage: React.FC = () => {
       if (payload) {
         setLogs(payload.items || []);
         setPagination(payload.pagination || null);
+        setSelectedIds(new Set());
       } else {
         setLogs([]);
         setPagination(null);
+        setSelectedIds(new Set());
       }
 
       const metaSensors = response?.data?.meta?.sensors;
@@ -78,7 +87,7 @@ const SensorLogsPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [filters.deviceId, filters.sensor, filters.origin, filters.search, filters.start, filters.end, page, limit]);
+  }, [filters.deviceId, filters.sensor, filters.category, filters.origin, filters.search, filters.start, filters.end, page, limit]);
 
   useEffect(() => {
     fetchLogs();
@@ -159,6 +168,62 @@ const SensorLogsPage: React.FC = () => {
     }
   };
 
+  const allSelected = logs.length > 0 && logs.every((log) => selectedIds.has(log.id));
+
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      setSelectedIds(new Set());
+      return;
+    }
+    setSelectedIds(new Set(logs.map((log) => log.id)));
+  };
+
+  const toggleSelectRow = (id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const handleDeleteSelected = async () => {
+    if (!selectedIds.size) {
+      return;
+    }
+    const confirmed = window.confirm(`Delete ${selectedIds.size} selected log(s)? This cannot be undone.`);
+    if (!confirmed) {
+      return;
+    }
+    setBulkDeleting(true);
+    setError(null);
+    try {
+      await sensorLogService.bulkRemove(Array.from(selectedIds));
+      await fetchLogs();
+    } catch (err: any) {
+      setError(err?.response?.data?.message || err?.message || 'Failed to delete selected logs');
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
+
+  const handleDeleteAllLogs = async () => {
+    setDeleteAllLoading(true);
+    setError(null);
+    try {
+      await sensorLogService.removeAll();
+      setShowDeleteAllModal(false);
+      await fetchLogs();
+    } catch (err: any) {
+      setError(err?.response?.data?.message || err?.message || 'Failed to delete all logs');
+    } finally {
+      setDeleteAllLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-coffee-50 to-white dark:from-gray-900 dark:to-gray-950">
       <header className="sticky top-0 z-40 border-b border-white/40 bg-white/70 backdrop-blur dark:border-gray-800/60 dark:bg-gray-900/70">
@@ -208,6 +273,15 @@ const SensorLogsPage: React.FC = () => {
               {sensorOptions.map((sensor) => (
                 <option key={sensor} value={sensor}>{sensor}</option>
               ))}
+            </select>
+            <select
+              value={filters.category}
+              onChange={(event) => handleFilterChange('category', event.target.value as Filters['category'])}
+              className="min-w-[180px] rounded-lg border border-gray-200 bg-white/80 px-3 py-2 text-sm text-gray-800 shadow-inner focus:border-primary-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-100"
+            >
+              <option value="environmental">Environmental Sensors</option>
+              <option value="device">Device Metrics</option>
+              <option value="all">All Categories</option>
             </select>
             <select
               value={filters.origin}
@@ -266,6 +340,24 @@ const SensorLogsPage: React.FC = () => {
             <div className="flex items-end justify-end gap-3">
               <button
                 type="button"
+                onClick={handleDeleteSelected}
+                className="inline-flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 shadow hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={!selectedIds.size || bulkDeleting || loading}
+              >
+                <Trash2 className="h-4 w-4" />
+                {bulkDeleting ? 'Deleting…' : `Delete Selected (${selectedIds.size})`}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowDeleteAllModal(true)}
+                className="inline-flex items-center gap-2 rounded-lg border border-rose-300 bg-white px-4 py-2 text-sm font-semibold text-rose-700 shadow hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={!logs.length || loading}
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete All Logs
+              </button>
+              <button
+                type="button"
                 onClick={handleExport}
                 className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-primary-500"
                 disabled={!logs.length}
@@ -298,9 +390,18 @@ const SensorLogsPage: React.FC = () => {
             <table className="min-w-full divide-y divide-gray-100 text-sm text-gray-700 dark:divide-gray-800 dark:text-gray-200">
               <thead className="bg-gray-50/70 text-xs uppercase tracking-wider text-gray-500 dark:bg-gray-900/60 dark:text-gray-400">
                 <tr>
+                  <th className="px-4 py-3 text-left">
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      onChange={toggleSelectAll}
+                      aria-label="Select all"
+                    />
+                  </th>
                   <th className="px-4 py-3 text-left">Timestamp</th>
                   <th className="px-4 py-3 text-left">Device</th>
                   <th className="px-4 py-3 text-left">Sensor</th>
+                  <th className="px-4 py-3 text-left">Category</th>
                   <th className="px-4 py-3 text-left">Value</th>
                   <th className="px-4 py-3 text-left">Origin</th>
                   <th className="px-4 py-3 text-left">Topic</th>
@@ -311,13 +412,13 @@ const SensorLogsPage: React.FC = () => {
               <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                 {loading ? (
                   <tr>
-                    <td colSpan={8} className="px-4 py-6 text-center text-gray-500 dark:text-gray-400">
+                    <td colSpan={10} className="px-4 py-6 text-center text-gray-500 dark:text-gray-400">
                       Fetching logs...
                     </td>
                   </tr>
                 ) : logs.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-4 py-6 text-center text-gray-500 dark:text-gray-400">
+                    <td colSpan={10} className="px-4 py-6 text-center text-gray-500 dark:text-gray-400">
                       No sensor logs found for the selected filters.
                     </td>
                   </tr>
@@ -327,11 +428,24 @@ const SensorLogsPage: React.FC = () => {
                     return (
                       <React.Fragment key={log.id}>
                         <tr className="hover:bg-gray-50/70 dark:hover:bg-gray-800/60">
+                          <td className="px-4 py-3">
+                            <input
+                              type="checkbox"
+                              checked={selectedIds.has(log.id)}
+                              onChange={() => toggleSelectRow(log.id)}
+                              aria-label={`Select log ${log.id}`}
+                            />
+                          </td>
                           <td className="px-4 py-3 font-mono text-xs text-gray-500 dark:text-gray-400">
                             {formatTimestamp(log.recordedAt)}
                           </td>
                           <td className="px-4 py-3 text-gray-900 dark:text-gray-100">{log.deviceId}</td>
                           <td className="px-4 py-3">{log.sensorName}</td>
+                          <td className="px-4 py-3">
+                            <span className={`rounded-full px-2 py-1 text-xs font-medium ${log.category === 'Device Metrics' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-200' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200'}`}>
+                              {log.category || 'Environmental Sensors'}
+                            </span>
+                          </td>
                           <td className="px-4 py-3 font-semibold text-gray-900 dark:text-gray-50">
                             {log.value}
                             {log.unit ? <span className="ml-1 text-xs text-gray-500">{log.unit}</span> : null}
@@ -369,7 +483,7 @@ const SensorLogsPage: React.FC = () => {
                         </tr>
                         {isExpanded && log.rawPayload && (
                           <tr>
-                            <td colSpan={8} className="bg-gray-50/70 px-4 py-3 text-xs text-gray-700 dark:bg-gray-800/50 dark:text-gray-200">
+                            <td colSpan={10} className="bg-gray-50/70 px-4 py-3 text-xs text-gray-700 dark:bg-gray-800/50 dark:text-gray-200">
                               <pre className="overflow-x-auto rounded-lg bg-gray-900/90 p-3 text-[11px] text-gray-100">
                                 {JSON.stringify(log.rawPayload, null, 2)}
                               </pre>
@@ -412,6 +526,35 @@ const SensorLogsPage: React.FC = () => {
           </div>
         </section>
       </main>
+
+      {showDeleteAllModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+          <div className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-6 shadow-xl dark:border-gray-700 dark:bg-gray-900">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Delete all sensor logs?</h3>
+            <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+              This will permanently remove all sensor log records. This action cannot be undone.
+            </p>
+            <div className="mt-5 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowDeleteAllModal(false)}
+                className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 dark:border-gray-700 dark:text-gray-200"
+                disabled={deleteAllLoading}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteAllLogs}
+                className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
+                disabled={deleteAllLoading}
+              >
+                {deleteAllLoading ? 'Deleting…' : 'Delete All Logs'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

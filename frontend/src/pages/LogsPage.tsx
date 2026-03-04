@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import DarkModeToggle from '../components/DarkModeToggle';
+import SensorHistoryChart from '../components/SensorHistoryChart';
+import { alertService, sensorService } from '../services/api';
 import { Download, Search } from 'lucide-react';
 
 type LogEntry = {
@@ -19,14 +21,29 @@ export default function LogsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('all');
+  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+
+  const getDateRange = (dateString: string) => {
+    const start = new Date(`${dateString}T00:00:00.000Z`);
+    const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+    return { start: start.toISOString(), end: end.toISOString() };
+  };
 
   useEffect(() => {
     if (!isAuthenticated || user?.role !== 'admin') return;
     loadLogs();
-  }, [isAuthenticated, user]);
+  }, [isAuthenticated, user, selectedDate]);
 
   useEffect(() => {
     let filtered = logs;
+
+    if (selectedDate) {
+      filtered = filtered.filter(log => {
+        const value = log.timestamp ? new Date(log.timestamp).toISOString().split('T')[0] : '';
+        return value === selectedDate;
+      });
+    }
+
     if (search) {
       filtered = filtered.filter(log =>
         log.message.toLowerCase().includes(search.toLowerCase()) ||
@@ -37,43 +54,60 @@ export default function LogsPage() {
       filtered = filtered.filter(log => log.type === typeFilter);
     }
     setFilteredLogs(filtered);
-  }, [logs, search, typeFilter]);
+  }, [logs, search, typeFilter, selectedDate]);
 
   async function loadLogs() {
+    setLoading(true);
     try {
-      // Load sensor logs
-      const sensorRes = await fetch('/api/sensors?limit=100');
-      const sensorData = sensorRes.ok ? await sensorRes.json() : [];
+      const { start, end } = getDateRange(selectedDate);
 
-      // Load alerts
-      const alertRes = await fetch('/api/alerts?limit=100');
-      const alertData = alertRes.ok ? await alertRes.json() : [];
+      const [sensorRes, alertRes] = await Promise.all([
+        sensorService.getHistory({ start, end, limit: 1000 }),
+        alertService.getAlerts({ limit: 1000 }),
+      ]);
+
+      const sensorReadingsPayload = sensorRes?.data?.data?.readings;
+      const alertsItemsPayload = alertRes?.data?.data?.items;
+      const alertsDataPayload = alertRes?.data?.data;
+
+      const sensorData = Array.isArray(sensorReadingsPayload)
+        ? sensorReadingsPayload
+        : [];
+      const alertsRaw = Array.isArray(alertsItemsPayload)
+        ? alertsItemsPayload
+        : Array.isArray(alertsDataPayload)
+          ? alertsDataPayload
+          : [];
+
+      const alertData = selectedDate
+        ? alertsRaw.filter((alert: any) => {
+            const created = alert?.createdAt ? new Date(alert.createdAt).toISOString().split('T')[0] : '';
+            return created === selectedDate;
+          })
+        : alertsRaw;
 
       const allLogs: LogEntry[] = [];
 
-      // Process sensor data
       sensorData.forEach((sensor: any) => {
         allLogs.push({
           id: `sensor-${sensor.id}`,
           type: 'sensor',
-          message: `Sensor reading: ${sensor.deviceId}`,
-          timestamp: sensor.lastSeen || sensor.timestamp,
+          message: `Sensor reading: ${sensor.deviceId || 'unknown device'}`,
+          timestamp: sensor.timestamp,
           details: sensor,
         });
       });
 
-      // Process alerts
       alertData.forEach((alert: any) => {
         allLogs.push({
           id: `alert-${alert.id}`,
           type: 'alert',
-          message: alert.title,
+          message: alert.title || alert.type || 'Alert',
           timestamp: alert.createdAt,
           details: alert,
         });
       });
 
-      // Sort by timestamp descending
       allLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
       setLogs(allLogs);
     } catch (e) {
@@ -148,6 +182,12 @@ export default function LogsPage() {
                 />
               </div>
             </div>
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={e => setSelectedDate(e.target.value)}
+              className="px-3 py-2 rounded-lg border bg-white/80 dark:bg-gray-700/60 text-sm"
+            />
             <select
               value={typeFilter}
               onChange={e => setTypeFilter(e.target.value)}
@@ -158,6 +198,10 @@ export default function LogsPage() {
               <option value="alert">Alert</option>
               <option value="login">Login</option>
             </select>
+          </div>
+
+          <div className="mb-4">
+            <SensorHistoryChart selectedDate={selectedDate} />
           </div>
 
           <div className="space-y-2 max-h-96 overflow-y-auto">

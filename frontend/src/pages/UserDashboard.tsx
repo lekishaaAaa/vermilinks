@@ -7,6 +7,7 @@ import { useData } from '../contexts/DataContext';
 import DataSuppressedNotice from '../components/DataSuppressedNotice';
 import { DATA_SUPPRESSED, suppressionReason } from '../utils/dataSuppression';
 import { sensorService } from '../services/api';
+import { formatMetric } from '../utils/metricFormatter';
 
 const formatTimestamp = (value?: string | null) => {
   if (!value) return 'Never';
@@ -70,10 +71,24 @@ const UserDashboard: React.FC = () => {
       setDailyLoading(true);
       setDailyError(null);
       try {
-        const response = await sensorService.getDaily({ date: selectedDate });
-        const payload = response?.data?.data;
+        const start = new Date(`${selectedDate}T00:00:00.000Z`).toISOString();
+        const end = new Date(`${selectedDate}T23:59:59.999Z`).toISOString();
+        const response = await sensorService.getHistory({ start, end, limit: 2000 });
+        const readings = response?.data?.data?.readings || [];
+        const average = (values: Array<number | null | undefined>) => {
+          const valid = values.filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+          if (valid.length === 0) return null;
+          const sum = valid.reduce((accumulator, value) => accumulator + value, 0);
+          return sum / valid.length;
+        };
+        const stats = {
+          avgTemperature: average(readings.map((entry: any) => entry.temperature)),
+          avgHumidity: average(readings.map((entry: any) => entry.humidity)),
+          avgMoisture: average(readings.map((entry: any) => entry.moisture ?? entry.soil_moisture)),
+          avgSoilTemperature: average(readings.map((entry: any) => entry.soilTemperature ?? entry.soil_temperature)),
+        };
         if (!mounted) return;
-        setDailySummary((payload && payload.stats) ? payload.stats : {});
+        setDailySummary(stats);
       } catch (error) {
         if (!mounted) return;
         setDailySummary(null);
@@ -85,8 +100,10 @@ const UserDashboard: React.FC = () => {
       }
     };
     loadDaily();
+    const intervalId = window.setInterval(loadDaily, 5000);
     return () => {
       mounted = false;
+      window.clearInterval(intervalId);
     };
   }, [selectedDate]);
 
@@ -121,7 +138,7 @@ const UserDashboard: React.FC = () => {
               <p className="text-sm uppercase tracking-wide text-primary-600 dark:text-primary-300 font-semibold">Live overview</p>
               <h1 className="text-3xl font-black text-espresso-900 dark:text-white">Community Sensor Dashboard</h1>
               <p className="text-espresso-600 dark:text-gray-300 mt-2 max-w-2xl">
-                Monitor temperature, water level, and more in real-time. This dashboard stays read-only so students and guests can safely follow along without admin credentials.
+                Monitor external temperature, water level, and more in real-time. This dashboard stays read-only so students and guests can safely follow along without admin credentials.
               </p>
             </div>
             <div className="flex flex-col items-end gap-2 text-sm text-espresso-600 dark:text-gray-300">
@@ -173,20 +190,20 @@ const UserDashboard: React.FC = () => {
           ) : (
             <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <div className="rounded-xl border border-coffee-100 dark:border-gray-700 p-3">
-                <p className="text-xs text-espresso-500 dark:text-gray-400">Avg Temperature</p>
-                <p className="text-lg font-bold text-espresso-900 dark:text-white">{dailySummary?.avgTemperature ?? '-'}</p>
+                <p className="text-xs text-espresso-500 dark:text-gray-400">Avg External Temperature</p>
+                <p className="text-lg font-bold text-espresso-900 dark:text-white">{formatMetric(dailySummary?.avgTemperature as number | null | undefined, '°C')}</p>
               </div>
               <div className="rounded-xl border border-coffee-100 dark:border-gray-700 p-3">
                 <p className="text-xs text-espresso-500 dark:text-gray-400">Avg Humidity</p>
-                <p className="text-lg font-bold text-espresso-900 dark:text-white">{dailySummary?.avgHumidity ?? '-'}</p>
+                <p className="text-lg font-bold text-espresso-900 dark:text-white">{formatMetric(dailySummary?.avgHumidity as number | null | undefined, '%')}</p>
               </div>
               <div className="rounded-xl border border-coffee-100 dark:border-gray-700 p-3">
                 <p className="text-xs text-espresso-500 dark:text-gray-400">Avg Moisture</p>
-                <p className="text-lg font-bold text-espresso-900 dark:text-white">{dailySummary?.avgMoisture ?? '-'}</p>
+                <p className="text-lg font-bold text-espresso-900 dark:text-white">{formatMetric(dailySummary?.avgMoisture as number | null | undefined, '%')}</p>
               </div>
               <div className="rounded-xl border border-coffee-100 dark:border-gray-700 p-3">
                 <p className="text-xs text-espresso-500 dark:text-gray-400">Avg Soil Temp</p>
-                <p className="text-lg font-bold text-espresso-900 dark:text-white">{dailySummary?.avgSoilTemperature ?? '-'}</p>
+                <p className="text-lg font-bold text-espresso-900 dark:text-white">{formatMetric(dailySummary?.avgSoilTemperature as number | null | undefined, '°C')}</p>
               </div>
             </div>
           )}
