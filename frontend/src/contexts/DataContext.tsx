@@ -332,6 +332,7 @@ const mergeSensorReadings = (existing: SensorData | null, incoming: SensorData |
 
 export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
   const [latestTelemetry, setLatestTelemetry] = useState<SensorData | null>(null);
+  const [lastTelemetry, setLastTelemetry] = useState<SensorData | null>(null);
   const [latestSensorData, setLatestSensorData] = useState<SensorData[]>([]);
   const [actuatorStates, setActuatorStates] = useState<Record<string, boolean | number | null> | null>(null);
   const [deviceStatuses, setDeviceStatuses] = useState<Record<string, DeviceStatusInfo>>({});
@@ -463,12 +464,12 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
   }, [telemetryDisabled]);
 
   const getStableTelemetry = useCallback((newTelemetry: SensorData | null): SensorData | null => {
-    const lastTelemetry = latestTelemetryRef.current;
-    if (!newTelemetry && lastTelemetry) {
-      return lastTelemetry;
+    if (newTelemetry) {
+      setLastTelemetry(newTelemetry);
+      return newTelemetry;
     }
-    return newTelemetry;
-  }, []);
+    return lastTelemetry ?? latestTelemetryRef.current;
+  }, [lastTelemetry]);
 
   const updateTelemetryCache = useCallback((reading: SensorData | null) => {
     if (!reading) {
@@ -550,6 +551,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
 
     const smoothed = smooth(latestTelemetryRef.current, merged);
     setLatestTelemetry(smoothed);
+    setLastTelemetry(smoothed);
     setIsConnected(connectionHealthy || Boolean(latestTelemetryRef.current));
     setActuatorStates(merged.actuatorStates || null);
     if (options?.updateLatestList !== false) {
@@ -670,6 +672,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
 
     const resetRealtimeState = () => {
       setLatestTelemetry(null);
+      setLastTelemetry(null);
       setLatestSensorData([]);
       setActuatorStates(null);
       setDeviceStatuses({});
@@ -725,6 +728,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
     let isMounted = true;
     if (telemetryDisabled) {
       setLatestTelemetry(null);
+      setLastTelemetry(null);
       setLatestSensorData([]);
       setActuatorStates(null);
       setDeviceStatuses({});

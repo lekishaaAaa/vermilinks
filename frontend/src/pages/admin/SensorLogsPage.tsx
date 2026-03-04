@@ -169,6 +169,7 @@ const SensorLogsPage: React.FC = () => {
   };
 
   const allSelected = logs.length > 0 && logs.every((log) => selectedIds.has(log.id));
+  const selectedIdList = useMemo(() => Array.from(selectedIds), [selectedIds]);
 
   const toggleSelectAll = () => {
     if (allSelected) {
@@ -266,11 +267,8 @@ const SensorLogsPage: React.FC = () => {
           <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-xs uppercase tracking-wide font-semibold text-gray-500 dark:text-gray-400">Filter panel</p>
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Search and manage sensor logs</h2>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Search & Filters</h2>
             </div>
-            <span className="inline-flex items-center rounded-full border border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-900/70 px-3 py-1 text-xs font-semibold text-gray-600 dark:text-gray-300 w-fit">
-              Live table controls
-            </span>
           </div>
 
           <div className="flex flex-wrap items-center gap-4">
@@ -324,11 +322,8 @@ const SensorLogsPage: React.FC = () => {
                   <option key={origin} value={origin}>{origin}</option>
                 ))}
             </select>
-          </div>
-
-          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="space-y-1">
-              <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">Start</label>
+            <div className="space-y-1 min-w-[220px]">
+              <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">Start Date</label>
               <input
                 type="datetime-local"
                 value={filters.start}
@@ -336,8 +331,8 @@ const SensorLogsPage: React.FC = () => {
                 className="w-full rounded-xl border border-gray-200 bg-white/90 px-3 py-2.5 text-sm text-gray-800 shadow-sm focus:border-primary-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-100"
               />
             </div>
-            <div className="space-y-1">
-              <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">End</label>
+            <div className="space-y-1 min-w-[220px]">
+              <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">End Date</label>
               <input
                 type="datetime-local"
                 value={filters.end}
@@ -345,54 +340,55 @@ const SensorLogsPage: React.FC = () => {
                 className="w-full rounded-xl border border-gray-200 bg-white/90 px-3 py-2.5 text-sm text-gray-800 shadow-sm focus:border-primary-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-100"
               />
             </div>
-            <div className="flex items-end gap-3">
-              <button
-                type="button"
-                onClick={fetchLogs}
-                className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-semibold text-gray-700 shadow-sm hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700"
-                disabled={loading}
-              >
-                <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-                Refresh
-              </button>
-              <button
-                type="button"
-                onClick={handleClearFilters}
-                className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-semibold text-gray-700 shadow-sm hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700"
-              >
-                <Filter className="h-4 w-4" />
-                Clear
-              </button>
-            </div>
-            <div className="flex items-end justify-end gap-3">
-              <button
-                type="button"
-                onClick={handleDeleteSelected}
-                className="inline-flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-semibold text-rose-700 shadow-sm hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={!selectedIds.size || bulkDeleting || loading}
-              >
-                <Trash2 className="h-4 w-4" />
-                {bulkDeleting ? 'Deleting…' : `Delete Selected (${selectedIds.size})`}
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowDeleteAllModal(true)}
-                className="inline-flex items-center gap-2 rounded-xl border border-rose-300 bg-white px-4 py-2.5 text-sm font-semibold text-rose-700 shadow-sm hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={!logs.length || loading}
-              >
-                <Trash2 className="h-4 w-4" />
-                Delete All Logs
-              </button>
-              <button
-                type="button"
-                onClick={handleExport}
-                className="inline-flex items-center gap-2 rounded-xl bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-primary-500"
-                disabled={!logs.length}
-              >
-                <Download className="h-4 w-4" />
-                Export CSV
-              </button>
-            </div>
+          </div>
+        </section>
+
+        <section className="mt-4 rounded-2xl border border-white/60 bg-white/90 p-4 shadow-lg shadow-rose-100/20 backdrop-blur dark:border-gray-800/60 dark:bg-gray-900/80">
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            <button
+              type="button"
+              onClick={fetchLogs}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-semibold text-gray-700 shadow-sm hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700"
+              disabled={loading}
+            >
+              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
+            <button
+              type="button"
+              onClick={handleClearFilters}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-semibold text-gray-700 shadow-sm hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700"
+            >
+              <Filter className="h-4 w-4" />
+              Clear Filters
+            </button>
+            <button
+              type="button"
+              onClick={handleDeleteSelected}
+              className="inline-flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-semibold text-rose-700 shadow-sm hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={selectedIdList.length === 0 || bulkDeleting || loading}
+            >
+              <Trash2 className="h-4 w-4" />
+              {bulkDeleting ? 'Deleting…' : `Delete Selected (${selectedIdList.length})`}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowDeleteAllModal(true)}
+              className="inline-flex items-center gap-2 rounded-xl border border-rose-300 bg-white px-4 py-2.5 text-sm font-semibold text-rose-700 shadow-sm hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={!logs.length || loading}
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete All Logs
+            </button>
+            <button
+              type="button"
+              onClick={handleExport}
+              className="inline-flex items-center gap-2 rounded-xl bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-primary-500"
+              disabled={!logs.length}
+            >
+              <Download className="h-4 w-4" />
+              Export CSV
+            </button>
           </div>
         </section>
 

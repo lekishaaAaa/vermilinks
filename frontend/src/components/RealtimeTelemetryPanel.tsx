@@ -3,8 +3,8 @@ import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { SensorData } from '../types';
 import { getSocket } from '../socket';
-import { formatMetric } from '../utils/metricFormatter';
 import { sensorService } from '../services/api';
+import SensorOverview from './SensorOverview';
 
 const resolveTargetDeviceId = () => {
   const candidates = [process.env.REACT_APP_DEVICE_ID, process.env.REACT_APP_PRIMARY_DEVICE];
@@ -18,38 +18,6 @@ const resolveTargetDeviceId = () => {
 
 const TARGET_DEVICE_ID = resolveTargetDeviceId();
 
-interface MetricConfig {
-  key: keyof SensorData;
-  label: string;
-  unit?: string;
-  precision?: number;
-}
-
-const METRICS: MetricConfig[] = [
-  { key: 'temperature', label: 'External Temperature', unit: '°C', precision: 2 },
-  { key: 'humidity', label: 'Humidity', unit: '%', precision: 2 },
-  { key: 'soilTemperature', label: 'Soil Temperature', unit: '°C', precision: 2 },
-  { key: 'moisture', label: 'Soil Moisture', unit: '%', precision: 2 },
-  { key: 'waterLevel', label: 'Water Level', precision: 0 },
-];
-
-const resolveWaterLevelState = (sample?: SensorData | null): 'LOW' | 'NORMAL' | 'HIGH' | 'UNKNOWN' => {
-  if (!sample) return 'UNKNOWN';
-  const raw = (sample.floatSensor ?? sample.waterLevel) as unknown;
-  if (raw === null || typeof raw === 'undefined') return 'UNKNOWN';
-  if (typeof raw === 'string') {
-    const normalized = raw.trim().toUpperCase();
-    if (['LOW', 'NORMAL', 'HIGH'].includes(normalized)) return normalized as 'LOW' | 'NORMAL' | 'HIGH';
-    if (normalized === 'FULL') return 'HIGH';
-    return 'UNKNOWN';
-  }
-  const numeric = Number(raw);
-  if (!Number.isFinite(numeric)) return 'UNKNOWN';
-  if (numeric <= 0) return 'LOW';
-  if (numeric >= 2) return 'HIGH';
-  return 'NORMAL';
-};
-
 const formatTimestamp = (value?: string | Date | null) => {
   if (!value) return '—';
   try {
@@ -59,17 +27,6 @@ const formatTimestamp = (value?: string | Date | null) => {
   } catch (e) {
     return '—';
   }
-};
-
-const buildSparkline = (values: number[]) => {
-  if (!values || values.length === 0) return [] as number[];
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const range = max - min || 1;
-  return values.map((value) => {
-    const clamped = Math.max(0, Math.min(1, (value - min) / range));
-    return Math.round(clamped * 36) + 4; // px height
-  });
 };
 
 const SENSOR_VALID_RANGES: Array<{ key: keyof SensorData; label: string; min: number; max: number }> = [
@@ -238,18 +195,6 @@ const RealtimeTelemetryPanel: React.FC<RealtimeTelemetryPanelProps> = ({ latest,
   const showPausedNotice = Boolean(telemetryDisabled) && !hasTelemetryData;
   const latestTimestamp = effectiveLatest?.timestamp || (mergedHistory.length ? mergedHistory[mergedHistory.length - 1].timestamp : null);
 
-  const metricSummaries = useMemo(() => METRICS.map((metric) => {
-    const isWaterLevel = metric.key === 'waterLevel';
-    const waterLevelState = isWaterLevel ? resolveWaterLevelState(effectiveLatest) : null;
-    const latestValue = typeof effectiveLatest?.[metric.key] === 'number' ? Number(effectiveLatest?.[metric.key]) : null;
-    const series = mergedHistory.map((e) => e[metric.key]).filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
-    const prevValue = series.length >= 2 ? series[series.length - 2] : null;
-    const trend = latestValue !== null && prevValue !== null ? latestValue - prevValue : null;
-    const range = series.length > 0 ? { min: Math.min(...series), max: Math.max(...series) } : null;
-    const sparkline = buildSparkline(series.slice(-24));
-    return { config: metric, latestValue, trend, range, sparkline, isWaterLevel, waterLevelState };
-  }), [effectiveLatest, mergedHistory]);
-
   const realtimeHealthy = socketConnected && (deviceOnline !== false);
   const effectiveIsConnected = showPausedNotice ? false : realtimeHealthy || isConnected;
   const outOfRangeWarnings = useMemo(() => {
@@ -306,41 +251,7 @@ const RealtimeTelemetryPanel: React.FC<RealtimeTelemetryPanelProps> = ({ latest,
           Telemetry panels are paused until physical sensors report in. You will not see live metrics until hardware is online.
         </div>
       ) : (
-        <div className="mt-6 grid grid-cols-5 gap-5" style={{ gridTemplateColumns: 'repeat(5, 1fr)' }}>
-          {metricSummaries.map(({ config, latestValue, trend, range, sparkline, isWaterLevel, waterLevelState }) => (
-            <div key={config.key as string} className="rounded-lg border border-gray-100 bg-gray-50/60 p-4 dark:border-gray-800 dark:bg-gray-900/50">
-              <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
-                <span>{config.label}</span>
-                {range && !isWaterLevel && (
-                  <span>
-                    {range.min.toFixed(config.precision ?? 1)}–{range.max.toFixed(config.precision ?? 1)}{config.unit ?? ''}
-                  </span>
-                )}
-              </div>
-              <div className={`mt-2 text-2xl font-semibold ${isWaterLevel
-                ? waterLevelState === 'LOW'
-                  ? 'text-rose-600 dark:text-rose-300'
-                  : waterLevelState === 'HIGH'
-                    ? 'text-blue-600 dark:text-blue-300'
-                    : waterLevelState === 'NORMAL'
-                      ? 'text-emerald-600 dark:text-emerald-300'
-                      : 'text-gray-900 dark:text-gray-100'
-                : 'text-gray-900 dark:text-gray-100'}`}>
-                {isWaterLevel ? (waterLevelState || 'UNKNOWN') : formatMetric(latestValue, config.unit)}
-              </div>
-              <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                {isWaterLevel
-                  ? 'LOW=red · NORMAL=green · HIGH=blue'
-                  : (trend !== null && !Number.isNaN(trend) ? `${trend > 0 ? '+' : ''}${trend.toFixed(config.precision ?? 1)}${config.unit ?? ''} vs prev` : 'Awaiting history')}
-              </div>
-              <div className="mt-3 flex h-12 items-end gap-1">
-                {sparkline.length === 0 ? <div className="text-xs text-gray-400">No recent data</div> : sparkline.map((height, i) => (
-                  <span key={`${config.key as string}-${i}`} className="w-1 flex-1 rounded-full bg-emerald-400/70 dark:bg-emerald-500/60" style={{ height }} />
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
+        <SensorOverview telemetry={effectiveLatest} lastTelemetry={lastTelemetry} />
       )}
 
       {!showPausedNotice && (
