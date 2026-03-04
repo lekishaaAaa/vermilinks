@@ -194,7 +194,13 @@ const SensorLogsPage: React.FC = () => {
     if (!selectedIds.size) {
       return;
     }
-    const ids = Array.from(selectedIds);
+    const ids = Array.from(selectedIds)
+      .map((id) => Number(id))
+      .filter((id) => Number.isFinite(id) && id > 0);
+    if (!ids.length) {
+      setError('Provide valid sensor log IDs');
+      return;
+    }
     const confirmed = window.confirm(`Delete ${selectedIds.size} selected log(s)? This cannot be undone.`);
     if (!confirmed) {
       return;

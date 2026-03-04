@@ -468,9 +468,14 @@ export default function AdminDashboard(): React.ReactElement {
     }
 
     try {
-      const response = await alertService.getRecentAlerts(50);
+      const response = await alertService.getAlerts({ limit: 50, isResolved: false });
       if (response?.data?.success) {
-        const alerts = Array.isArray(response.data.data) ? response.data.data : [];
+        const payload = response.data.data;
+        const alerts = Array.isArray(payload)
+          ? payload
+          : Array.isArray((payload as any)?.items)
+            ? (payload as any).items
+            : [];
         setLatestAlerts(alerts);
         setUnreadCount(alerts.filter((alert: any) => (alert.status || alert.state || '').toString() === 'new').length);
         const summary = alerts.reduce(
@@ -971,7 +976,7 @@ export default function AdminDashboard(): React.ReactElement {
     const id2 = setInterval(loadAlerts, 5000);
     const id3 = setInterval(loadHealth, 10000);
     const id4 = setInterval(loadReminders, 60_000);
-    const id5 = setInterval(loadLatestAlerts, 10000); // Poll for new alerts every 10 seconds
+    const id5 = setInterval(loadLatestAlerts, 5000); // Poll for new alerts every 5 seconds
     return () => { mounted = false; clearInterval(idDevices); clearInterval(idDeviceStatus); clearInterval(id1); clearInterval(id2); clearInterval(id3); clearInterval(id4); clearInterval(id5); };
   }, [refreshDeviceInventory, loadLatestAlerts]);
 
@@ -1426,6 +1431,54 @@ export default function AdminDashboard(): React.ReactElement {
               <div className="space-y-6">
                 <SensorSummaryPanel />
                 <ActuatorControls />
+                <div className="bg-white dark:bg-gray-900/70 border border-gray-200 dark:border-gray-800 rounded-xl shadow p-6">
+                  <div className="flex items-center justify-between gap-3">
+                    <h4 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Notifications & Alerts</h4>
+                    <button
+                      type="button"
+                      onClick={handleRefreshActiveAlerts}
+                      className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                    >
+                      <RefreshCw className="h-4 w-4" /> Refresh
+                    </button>
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    {latestAlerts.length === 0 ? (
+                      <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-6 text-center text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800/50 dark:text-gray-400">
+                        No active alerts.
+                      </div>
+                    ) : (
+                      latestAlerts.slice(0, 12).map((alert: any, index: number) => {
+                        const alertId = alert.id || alert._id || `${index}`;
+                        return (
+                          <div key={alertId} className="rounded-lg border border-gray-200 bg-white/80 px-4 py-3 dark:border-gray-700 dark:bg-gray-900/50">
+                            <div className="text-xs text-gray-500 dark:text-gray-400">
+                              Type: {(alert.type || alert.severity || 'alert').toString()} • {formatAlertTimestamp(alert.createdAt || alert.timestamp || alert.updatedAt)}
+                            </div>
+                            <p className="mt-1 text-sm font-medium text-gray-800 dark:text-gray-100">{alert.message || alert.title || 'Alert triggered'}</p>
+                            <div className="mt-3 flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => markAlertAsRead(alertId)}
+                                disabled={acknowledgingAlertId === alertId}
+                                className="rounded-md bg-blue-600 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+                              >
+                                {acknowledgingAlertId === alertId ? 'Marking…' : 'Mark as read'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => deleteAlertNotification(alertId)}
+                                className="rounded-md border border-rose-200 px-3 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50 dark:border-rose-700 dark:text-rose-200 dark:hover:bg-rose-900/30"
+                              >
+                                Delete alert
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
               </div>
             )}
 
