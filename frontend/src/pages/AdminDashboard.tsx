@@ -1534,6 +1534,8 @@ export default function AdminDashboard(): React.ReactElement {
                   <p className="text-gray-600 dark:text-gray-400">Manage sensor configurations</p>
                 </div>
 
+                <ActuatorControls />
+
                 {/* Management sensors panel */}
                 <div className="bg-white/80 dark:bg-gray-800/80 border border-gray-100 dark:border-gray-700 rounded-lg shadow">
                   <div className="p-4 max-h-96 overflow-y-auto space-y-4">
