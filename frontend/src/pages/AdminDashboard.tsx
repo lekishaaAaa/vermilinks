@@ -1425,6 +1425,7 @@ export default function AdminDashboard(): React.ReactElement {
             {activeTab === 'overview' && (
               <div className="space-y-6">
                 <SensorSummaryPanel />
+                <ActuatorControls />
               </div>
             )}
 
