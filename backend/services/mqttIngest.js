@@ -16,7 +16,10 @@ const IOT_NATIVE_TOPICS = new Set([
   'vermilinks/esp32a/state',
   'vermilinks/esp32a/ack',
   'vermilinks/esp32a/status',
+  'vermilinks/esp32a/telemetry',
+  'vermilinks/esp32a/metrics',
   'vermilinks/esp32b/status',
+  'vermilinks/esp32b/telemetry',
   'vermilinks/esp32b/metrics',
 ]);
 

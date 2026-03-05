@@ -18,7 +18,7 @@ import {
 // Create axios instance with base configuration
 // Build a normalized API base URL. Users may set REACT_APP_API_URL with or without
 // a trailing '/api'. Normalize to avoid accidentally producing '/api/api' in requests.
-const RAW_API_ROOT = (process.env.REACT_APP_API_URL || 'https://vermilinks.onrender.com').toString();
+const RAW_API_ROOT = (process.env.REACT_APP_API_URL || 'https://api.vermilinks.com').toString();
 // Remove any trailing slashes and any repeated '/api' segments to avoid producing '/api/api'
 const API_ROOT = RAW_API_ROOT.replace(/(\/api)+\/?$/i, '').replace(/\/+$/,'');
 export const API_BASE_URL = API_ROOT;
@@ -235,6 +235,7 @@ export async function discoverApi(options?: { candidates?: string[]; timeout?: n
     // include current configured base plus common dev ports
     const list = [] as string[];
     if (normalized) list.push(normalized);
+    list.push('https://api.vermilinks.com');
     list.push('https://vermilinks.onrender.com');
 
     if (allowLocalCandidates) {

@@ -167,7 +167,6 @@ export default function AdminDashboard(): React.ReactElement {
   const [realtimeRefreshing, setRealtimeRefreshing] = useState(false);
   const [exportStartDate, setExportStartDate] = useState<string>('');
   const [exportEndDate, setExportEndDate] = useState<string>('');
-  const simulatorActive = process.env.NODE_ENV !== 'production';
 
   const hasLiveTelemetry = useMemo(() => {
     if (ctxTelemetry) {
@@ -1285,8 +1284,8 @@ export default function AdminDashboard(): React.ReactElement {
                 <button onClick={() => { setSearchOpen(false); setSearchQuery(''); }} className="px-3 py-2 text-sm rounded-md border">Close</button>
               </div>
               <div className="flex items-center gap-2">
-                <span className={`h-2 w-2 rounded-full ${simulatorActive ? 'bg-amber-500' : 'bg-sky-500'}`} />
-                {simulatorActive ? 'Simulator Active' : 'Live Hardware Mode'}
+                <span className="h-2 w-2 rounded-full bg-sky-500" />
+                Live Hardware Mode
               </div>
             </div>
             <div className="max-h-[60vh] overflow-auto border-t border-gray-100 dark:border-gray-700 p-4">

@@ -18,6 +18,17 @@ const TOPICS = {
   deviceStatusPrefix: 'vermilinks/device_status/',
 };
 
+const TELEMETRY_TOPICS = new Set([
+  'vermilinks/esp32b/metrics',
+  'vermilinks/esp32b/telemetry',
+  'vermilinks/esp32a/telemetry',
+  'vermilinks/esp32a/metrics',
+]);
+
+const STATE_TOPICS = new Set(['vermilinks/esp32a/state']);
+const ACK_TOPICS = new Set(['vermilinks/esp32a/ack']);
+const STATUS_TOPICS = new Set(['vermilinks/esp32a/status', 'vermilinks/esp32b/status']);
+
 let client = null;
 let lastConnectionState = 'disconnected';
 
@@ -134,7 +145,7 @@ function toNullableNumber(value) {
 
 function resolveTelemetryTimestamp(payload, fallbackNow) {
   if (!payload || typeof payload !== 'object') {
-    return fallbackNow;
+    return null;
   }
 
   const tsRaw = payload.ts ?? payload.timestamp ?? payload.time;
@@ -161,7 +172,24 @@ function resolveTelemetryTimestamp(payload, fallbackNow) {
     }
   }
 
-  return fallbackNow;
+  return null;
+}
+
+function canonicalDeviceId(value) {
+  const normalized = (value || '').toString().trim();
+  if (!normalized) return null;
+  const lower = normalized.toLowerCase();
+  if (lower === 'esp32a') return 'esp32A';
+  if (lower === 'esp32b') return 'esp32B';
+  return normalized;
+}
+
+function resolveDeviceIdFromTopic(topic) {
+  const normalizedTopic = (topic || '').toString().trim();
+  const parts = normalizedTopic.split('/').filter(Boolean);
+  if (parts.length < 3) return null;
+  const candidate = parts[1];
+  return canonicalDeviceId(candidate);
 }
 
 async function upsertActuatorState(deviceId, state) {
@@ -482,8 +510,8 @@ async function handleLwtStatusMessage(payload) {
   });
 }
 
-async function handleTelemetryMessage(payload) {
-  const telemetry = buildTelemetryRecord(payload);
+async function handleTelemetryMessage(payload, topic) {
+  const telemetry = buildTelemetryRecord(payload, topic);
   if (!telemetry) {
     logger.warn('iotMqtt: telemetry payload rejected (invalid payload/deviceId)');
     return;
@@ -525,30 +553,33 @@ async function handleTelemetryMessage(payload) {
     origin: 'mqtt',
     recordedAt: timestamp,
     rawPayload: payload,
-    mqttTopic: TOPICS.telemetry,
+    mqttTopic: (topic || TOPICS.telemetry),
   });
 }
 
-function buildTelemetryRecord(payload) {
+function buildTelemetryRecord(payload, topic) {
   if (!payload || typeof payload !== 'object') {
     return null;
   }
 
+  const deviceIdFromTopic = resolveDeviceIdFromTopic(topic);
   const normalizedPayload = {
     ...payload,
-    device_id: payload.device_id ?? payload.deviceId,
+    device_id: payload.device_id ?? payload.deviceId ?? deviceIdFromTopic,
     timestamp: payload.timestamp ?? payload.ts ?? payload.time,
     soil_moisture: payload.soil_moisture ?? payload.soilMoisture ?? payload.moisture ?? payload.soil,
     soil_temperature: payload.soil_temperature ?? payload.soilTemp ?? payload.soilTemperature ?? payload.waterTempC,
   };
 
-  const rawDeviceId = normalizedPayload.device_id;
-  if (typeof rawDeviceId !== 'string' || rawDeviceId.trim().length === 0) {
+  const resolvedDeviceId = canonicalDeviceId(normalizedPayload.device_id);
+  if (!resolvedDeviceId) {
     return null;
   }
 
-  const now = new Date();
-  const timestamp = resolveTelemetryTimestamp(normalizedPayload, now);
+  const timestamp = resolveTelemetryTimestamp(normalizedPayload, new Date());
+  if (!timestamp) {
+    return null;
+  }
   const normalizedFloat = normalizeFloatNumeric(
     normalizedPayload.float_state
       ?? normalizedPayload.floatSensor
@@ -558,7 +589,7 @@ function buildTelemetryRecord(payload) {
       ?? normalizedPayload.waterLevel
   );
   const reading = {
-    deviceId: rawDeviceId.trim(),
+    deviceId: resolvedDeviceId,
     temperature: toNullableNumber(normalizedPayload.temperature ?? normalizedPayload.tempC ?? normalizedPayload.temp),
     humidity: toNullableNumber(normalizedPayload.humidity),
     moisture: toNullableNumber(normalizedPayload.soil_moisture),
@@ -570,6 +601,19 @@ function buildTelemetryRecord(payload) {
     source: 'mqtt',
     rawPayload: payload,
   };
+
+  const hasRequiredCoreFields = [
+    reading.temperature,
+    reading.humidity,
+    reading.moisture,
+    reading.soilTemperature,
+    reading.waterLevel,
+    reading.floatSensor,
+  ].every((value) => value !== null && typeof value !== 'undefined');
+
+  if (!hasRequiredCoreFields) {
+    return null;
+  }
 
   const hasSignal = [
     reading.temperature,
@@ -610,11 +654,10 @@ function startIotMqtt() {
     lastConnectionState = 'connected';
     logger.info('iotMqtt connected', { broker: BROKER });
     client.subscribe([
-      TOPICS.state,
-      TOPICS.ack,
-      TOPICS.statusA,
-      TOPICS.telemetry,
-      TOPICS.statusB,
+      ...STATE_TOPICS,
+      ...ACK_TOPICS,
+      ...STATUS_TOPICS,
+      ...TELEMETRY_TOPICS,
       `${TOPICS.deviceStatusPrefix}#`,
     ], { qos: 0 }, (err) => {
       if (err) {
@@ -637,38 +680,34 @@ function startIotMqtt() {
       return;
     }
 
-    if (topic === TOPICS.state) {
+    const normalizedTopic = (topic || '').toString().trim().toLowerCase();
+
+    if (STATE_TOPICS.has(normalizedTopic)) {
       handleStateMessage(payload).catch((error) => {
         logger.warn('iotMqtt state handler failed', error && error.message ? error.message : error);
       });
       return;
     }
 
-    if (topic === TOPICS.ack) {
+    if (ACK_TOPICS.has(normalizedTopic)) {
       handleAckMessage(payload).catch((error) => {
         logger.warn('iotMqtt ack handler failed', error && error.message ? error.message : error);
       });
       return;
     }
 
-    if (topic === TOPICS.statusA) {
+    if (STATUS_TOPICS.has(normalizedTopic)) {
       handleStatusMessage(payload).catch((error) => {
         logger.warn('iotMqtt status handler failed', error && error.message ? error.message : error);
       });
       return;
     }
 
-    if (topic === TOPICS.telemetry) {
-      handleTelemetryMessage(payload).catch((error) => {
+    if (TELEMETRY_TOPICS.has(normalizedTopic)) {
+      handleTelemetryMessage(payload, normalizedTopic).catch((error) => {
         logger.warn('iotMqtt telemetry handler failed', error && error.message ? error.message : error);
       });
       return;
-    }
-
-    if (topic === TOPICS.statusB) {
-      handleStatusMessage(payload).catch((error) => {
-        logger.warn('iotMqtt status handler failed', error && error.message ? error.message : error);
-      });
     }
   });
 
