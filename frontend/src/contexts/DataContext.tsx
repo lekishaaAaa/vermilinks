@@ -128,6 +128,7 @@ const STALE_TELEMETRY_THRESHOLD_MS = (() => {
 })();
 const allowStaleTelemetry = (process.env.REACT_APP_ALLOW_STALE_DATA || 'false').toString().toLowerCase() === 'true';
 const envForceTelemetryDisabled = (process.env.REACT_APP_TELEMETRY_DISABLED || '').toString().toLowerCase() === 'true';
+const preferredTelemetryDeviceId = (process.env.REACT_APP_PRIMARY_SENSOR_DEVICE_ID || 'esp32B').toString().trim() || 'esp32B';
 const TELEMETRY_DISABLED_MESSAGE = 'Telemetry feed temporarily disabled until sensors come online.';
 
 const toNumber = (value: unknown): number | undefined => {
@@ -593,7 +594,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
     }
     try {
       await ensureBackendBase();
-      const snapshot = await sensorService.getLatestData();
+      const snapshot = await sensorService.getLatestData(preferredTelemetryDeviceId);
       const resolvedDeviceId = (snapshot as any)?.device_id || (snapshot as any)?.deviceId || 'vermilinks-esp32';
       const reading: SensorData | null = snapshot
         ? normalizeSensorSample({

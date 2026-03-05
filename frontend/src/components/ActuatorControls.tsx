@@ -31,6 +31,7 @@ const ActuatorControls: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [online, setOnline] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const [controlMode, setControlMode] = useState<'automatic' | 'manual'>('manual');
 
   const floatLow = useMemo(() => (deviceState?.float || '').toString().toUpperCase() === 'LOW', [deviceState?.float]);
 
@@ -98,6 +99,9 @@ const ActuatorControls: React.FC = () => {
   }, [applyDeviceState]);
 
   const handleToggle = async (key: keyof typeof initialState) => {
+    if (controlMode !== 'manual') {
+      return;
+    }
     if (loading) {
       return;
     }
@@ -139,6 +143,30 @@ const ActuatorControls: React.FC = () => {
         <div>
           <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Actuator Controls</h3>
           <p className="text-sm text-gray-500 dark:text-gray-400">Commands apply only after ESP32-A confirms the new state.</p>
+          <div className="mt-2 inline-flex rounded-full border border-gray-200 bg-gray-50 p-1 dark:border-gray-700 dark:bg-gray-800/70">
+            <button
+              type="button"
+              onClick={() => setControlMode('automatic')}
+              className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                controlMode === 'automatic'
+                  ? 'bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900'
+                  : 'text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white'
+              }`}
+            >
+              Automatic Mode
+            </button>
+            <button
+              type="button"
+              onClick={() => setControlMode('manual')}
+              className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                controlMode === 'manual'
+                  ? 'bg-[#c81e36] text-white'
+                  : 'text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white'
+              }`}
+            >
+              Manual Mode
+            </button>
+          </div>
         </div>
         <div className="flex items-center gap-2 text-xs font-semibold">
           <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 ${online ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200'}`}>
@@ -159,14 +187,16 @@ const ActuatorControls: React.FC = () => {
             key={key}
             type="button"
             onClick={() => handleToggle(key)}
-            disabled={loading || (key === 'pump' && floatLow) || !online}
-            className={`flex flex-col gap-1 rounded-xl border px-4 py-3 text-left text-sm font-semibold transition ${loading || !online ? 'cursor-not-allowed border-gray-200 bg-gray-50 text-gray-400 dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-500' : desiredState[key] ? 'border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900/40 dark:text-gray-200'}`}
+            disabled={loading || controlMode !== 'manual' || (key === 'pump' && floatLow) || !online}
+            className={`flex flex-col gap-1 rounded-xl border px-4 py-3 text-left text-sm font-semibold transition ${loading || !online || controlMode !== 'manual' ? 'cursor-not-allowed border-gray-200 bg-gray-50 text-gray-400 dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-500' : desiredState[key] ? 'border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900/40 dark:text-gray-200'}`}
           >
             <span className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">{ACTUATOR_LABEL_MAP[key]}</span>
             <span className="text-xl font-bold">{formatStatus(desiredState[key])}</span>
-            {key === 'pump' && floatLow && (
+            {controlMode !== 'manual' ? (
+              <span className="text-xs text-gray-500 dark:text-gray-400">Disabled in Automatic Mode</span>
+            ) : key === 'pump' && floatLow ? (
               <span className="text-xs text-rose-600 dark:text-rose-300">Pump locked (float LOW)</span>
-            )}
+            ) : null}
           </button>
         ))}
       </div>

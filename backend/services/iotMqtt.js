@@ -93,6 +93,14 @@ function normalizeFloatState(value) {
   return null;
 }
 
+function normalizeFloatNumeric(value) {
+  const state = normalizeFloatState(value);
+  if (state === 'LOW') return 0;
+  if (state === 'FULL') return 2;
+  if (state === 'NORMAL') return 1;
+  return null;
+}
+
 async function createReservoirLowAlert(deviceId, sensorData) {
   const where = { type: 'water_reservoir_low', deviceId: deviceId || null, isResolved: false };
   const recent = await Alert.findOne({ where, order: [['createdAt', 'DESC']] }).catch(() => null);
@@ -178,7 +186,13 @@ async function handleStateMessage(payload) {
 
   const now = new Date();
   const deviceId = rawDeviceId.trim();
-  const floatState = normalizeFloatState(payload.float) || 'UNKNOWN';
+  const floatState = normalizeFloatState(
+    payload.float
+      ?? payload.floatState
+      ?? payload.float_state
+      ?? payload.water_level
+      ?? payload.waterLevel
+  ) || 'UNKNOWN';
   const isReservoirLow = floatState === 'LOW';
   const isReservoirFull = floatState === 'FULL';
   const requestedPumpState = Boolean(payload.pump);
@@ -478,15 +492,16 @@ async function handleTelemetryMessage(payload) {
   const { deviceId, timestamp } = telemetry;
 
   await SensorData.create(telemetry);
+  const existingSnapshot = await SensorSnapshot.findByPk(deviceId, { raw: true }).catch(() => null);
   await SensorSnapshot.upsert({
     deviceId,
-    temperature: telemetry.temperature,
-    humidity: telemetry.humidity,
-    moisture: telemetry.moisture,
-    soilTemperature: telemetry.soilTemperature,
-    waterLevel: telemetry.waterLevel,
-    floatSensor: telemetry.floatSensor,
-    signalStrength: telemetry.signalStrength,
+    temperature: telemetry.temperature ?? existingSnapshot?.temperature ?? null,
+    humidity: telemetry.humidity ?? existingSnapshot?.humidity ?? null,
+    moisture: telemetry.moisture ?? existingSnapshot?.moisture ?? null,
+    soilTemperature: telemetry.soilTemperature ?? existingSnapshot?.soilTemperature ?? null,
+    waterLevel: telemetry.waterLevel ?? existingSnapshot?.waterLevel ?? null,
+    floatSensor: telemetry.floatSensor ?? existingSnapshot?.floatSensor ?? null,
+    signalStrength: telemetry.signalStrength ?? existingSnapshot?.signalStrength ?? null,
     timestamp,
   });
 
@@ -534,19 +549,42 @@ function buildTelemetryRecord(payload) {
 
   const now = new Date();
   const timestamp = resolveTelemetryTimestamp(normalizedPayload, now);
-  return {
+  const normalizedFloat = normalizeFloatNumeric(
+    normalizedPayload.float_state
+      ?? normalizedPayload.floatSensor
+      ?? normalizedPayload.floatState
+      ?? normalizedPayload.float
+      ?? normalizedPayload.water_level
+      ?? normalizedPayload.waterLevel
+  );
+  const reading = {
     deviceId: rawDeviceId.trim(),
     temperature: toNullableNumber(normalizedPayload.temperature ?? normalizedPayload.tempC ?? normalizedPayload.temp),
     humidity: toNullableNumber(normalizedPayload.humidity),
     moisture: toNullableNumber(normalizedPayload.soil_moisture),
     soilTemperature: toNullableNumber(normalizedPayload.soil_temperature),
-    waterLevel: toNullableNumber(normalizedPayload.water_level ?? normalizedPayload.waterLevel ?? normalizedPayload.float_state ?? normalizedPayload.floatSensor),
-    floatSensor: toNullableNumber(normalizedPayload.float_state ?? normalizedPayload.floatSensor ?? normalizedPayload.float),
+    waterLevel: toNullableNumber(normalizedPayload.water_level ?? normalizedPayload.waterLevel ?? normalizedPayload.float_state ?? normalizedPayload.floatSensor ?? normalizedFloat),
+    floatSensor: toNullableNumber(normalizedPayload.float_state ?? normalizedPayload.floatSensor ?? normalizedPayload.floatState ?? normalizedFloat),
     signalStrength: toNullableNumber(normalizedPayload.signalStrength ?? normalizedPayload.rssi),
     timestamp,
     source: 'mqtt',
     rawPayload: payload,
   };
+
+  const hasSignal = [
+    reading.temperature,
+    reading.humidity,
+    reading.moisture,
+    reading.soilTemperature,
+    reading.waterLevel,
+    reading.floatSensor,
+  ].some((value) => value !== null && typeof value !== 'undefined');
+
+  if (!hasSignal) {
+    return null;
+  }
+
+  return reading;
 }
 
 function startIotMqtt() {

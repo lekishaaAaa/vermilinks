@@ -496,13 +496,13 @@ export const sensorLogService = {
     search?: string;
     start?: string;
     end?: string;
-  }) => api.get<PaginatedResponse<SensorLogEntry>>('/sensor-logs', { params }),
+  }) => withRetry(() => api.get<PaginatedResponse<SensorLogEntry>>('/sensor-logs', { params }), { retries: 3, delayMs: 500 }),
   remove: (id: number | string) =>
-    api.delete<ApiResponse<{ deleted: number; id: number }>>(`/sensor-logs/${encodeURIComponent(id)}`),
+    withRetry(() => api.delete<ApiResponse<{ deleted: number; id: number }>>(`/sensor-logs/${encodeURIComponent(id)}`), { retries: 3, delayMs: 500 }),
   bulkRemove: (ids: Array<number | string>) =>
-    api.delete<ApiResponse<{ deleted: number; ids: number[] }>>('/sensor-logs/bulk', { data: { ids } }),
+    withRetry(() => api.delete<ApiResponse<{ deleted: number; ids: number[] }>>('/sensor-logs/bulk', { data: { ids } }), { retries: 3, delayMs: 500 }),
   removeAll: () =>
-    api.delete<ApiResponse<{ deleted: number }>>('/sensor-logs/all'),
+    withRetry(() => api.delete<ApiResponse<{ deleted: number }>>('/sensor-logs/all'), { retries: 3, delayMs: 500 }),
 };
 
 export const alertService = {

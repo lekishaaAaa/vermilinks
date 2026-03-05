@@ -39,6 +39,8 @@ const normalizeReading = (input: SensorData): SensorData => {
   };
 };
 
+const defaultTelemetryDeviceId = (process.env.REACT_APP_PRIMARY_SENSOR_DEVICE_ID || 'esp32B').toString().trim() || 'esp32B';
+
 export const useSensorsPolling = (options: SensorsPollingOptions = {}): SensorsPollingState => {
   const {
     intervalMs: intervalOption,
@@ -128,8 +130,8 @@ export const useSensorsPolling = (options: SensorsPollingOptions = {}): SensorsP
     setStatus((prev) => (prev === 'success' && !force ? prev : 'loading'));
 
     try {
-      const snapshot: LatestSnapshot | null = await sensorService.getLatestData(deviceId);
-      const resolvedDeviceId = deviceId || 'esp32b';
+      const resolvedDeviceId = deviceId || defaultTelemetryDeviceId;
+      const snapshot: LatestSnapshot | null = await sensorService.getLatestData(resolvedDeviceId);
 
       const reading: SensorData | null = snapshot
         ? {

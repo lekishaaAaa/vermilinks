@@ -32,6 +32,7 @@ const STALE_SENSOR_MAX_AGE_MS = Math.max(
 
 const router = express.Router();
 const sensorCache = new NodeCache({ stdTTL: 5, checkperiod: 2 });
+const DEFAULT_TELEMETRY_DEVICE_ID = (process.env.PRIMARY_SENSOR_DEVICE_ID || process.env.TELEMETRY_DEVICE_ID || 'esp32B').toString().trim() || 'esp32B';
 
 
 const formatLatestSnapshot = (snapshot) => {
@@ -61,6 +62,52 @@ const formatLatestSnapshot = (snapshot) => {
     signal_strength: toNumber(snapshot.signalStrength ?? snapshot.signal_strength),
     timestamp: ensureIsoString(timestamp),
     updated_at: ensureIsoString(timestamp),
+  };
+};
+
+const hydrateMissingTelemetryFields = async (snapshotPayload) => {
+  if (!snapshotPayload || typeof snapshotPayload !== 'object') {
+    return snapshotPayload;
+  }
+
+  const deviceId = (snapshotPayload.deviceId || snapshotPayload.device_id || '').toString().trim();
+  if (!deviceId) {
+    return snapshotPayload;
+  }
+
+  const fallback = await SensorData.findAll({
+    where: { deviceId },
+    order: [['timestamp', 'DESC']],
+    limit: 25,
+    raw: true,
+  });
+
+  if (!Array.isArray(fallback) || fallback.length === 0) {
+    return snapshotPayload;
+  }
+
+  const safeNumber = (value) => (value === null || typeof value === 'undefined' ? null : Number(value));
+  const findLatestNumber = (selector) => {
+    for (const row of fallback) {
+      const candidate = safeNumber(selector(row));
+      if (candidate !== null && !Number.isNaN(candidate)) {
+        return candidate;
+      }
+    }
+    return null;
+  };
+  const firstTimestampRow = fallback.find((row) => row && row.timestamp) || null;
+
+  return {
+    ...snapshotPayload,
+    temperature: snapshotPayload.temperature ?? findLatestNumber((row) => row.temperature),
+    humidity: snapshotPayload.humidity ?? findLatestNumber((row) => row.humidity),
+    soil_moisture: snapshotPayload.soil_moisture ?? findLatestNumber((row) => row.moisture),
+    soil_temperature: snapshotPayload.soil_temperature ?? findLatestNumber((row) => row.soilTemperature),
+    water_level: snapshotPayload.water_level ?? findLatestNumber((row) => row.waterLevel),
+    float_state: snapshotPayload.float_state ?? findLatestNumber((row) => row.floatSensor),
+    updated_at: snapshotPayload.updated_at || (firstTimestampRow?.timestamp ? ensureIsoString(firstTimestampRow.timestamp) : snapshotPayload.updated_at),
+    timestamp: snapshotPayload.timestamp || (firstTimestampRow?.timestamp ? ensureIsoString(firstTimestampRow.timestamp) : snapshotPayload.timestamp),
   };
 };
 
@@ -269,9 +316,15 @@ router.get('/latest', async (req, res) => {
         formatted = formatLatestSnapshot(snapshot);
       }
     } else {
-      const snapshot = await SensorSnapshot.findOne({ order: [['timestamp', 'DESC']], raw: true });
-      if (snapshot) {
-        formatted = formatLatestSnapshot(snapshot);
+      const preferredSnapshot = await SensorSnapshot.findByPk(DEFAULT_TELEMETRY_DEVICE_ID, { raw: true });
+      if (preferredSnapshot) {
+        formatted = formatLatestSnapshot(preferredSnapshot);
+      }
+      if (!formatted) {
+        const snapshot = await SensorSnapshot.findOne({ order: [['timestamp', 'DESC']], raw: true });
+        if (snapshot) {
+          formatted = formatLatestSnapshot(snapshot);
+        }
       }
     }
 
@@ -290,6 +343,10 @@ router.get('/latest', async (req, res) => {
         floatSensor: latest.floatSensor,
         timestamp: latest.timestamp,
       }) : null;
+    }
+
+    if (formatted) {
+      formatted = await hydrateMissingTelemetryFields(formatted);
     }
 
     sensorCache.set(cacheKey, formatted || null);
