@@ -45,9 +45,23 @@ const TELEMETRY_FLUSH_INTERVAL_MS = Math.max(30 * 1000, Number.parseInt(process.
 const TELEMETRY_BUFFER_KEYS = ['temperature', 'humidity', 'soil_moisture', 'soil_temperature', 'water_level'];
 const LOG_RETENTION_DAYS = Math.max(1, Number.parseInt(process.env.SENSOR_LOG_RETENTION_DAYS || '30', 10));
 const CLEANUP_INTERVAL_MS = Math.max(60 * 60 * 1000, Number.parseInt(process.env.SENSOR_LOG_CLEANUP_MS || `${24 * 60 * 60 * 1000}`, 10));
+const SENSOR_LOG_INGESTOR_TAG = (process.env.SENSOR_LOG_INGESTOR_TAG || '').toString().trim();
 const telemetryBuffers = new Map();
 let aggregationTimer = null;
 let cleanupTimer = null;
+
+const withIngestorTag = (payload) => {
+  if (!SENSOR_LOG_INGESTOR_TAG) {
+    return payload;
+  }
+  if (!payload || typeof payload !== 'object') {
+    return { ingestor_tag: SENSOR_LOG_INGESTOR_TAG };
+  }
+  return {
+    ...payload,
+    ingestor_tag: SENSOR_LOG_INGESTOR_TAG,
+  };
+};
 
 const clampRawPayload = (payload) => {
   if (!payload || typeof payload !== 'object') {
@@ -109,6 +123,7 @@ const getOrCreateTelemetryBucket = (deviceId) => {
       origin: 'mqtt',
       mqttTopic: null,
       rawPayload: null,
+      ingestorTag: SENSOR_LOG_INGESTOR_TAG || null,
       recordedAt: new Date(),
     },
   };
@@ -144,7 +159,7 @@ const queueTelemetryForAggregation = ({ deviceId, metrics, origin, recordedAt, r
 
   bucket.metadata.origin = origin || bucket.metadata.origin;
   bucket.metadata.mqttTopic = mqttTopic || bucket.metadata.mqttTopic;
-  bucket.metadata.rawPayload = rawPayload || bucket.metadata.rawPayload;
+  bucket.metadata.rawPayload = withIngestorTag(rawPayload || bucket.metadata.rawPayload);
   bucket.metadata.recordedAt = recordedAt || new Date();
 };
 
@@ -186,7 +201,7 @@ async function flushTelemetryAggregation() {
       origin: bucket.metadata.origin || 'mqtt',
       recordedAt: bucket.metadata.recordedAt || new Date(),
       mqttTopic: bucket.metadata.mqttTopic || null,
-      rawPayload: clampRawPayload(avgPayload),
+      rawPayload: clampRawPayload(withIngestorTag(avgPayload)),
     });
   });
 
@@ -283,11 +298,12 @@ async function recordSensorLogs({
 
   ensureSchedulers();
 
-  if ((origin || '').toString().toLowerCase() === 'mqtt') {
+  const normalizedOrigin = (origin || '').toString().trim().toLowerCase();
+  if (normalizedOrigin === 'mqtt' || normalizedOrigin.startsWith('mqtt:')) {
     queueTelemetryForAggregation({
       deviceId: normalizedDeviceId,
       metrics,
-      origin,
+      origin: 'mqtt',
       recordedAt,
       rawPayload,
       mqttTopic,
@@ -313,7 +329,7 @@ async function recordSensorLogs({
       origin,
       recordedAt,
       mqttTopic: mqttTopic || null,
-      rawPayload: index === 0 ? rawPayload : null,
+      rawPayload: withIngestorTag(index === 0 ? rawPayload : null),
     });
   });
 

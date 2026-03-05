@@ -1,7 +1,7 @@
 const ALERT_LABEL_OVERRIDES: Record<string, string> = {
   pump_emergency_shutdown: 'Pump Emergency Shutdown',
   water_reservoir_low: 'Water Reservoir Low',
-  sensor_out_of_range: 'Sensor Threshold Warning',
+  sensor_out_of_range: 'Sensor Out Of Range',
 };
 
 export const formatAlertLabel = (value?: string | null): string => {

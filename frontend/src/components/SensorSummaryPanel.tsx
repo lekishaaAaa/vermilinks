@@ -89,6 +89,22 @@ const SensorSummaryPanel: React.FC<SensorSummaryPanelProps> = ({ className = '',
   }, [actuatorStates]);
 
   const lastUpdatedText = lastUpdated ? new Date(lastUpdated).toLocaleTimeString() : 'Never';
+  const statusNotice = telemetryDisabled
+    ? {
+        className: 'mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200',
+        text: 'Telemetry feed is temporarily disabled until physical sensors come online.',
+      }
+    : status === 'error'
+      ? {
+          className: 'mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600 dark:border-red-700 dark:bg-red-900/30 dark:text-red-200',
+          text: error || 'Telemetry temporarily unavailable.',
+        }
+      : status === 'loading' && !latest && !lastTelemetry
+        ? {
+            className: 'mt-4 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-700 dark:border-blue-700 dark:bg-blue-900/30 dark:text-blue-200',
+            text: 'Loading latest telemetry…',
+          }
+        : null;
 
   return (
     <section
@@ -122,29 +138,13 @@ const SensorSummaryPanel: React.FC<SensorSummaryPanelProps> = ({ className = '',
         </div>
       </header>
 
-      {telemetryDisabled ? (
-        <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200">
-          Telemetry feed is temporarily disabled until physical sensors come online.
+      {statusNotice && (
+        <div className={statusNotice.className}>
+          {statusNotice.text}
         </div>
-      ) : status === 'error' ? (
-        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600 dark:border-red-700 dark:bg-red-900/30 dark:text-red-200">
-          {error}
-        </div>
-      ) : status === 'loading' && !latest && !lastTelemetry ? (
-        <div className="mt-6 grid grid-cols-5 gap-5" style={{ gridTemplateColumns: 'repeat(5,1fr)', gap: 20 }}>
-          {Array.from({ length: 5 }).map((_, idx) => (
-            <div
-              key={idx}
-              className="animate-pulse rounded-xl border border-gray-100 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-800"
-            >
-              <div className="h-4 w-24 rounded bg-gray-200 dark:bg-gray-700" />
-              <div className="mt-3 h-6 w-32 rounded bg-gray-200 dark:bg-gray-700" />
-            </div>
-          ))}
-        </div>
-      ) : (
-        <SensorOverview telemetry={latest} lastTelemetry={lastTelemetry} />
       )}
+
+      <SensorOverview telemetry={latest} lastTelemetry={lastTelemetry} />
 
       {actuatorItems.length > 0 && (
         <div className="mt-6 rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4 text-sm text-emerald-900 shadow-sm dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-100">
