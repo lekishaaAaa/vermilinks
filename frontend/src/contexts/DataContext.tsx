@@ -474,10 +474,8 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
 
   const updateTelemetryCache = useCallback((reading: SensorData | null) => {
     if (!reading) {
-      const fallbackCache = telemetryCacheRef.current.slice(-10);
-      if (fallbackCache.length > 0) {
-        setLatestSensorData(fallbackCache);
-      }
+      telemetryCacheRef.current = [];
+      setLatestSensorData([]);
       return;
     }
     const nextCache = [...telemetryCacheRef.current, reading].slice(-10);
@@ -518,6 +516,16 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
     normalized.deviceOnline = Boolean(normalized.deviceOnline && !isStale);
 
     const connectionHealthy = !isStale || allowStaleTelemetry;
+    if (isStale && !allowStaleTelemetry) {
+      setLatestTelemetry(null);
+      setLastTelemetry(null);
+      updateTelemetryCache(null);
+      setActuatorStates(null);
+      setIsConnected(false);
+      setLastFetchError('Awaiting live telemetry from sensors');
+      return null;
+    }
+
     if (!connectionHealthy && !latestTelemetryRef.current) {
       setLastFetchError('Awaiting live telemetry from sensors');
     } else {
@@ -553,7 +561,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
     const smoothed = smooth(latestTelemetryRef.current, merged);
     setLatestTelemetry(smoothed);
     setLastTelemetry(smoothed);
-    setIsConnected(connectionHealthy || Boolean(latestTelemetryRef.current));
+    setIsConnected(connectionHealthy);
     setActuatorStates(merged.actuatorStates || null);
     if (options?.updateLatestList !== false) {
       updateTelemetryCache(smoothed);
@@ -629,19 +637,12 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
           updateTelemetryCache(null);
         }
         setActuatorStates(reading.actuatorStates || null);
-      } else if (latestTelemetryRef.current) {
-        const previousData = latestTelemetryRef.current;
-        setLatestTelemetry(previousData);
-        updateTelemetryCache(previousData);
-        setActuatorStates(previousData.actuatorStates || null);
-        setIsConnected(true);
-      } else if (!background) {
-        if (!latestTelemetryRef.current) {
-          setLatestTelemetry(null);
-          updateTelemetryCache(null);
-          setActuatorStates(null);
-          setIsConnected(false);
-        }
+      } else {
+        setLatestTelemetry(null);
+        setLastTelemetry(null);
+        updateTelemetryCache(null);
+        setActuatorStates(null);
+        setIsConnected(false);
       }
       if (!background) {
         setLastFetchError(null);
