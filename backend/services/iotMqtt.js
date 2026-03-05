@@ -24,6 +24,8 @@ const TELEMETRY_TOPICS = new Set([
   'vermilinks/esp32a/telemetry',
   'vermilinks/esp32a/metrics',
 ]);
+const TELEMETRY_WILDCARD_TOPIC = 'vermilinks/+/telemetry';
+const METRICS_WILDCARD_TOPIC = 'vermilinks/+/metrics';
 
 const STATE_TOPICS = new Set(['vermilinks/esp32a/state']);
 const ACK_TOPICS = new Set(['vermilinks/esp32a/ack']);
@@ -182,6 +184,16 @@ function canonicalDeviceId(value) {
   if (lower === 'esp32a') return 'esp32A';
   if (lower === 'esp32b') return 'esp32B';
   return normalized;
+}
+
+function isTelemetryTopic(topic) {
+  if (!topic) {
+    return false;
+  }
+  if (TELEMETRY_TOPICS.has(topic)) {
+    return true;
+  }
+  return /^vermilinks\/[^/]+\/(telemetry|metrics)$/.test(topic);
 }
 
 function resolveDeviceIdFromTopic(topic) {
@@ -588,14 +600,18 @@ function buildTelemetryRecord(payload, topic) {
       ?? normalizedPayload.water_level
       ?? normalizedPayload.waterLevel
   );
+  const rawWaterLevel = normalizedPayload.water_level ?? normalizedPayload.waterLevel;
+  const rawFloatState = normalizedPayload.float_state ?? normalizedPayload.floatSensor ?? normalizedPayload.floatState;
+  const parsedWaterLevel = toNullableNumber(rawWaterLevel);
+  const parsedFloatSensor = toNullableNumber(rawFloatState);
   const reading = {
     deviceId: resolvedDeviceId,
     temperature: toNullableNumber(normalizedPayload.temperature ?? normalizedPayload.tempC ?? normalizedPayload.temp),
     humidity: toNullableNumber(normalizedPayload.humidity),
     moisture: toNullableNumber(normalizedPayload.soil_moisture),
     soilTemperature: toNullableNumber(normalizedPayload.soil_temperature),
-    waterLevel: toNullableNumber(normalizedPayload.water_level ?? normalizedPayload.waterLevel ?? normalizedPayload.float_state ?? normalizedPayload.floatSensor ?? normalizedFloat),
-    floatSensor: toNullableNumber(normalizedPayload.float_state ?? normalizedPayload.floatSensor ?? normalizedPayload.floatState ?? normalizedFloat),
+    waterLevel: parsedWaterLevel ?? parsedFloatSensor ?? normalizedFloat,
+    floatSensor: parsedFloatSensor ?? parsedWaterLevel ?? normalizedFloat,
     signalStrength: toNullableNumber(normalizedPayload.signalStrength ?? normalizedPayload.rssi),
     timestamp,
     source: 'mqtt',
@@ -643,25 +659,39 @@ function startIotMqtt() {
     : `vermilinks-iot-${Math.random().toString(16).slice(2, 8)}`;
   const mqttUsername = (process.env.MQTT_USERNAME || '').toString().trim();
   const mqttPassword = (process.env.MQTT_PASSWORD || '').toString().trim();
+  const reconnectPeriod = parseInt(process.env.MQTT_RECONNECT_PERIOD_MS || '5000', 10);
+  const keepalive = parseInt(process.env.MQTT_KEEPALIVE_SEC || '60', 10);
+  const connectTimeout = parseInt(process.env.MQTT_CONNECT_TIMEOUT_MS || '30000', 10);
+
+  const subscriptionTopics = [
+    ...STATE_TOPICS,
+    ...ACK_TOPICS,
+    ...STATUS_TOPICS,
+    ...TELEMETRY_TOPICS,
+    TELEMETRY_WILDCARD_TOPIC,
+    METRICS_WILDCARD_TOPIC,
+    `${TOPICS.deviceStatusPrefix}#`,
+  ];
 
   client = mqtt.connect(BROKER, {
     clientId: iotClientId,
     username: mqttUsername || undefined,
     password: mqttPassword || undefined,
+    reconnectPeriod: Number.isFinite(reconnectPeriod) && reconnectPeriod > 0 ? reconnectPeriod : 5000,
+    keepalive: Number.isFinite(keepalive) && keepalive > 0 ? keepalive : 60,
+    clean: true,
+    connectTimeout: Number.isFinite(connectTimeout) && connectTimeout > 0 ? connectTimeout : 30000,
+    resubscribe: false,
   });
 
   client.on('connect', () => {
     lastConnectionState = 'connected';
     logger.info('iotMqtt connected', { broker: BROKER });
-    client.subscribe([
-      ...STATE_TOPICS,
-      ...ACK_TOPICS,
-      ...STATUS_TOPICS,
-      ...TELEMETRY_TOPICS,
-      `${TOPICS.deviceStatusPrefix}#`,
-    ], { qos: 0 }, (err) => {
+    client.subscribe(subscriptionTopics, { qos: 0 }, (err) => {
       if (err) {
         logger.warn('iotMqtt subscribe failed', err && err.message ? err.message : err);
+      } else {
+        logger.info('iotMqtt subscriptions active', { topics: subscriptionTopics });
       }
     });
   });
@@ -703,12 +733,22 @@ function startIotMqtt() {
       return;
     }
 
-    if (TELEMETRY_TOPICS.has(normalizedTopic)) {
+    if (isTelemetryTopic(normalizedTopic)) {
       handleTelemetryMessage(payload, normalizedTopic).catch((error) => {
         logger.warn('iotMqtt telemetry handler failed', error && error.message ? error.message : error);
       });
       return;
     }
+  });
+
+  client.on('reconnect', () => {
+    lastConnectionState = 'reconnecting';
+    logger.info('iotMqtt reconnected attempt in progress');
+  });
+
+  client.on('offline', () => {
+    lastConnectionState = 'offline';
+    logger.warn('iotMqtt offline');
   });
 
   client.on('error', (error) => {

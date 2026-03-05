@@ -250,19 +250,7 @@ if ((process.env.NODE_ENV || 'development') !== 'test') {
   logger.info('Skipping deviceCommandQueue retry loop in test mode');
 }
 
-// Start MQTT ingest service if configured (non-test only)
-try {
-  // Allow forcing MQTT ingest off even if broker envs remain set.
-  // Set `DISABLE_MQTT_INGEST=true` in your Render / environment to opt out.
-  if (process.env.NODE_ENV !== 'test' && process.env.DISABLE_MQTT_INGEST !== 'true') {
-    const mqttService = require('./services/mqttIngest');
-    mqttService.startMqtt();
-  } else {
-    logger.info('DISABLE_MQTT_INGEST set or running in test mode; skipping MQTT ingest startup');
-  }
-} catch (e) {
-  logger.warn('Failed to initialize MQTT ingest service', e && e.message ? e.message : e);
-}
+logger.info('Single MQTT client mode enabled: mqttIngest broker connection startup is disabled (iotMqtt is the only MQTT client)');
 
 // Start IoT MQTT service for ESP32 commands/telemetry
 try {
