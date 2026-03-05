@@ -58,6 +58,12 @@ const app = express();
 // Render and other proxies populate X-Forwarded-* headers; trust the first hop for accurate rate limiting/IP logging
 app.set('trust proxy', 1);
 const server = http.createServer(app);
+if (typeof server.requestTimeout !== 'undefined') {
+  server.requestTimeout = 30000;
+}
+if (typeof server.headersTimeout !== 'undefined') {
+  server.headersTimeout = 35000;
+}
 let pollerRuntime = null;
 
 const rateLimitWindowMs = parseInt(process.env.RATE_LIMIT_WINDOW_MS || process.env.API_RATE_LIMIT_WINDOW_MS || '900000', 10);

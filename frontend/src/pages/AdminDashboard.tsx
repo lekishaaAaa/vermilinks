@@ -8,6 +8,7 @@ import SystemHealth from '../components/SystemHealth';
 import DarkModeToggle from '../components/DarkModeToggle';
 import HeaderFrame from '../components/layout/HeaderFrame';
 import SensorSummaryPanel from '../components/SensorSummaryPanel';
+import { formatAlertLabel } from '../utils/alertLabels';
 import ActuatorControls from '../components/ActuatorControls';
 import { DeviceManagement } from '../components/DeviceManagement';
 import { useAuth } from '../contexts/AuthContext';
@@ -1618,7 +1619,9 @@ export default function AdminDashboard(): React.ReactElement {
                                   <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold ${badgeTone}`}>{severity.toUpperCase()}</span>
                                   <span className="text-xs text-gray-500 dark:text-gray-400">{formatAlertTimestamp(alert.createdAt || alert.timestamp || alert.updatedAt)}</span>
                                 </div>
-                                <p className="mt-2 text-sm font-medium text-gray-800 dark:text-gray-100">{alert.title || alert.message || 'Alert triggered'}</p>
+                                <p className="mt-2 text-sm font-medium text-gray-800 dark:text-gray-100">
+                                  {alert.title || formatAlertLabel(alert.type || alert.eventType || alert.code) || alert.message || 'Alert triggered'}
+                                </p>
                                 {alert.deviceId && <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Device: {alert.deviceId}</p>}
                               </div>
                               <div className="flex items-center gap-2">

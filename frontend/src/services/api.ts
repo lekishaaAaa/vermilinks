@@ -25,7 +25,7 @@ export const API_BASE_URL = API_ROOT;
 const api: AxiosInstance = axios.create({
   // prefer IPv4 loopback in dev to avoid browsers resolving 'localhost' to ::1 (IPv6)
   baseURL: API_ROOT + '/api',
-  timeout: 10000,
+  timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -117,6 +117,41 @@ const isSessionEndpoint = (url: string | undefined | null) => {
   if (!url) return false;
   return SESSION_ENDPOINTS.some((endpoint) => url.includes(endpoint));
 };
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const shouldRetryRequest = (error: any) => {
+  const status = Number(error?.response?.status || 0);
+  if (!status) {
+    return true;
+  }
+  return [408, 425, 429, 500, 502, 503, 504].includes(status);
+};
+
+async function withRetry<T>(
+  request: () => Promise<T>,
+  options?: { retries?: number; delayMs?: number }
+): Promise<T> {
+  const retries = Math.max(0, options?.retries ?? 3);
+  const delayMs = Math.max(0, options?.delayMs ?? 500);
+  let attempt = 0;
+  let lastError: any = null;
+
+  while (attempt <= retries) {
+    try {
+      return await request();
+    } catch (error: any) {
+      lastError = error;
+      if (attempt >= retries || !shouldRetryRequest(error)) {
+        break;
+      }
+      await sleep(delayMs);
+      attempt += 1;
+    }
+  }
+
+  throw lastError;
+}
 
 async function confirmActiveSession(authHeader: string) {
   if (sessionProbePromise) {
@@ -415,10 +450,10 @@ export const sensorService = {
   
   getLatestData: async (deviceId?: string): Promise<LatestSnapshot | null> => {
     try {
-      const response = await api.get<LatestSnapshot>('/sensors/latest', {
+      const response = await withRetry(() => api.get<LatestSnapshot>('/sensors/latest', {
         params: deviceId ? { deviceId } : undefined,
         validateStatus: (status) => [200, 204].includes(status),
-      });
+      }), { retries: 3, delayMs: 500 });
       if (response.status === 204) {
         return null;
       }
@@ -436,7 +471,7 @@ export const sensorService = {
     api.get<ApiResponse<SensorStats>>('/sensors/stats', { params }),
 
   getHistory: (params?: { deviceId?: string; limit?: number; start?: string; end?: string }) =>
-    api.get<ApiResponse<{ deviceId: string; readings: SensorData[] }>>('/sensors/history', { params }),
+    withRetry(() => api.get<ApiResponse<{ deviceId: string; readings: SensorData[] }>>('/sensors/history', { params }), { retries: 3, delayMs: 500 }),
 
   getDaily: (params: { date: string; deviceId?: string }) =>
     api.get<ApiResponse<{
@@ -479,21 +514,21 @@ export const alertService = {
     isResolved?: boolean;
     deviceId?: string;
   }) =>
-    api.get<PaginatedResponse<Alert>>('/alerts', { params }),
+    withRetry(() => api.get<PaginatedResponse<Alert>>('/alerts', { params }), { retries: 3, delayMs: 500 }),
 
   getRecentAlerts: (limit?: number) =>
-    api.get<ApiResponse<Alert[]>>('/alerts/recent', {
+    withRetry(() => api.get<ApiResponse<Alert[]>>('/alerts/recent', {
       params: limit ? { limit } : undefined,
-    }),
+    }), { retries: 3, delayMs: 500 }),
 
   getLatestAlerts: () =>
-    api.get<ApiResponse<Alert[]>>('/alerts/latest'),
+    withRetry(() => api.get<ApiResponse<Alert[]>>('/alerts/latest'), { retries: 3, delayMs: 500 }),
 
   getDebugSummary: () =>
-    api.get<ApiResponse<{ alerts_generated: number; latest_alert: Alert | null }>>('/alerts/debug'),
+    withRetry(() => api.get<ApiResponse<{ alerts_generated: number; latest_alert: Alert | null }>>('/alerts/debug'), { retries: 3, delayMs: 500 }),
 
   getActiveAlerts: (params?: { deviceId?: string; severity?: string; limit?: number; sort?: 'asc' | 'desc' }) =>
-    api.get<ApiResponse<Alert[]>>('/alerts/active', { params }),
+    withRetry(() => api.get<ApiResponse<Alert[]>>('/alerts/active', { params }), { retries: 3, delayMs: 500 }),
 
   createAlert: (alertData: {
     type: 'sensor' | 'connectivity' | 'threshold' | 'device_offline' | 'other';
@@ -530,7 +565,7 @@ export const alertService = {
     period?: 'day' | 'week' | 'month';
     deviceId?: string;
   }) =>
-    api.get<ApiResponse<AlertStats>>('/alerts/stats', { params }),
+    withRetry(() => api.get<ApiResponse<AlertStats>>('/alerts/stats', { params }), { retries: 3, delayMs: 500 }),
 };
 
 export const notificationService = {
@@ -555,7 +590,7 @@ export const notificationService = {
 
 export const deviceService = {
   list: () => api.get<ApiResponse<any[]>>('/devices'),
-  getStatus: () => api.get<{ devices: DeviceStatusSnapshot[] }>('/devices/status'),
+  getStatus: () => withRetry(() => api.get<{ devices: DeviceStatusSnapshot[] }>('/devices/status'), { retries: 3, delayMs: 500 }),
   getSensors: (deviceId: string, params?: { limit?: number }) =>
     api.get<ApiResponse<DeviceSensorSummary>>(`/devices/${encodeURIComponent(deviceId)}/sensors`, { params }),
 };

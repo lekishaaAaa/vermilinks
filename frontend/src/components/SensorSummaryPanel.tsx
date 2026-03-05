@@ -1,63 +1,15 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { RefreshCw, Activity, ToggleLeft } from 'lucide-react';
 import { useSensorsPolling } from '../hooks/useSensorsPolling';
-import { SensorData, SensorSummaryItem } from '../types';
+import { SensorData } from '../types';
 import { useData } from '../contexts/DataContext';
+import SensorOverview from './SensorOverview';
 
 interface SensorSummaryPanelProps {
   className?: string;
   deviceId?: string;
 }
 
-const formatValue = (item: SensorSummaryItem): string => {
-  const { value, unit } = item;
-  if (value === null || typeof value === 'undefined') {
-    return '—';
-  }
-  if (typeof value === 'number') {
-    const rounded = Math.round((value + Number.EPSILON) * 10) / 10;
-    return `${rounded}${unit ? ` ${unit}` : ''}`.trim();
-  }
-  if (typeof value === 'object') {
-    const segments = Object.entries(value)
-      .filter(([, segmentValue]) => segmentValue !== null && typeof segmentValue !== 'undefined')
-      .map(([label, segmentValue]) => `${label}: ${segmentValue}`);
-    return segments.length > 0 ? segments.join(' · ') : '—';
-  }
-  return String(value);
-};
-
-const buildFallbackSummary = (latest: SensorData | null): SensorSummaryItem[] => {
-  if (!latest) {
-    return [];
-  }
-
-  const timestamp = latest.timestamp ? String(latest.timestamp) : undefined;
-  const items: SensorSummaryItem[] = [];
-  const pushNumeric = (key: string, label: string, value: number | undefined, unit?: string | null) => {
-    if (typeof value === 'number' && Number.isFinite(value)) {
-      items.push({ key, label, value, unit: unit ?? undefined, timestamp });
-    }
-  };
-
-  pushNumeric('temperature', 'External Temperature', latest.temperature, '°C');
-  pushNumeric('humidity', 'Humidity', latest.humidity, '%');
-  pushNumeric('moisture', 'Soil Moisture', latest.moisture, '%');
-  pushNumeric('soilTemperature', 'Soil Temperature', latest.soilTemperature, '°C');
-  const rawWaterLevel = latest.floatSensor ?? latest.waterLevel;
-  if (rawWaterLevel !== null && typeof rawWaterLevel !== 'undefined') {
-    const normalized = String(rawWaterLevel).trim().toUpperCase();
-    let state: 'LOW' | 'NORMAL' | 'HIGH' = 'NORMAL';
-    if (['LOW', 'EMPTY', 'MIN'].includes(normalized) || Number(rawWaterLevel) <= 0) {
-      state = 'LOW';
-    } else if (['FULL', 'HIGH', 'MAX'].includes(normalized) || Number(rawWaterLevel) >= 2) {
-      state = 'HIGH';
-    }
-    items.push({ key: 'waterLevel', label: 'Water Level', value: state, timestamp });
-  }
-
-  return items;
-};
 
 const ACTUATOR_LABELS: Record<string, string> = {
   water_pump: 'Water Pump',
@@ -109,26 +61,12 @@ const SensorSummaryPanel: React.FC<SensorSummaryPanelProps> = ({ className = '',
     cacheTtlMs: 2500,
     disabled: telemetryDisabled,
   });
+  const [lastTelemetry, setLastTelemetry] = useState<SensorData | null>(null);
 
-  const summaryItems = useMemo(() => {
-    if (latest && Array.isArray(latest.sensorSummary) && latest.sensorSummary.length > 0) {
-      const allowedKeys = new Set(['temperature', 'humidity', 'soilTemperature', 'moisture', 'waterLevel']);
-      return latest.sensorSummary
-        .filter((item) => allowedKeys.has(item.key))
-        .map((item) => ({
-          ...item,
-          label: item.key === 'temperature' ? 'External Temperature' : item.label,
-          value: item.key === 'waterLevel'
-            ? (() => {
-                const normalized = String(item.value ?? '').trim().toUpperCase();
-                if (['LOW', 'EMPTY', 'MIN'].includes(normalized) || Number(item.value) <= 0) return 'LOW';
-                if (['HIGH', 'FULL', 'MAX'].includes(normalized) || Number(item.value) >= 2) return 'HIGH';
-                return 'NORMAL';
-              })()
-            : item.value,
-        }));
+  useEffect(() => {
+    if (latest) {
+      setLastTelemetry(latest);
     }
-    return buildFallbackSummary(latest);
   }, [latest]);
 
   const actuatorItems = useMemo(() => {
@@ -192,9 +130,9 @@ const SensorSummaryPanel: React.FC<SensorSummaryPanelProps> = ({ className = '',
         <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600 dark:border-red-700 dark:bg-red-900/30 dark:text-red-200">
           {error}
         </div>
-      ) : summaryItems.length === 0 && status === 'loading' ? (
-        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {Array.from({ length: 3 }).map((_, idx) => (
+      ) : status === 'loading' && !latest && !lastTelemetry ? (
+        <div className="mt-6 grid grid-cols-5 gap-5" style={{ gridTemplateColumns: 'repeat(5,1fr)', gap: 20 }}>
+          {Array.from({ length: 5 }).map((_, idx) => (
             <div
               key={idx}
               className="animate-pulse rounded-xl border border-gray-100 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-800"
@@ -205,31 +143,7 @@ const SensorSummaryPanel: React.FC<SensorSummaryPanelProps> = ({ className = '',
           ))}
         </div>
       ) : (
-        <ul className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {summaryItems.map((item) => (
-            <li
-              key={item.key}
-              className="rounded-xl border border-gray-100 bg-white/90 p-4 shadow-sm transition hover:shadow-md dark:border-gray-800 dark:bg-gray-900/60"
-            >
-              <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                {item.label}
-              </div>
-              <div className="mt-2 text-2xl font-semibold text-gray-900 dark:text-gray-100">
-                {formatValue(item)}
-              </div>
-              {item.timestamp && (
-                <div className="mt-2 text-xs text-gray-400 dark:text-gray-500">
-                  Observed {new Date(item.timestamp).toLocaleTimeString()}
-                </div>
-              )}
-            </li>
-          ))}
-          {summaryItems.length === 0 && status === 'success' && (
-            <li className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-4 text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800/50 dark:text-gray-300">
-              No recent sensor readings. Data will appear automatically when devices report in.
-            </li>
-          )}
-        </ul>
+        <SensorOverview telemetry={latest} lastTelemetry={lastTelemetry} />
       )}
 
       {actuatorItems.length > 0 && (

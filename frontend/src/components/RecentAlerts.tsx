@@ -1,4 +1,5 @@
 import React from 'react';
+import { formatAlertLabel } from '../utils/alertLabels';
 
 type AlertLike = {
   _id?: string;
@@ -10,10 +11,7 @@ type AlertLike = {
 };
 
 export const formatAlertName = (alertType?: string): string => {
-  if (!alertType) return 'Alert';
-  return alertType
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (character) => character.toUpperCase());
+  return formatAlertLabel(alertType);
 };
 
 const formatTimestamp = (value?: string) => {
