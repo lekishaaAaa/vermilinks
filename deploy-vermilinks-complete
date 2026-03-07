@@ -10,10 +10,10 @@ const { setTimeout: sleep } = require('timers/promises');
 
 const BACKEND_SERVICE_ID = 'srv-d43v9q0dl3ps73aarv30';
 const FRONTEND_SERVICE_ID = 'srv-d43v9h0dl3ps73aarlgg';
-const BACKEND_HEALTH_URL = 'https://vermilinks-backend.onrender.com/health';
-const FRONTEND_URL = 'https://vermilinks-frontend.onrender.com';
-const TELEMETRY_URL = 'https://vermilinks-backend.onrender.com/api/sensors';
-const COMMAND_URL = 'https://vermilinks-backend.onrender.com/api/command';
+const BACKEND_HEALTH_URL = 'https://vermilinks.onrender.com/api/health';
+const FRONTEND_URL = 'https://vermilinks-frontend-17l6.onrender.com';
+const TELEMETRY_URL = 'https://vermilinks.onrender.com/api/sensors';
+const COMMAND_URL = 'https://vermilinks.onrender.com/api/command';
 const SUMMARY_FILE = path.resolve(process.cwd(), 'deploy-summary.txt');
 const EMAIL_HELPER = path.resolve(__dirname, 'send-email.js');
 
