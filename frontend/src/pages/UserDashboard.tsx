@@ -113,6 +113,8 @@ const UserDashboard: React.FC = () => {
           </div>
         </section>
 
+        <SensorLegendTable />
+
         <RealtimeTelemetryPanel
           latest={latestTelemetry}
           history={latestSensorData}
@@ -122,7 +124,6 @@ const UserDashboard: React.FC = () => {
           telemetryDisabled={telemetryDisabled}
         />
 
-        <SensorLegendTable />
         <CalendarBasedSummary />
 
         <section className="grid gap-6 md:grid-cols-2">

@@ -67,14 +67,13 @@ node backend\scripts\seed-admin.js
 ### Step 5: Start All Services
 
 ```powershell
-# Start backend, frontend, and simulators with PM2
+# Start backend and frontend with PM2
 powershell -ExecutionPolicy Bypass -File .\start-all.ps1
 ```
 
 This script will:
 - Start the backend API on port 5000
 - Start the frontend on port 3002
-- Start WebSocket device simulators
 - Wait for services to be healthy
 - Display status information
 
@@ -171,9 +170,8 @@ docker-compose down -v
 - **Database**: PostgreSQL on port 5075
   - Stores users, sensor data, alerts, device info
 
-- **Simulators**: WebSocket device simulators
-  - `smoke-sim-01`: For testing actuator commands
-  - `esp32-test-01`: For testing sensor data
+- **Telemetry Source**: Real ESP32 devices via HiveMQ Cloud MQTT
+- Backend ingests device telemetry and stores latest values in PostgreSQL
 
 ## 🧪 Testing the System
 
@@ -190,7 +188,7 @@ npm run smoke-ui
 ### Manual Testing
 
 1. **Login** to the frontend dashboard
-2. **View sensor data** - Should show simulated data from device simulators
+2. **View sensor data** - Should show real telemetry from ESP32 devices
 3. **Test actuators** - Use admin controls to send pump/valve commands
 4. **Check alerts** - System should generate alerts based on thresholds
 
@@ -209,5 +207,4 @@ If you encounter issues:
 3. Restart services: `pm2 restart all`
 4. Check this guide's troubleshooting section
 
-The system is now ready for development and testing!</content>
-<parameter name="filePath">c:\xampp\htdocs\beantobin\system\QUICK_START.md
+The system is now ready for development and testing!

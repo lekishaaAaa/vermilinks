@@ -372,7 +372,7 @@ For additional help, check the troubleshooting sections in the deployment guide 
 - `backend/` — Node/Express API, Sequelize models, routes
 - `frontend/` — React app (TypeScript), TailwindCSS, components and pages
 - `esp32/` — ESP32 firmware (MQTT/HTTP) for sensors and actuators
-- `scripts/` — Migration & helper scripts (seeding, smoke-tests, simulators)
+- `scripts/` — Migration & helper scripts (seeding, smoke-tests, maintenance)
 - `docker-compose.yml` — Optional local stack (Postgres, etc.)
 - `README.md` — This file
 
@@ -432,17 +432,17 @@ node .\scripts\smoke-test.js
 
 Expected: the script logs in (uses dev admin), posts pump/valve commands, and verifies actuator logs. It will exit with code 0 on success.
 
-4) Run a simulated device to test forwarding & ack behavior:
+4) Validate real telemetry ingestion from your ESP32 devices:
 
 ```powershell
-# starts a simulator that registers as esp32-test-01
-node backend\scripts\ws-device-sim.js ws://127.0.0.1:5000 esp32-test-01
+# confirm backend is receiving live data
+curl http://127.0.0.1:5000/api/sensors/latest
 
-# or register as the smoke device used by the smoke test
-node backend\scripts\ws-device-sim.js ws://127.0.0.1:5000 smoke-sim-01
+# monitor backend mqtt logs
+pm2 logs btb-backend
 ```
 
-When a simulator is connected the actuator endpoints will return `forwarded: true` and the simulator will send `actuator:ack` messages.
+When a real ESP32 device is connected through HiveMQ, telemetry should appear in `SensorData` and `SensorSnapshot` and be visible through `/api/sensors/latest`.
 
 ---
 
@@ -502,7 +502,7 @@ INIT_ADMIN_EMAIL=admin@example.com INIT_ADMIN_PASSWORD=ChangeMe node backend\scr
 
 We provide a PM2 ecosystem and a helper to register PM2 on Windows:
 
-- `ecosystem.config.js` — defines processes: backend and two simulators (smoke and esp32-test-01)
+- `ecosystem.config.js` — defines backend and frontend processes
 - `scripts/pm2-windows-setup.ps1` — installs `pm2`, attempts to install `pm2-windows-startup`, starts the ecosystem, and saves the process list.
 
 Usage (run as Administrator for the startup registration step):
@@ -574,7 +574,6 @@ Recommended quick production flows:
 
 - `start-all.ps1` — unified local start helper (PowerShell) for backend + frontend.
 - `scripts/smoke-test.js` — resilient smoke test that logs in (admin fallback), posts actuator commands and checks logs.
-- `backend/scripts/ws-device-sim.js` — WebSocket device simulator that registers and ACKs commands.
 - `scripts/render_deploy.ps1` — helper to import the Render config using the Render CLI (keeps API key local).
 
 ---rnu
@@ -642,8 +641,8 @@ Library choice
   - `PowerShell -ExecutionPolicy Bypass -File .\start-all.ps1`
 - Run smoke test locally:
   - `node scripts/smoke-test.js`
-- Start a device simulator (registers on WS):
-  - `node backend\scripts\ws-device-sim.js ws://127.0.0.1:5000 smoke-sim-01`
+- Check latest ingested telemetry:
+  - `curl http://127.0.0.1:5000/api/sensors/latest`
 - Install and run PM2 ecosystem (Administrator):
   - `.\scripts\pm2-windows-setup.ps1`
 

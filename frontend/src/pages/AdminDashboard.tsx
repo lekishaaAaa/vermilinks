@@ -14,7 +14,6 @@ import { DeviceManagement } from '../components/DeviceManagement';
 import { useAuth } from '../contexts/AuthContext';
 import { useData } from '../contexts/DataContext';
 import { useToast } from '../contexts/ToastContext';
-import weatherService from '../services/weatherService';
 import api, { alertService, deviceService, notificationService } from '../services/api';
 import { DeviceStatusSnapshot, SensorData as SensorDataType } from '../types';
 import { socket as sharedSocket } from '../socket';
@@ -136,7 +135,7 @@ export default function AdminDashboard(): React.ReactElement {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [query, setQuery] = useState('');
   const [selectedSensor, setSelectedSensor] = useState<Sensor | null>(null);
-  const [weatherSummary, setWeatherSummary] = useState<any | null>(null);
+  const [weatherSummary] = useState<any | null>(null);
   const [systemStatus, setSystemStatus] = useState<{ server: string; database: string; apiLatency: number }>({ server: 'offline', database: 'offline', apiLatency: 0 });
   const [devicesOnline, setDevicesOnline] = useState<number>(0);
   const [deviceInventory, setDeviceInventory] = useState<DeviceSummary[]>([]);
@@ -1106,10 +1105,6 @@ export default function AdminDashboard(): React.ReactElement {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  async function loadWeather() {
-    try { const sum = await weatherService.getManilaWeatherSummary(); setWeatherSummary(sum); } catch (e) { setWeatherSummary(null); }
-  }
-
   // Fetch alerts/events on demand (used by the Events card)
   async function fetchEvents() {
     try {
@@ -1339,36 +1334,7 @@ export default function AdminDashboard(): React.ReactElement {
               <FileText className="h-4 w-4" />
               Review Sensor Logs
             </Link>
-            <div className="flex flex-wrap gap-2">
-              <input
-                type="date"
-                value={exportStartDate}
-                onChange={(event) => setExportStartDate(event.target.value)}
-                className="rounded-lg border border-gray-200 bg-white/80 px-3 py-2 text-xs font-medium text-gray-700 shadow dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-100"
-                aria-label="Export start date"
-              />
-              <input
-                type="date"
-                value={exportEndDate}
-                onChange={(event) => setExportEndDate(event.target.value)}
-                className="rounded-lg border border-gray-200 bg-white/80 px-3 py-2 text-xs font-medium text-gray-700 shadow dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-100"
-                aria-label="Export end date"
-              />
-              <button
-                type="button"
-                onClick={handleExportExcel}
-                className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white/80 px-3 py-2 text-xs font-semibold text-gray-700 shadow hover:border-gray-300 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-100"
-              >
-                Export Excel
-              </button>
-              <button
-                type="button"
-                onClick={handleExportPdf}
-                className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white/80 px-3 py-2 text-xs font-semibold text-gray-700 shadow hover:border-gray-300 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-100"
-              >
-                Export PDF
-              </button>
-            </div>
+            {/* Export/date controls intentionally moved to dedicated Sensor Logs page */}
           </div>
         </div>
 

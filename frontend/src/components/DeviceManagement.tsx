@@ -91,6 +91,7 @@ export const DeviceManagement: React.FC<DeviceManagementProps> = ({ onDeviceSele
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [deletingDeviceId, setDeletingDeviceId] = useState<string | null>(null);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   const [sensorSnapshots, setSensorSnapshots] = useState<Record<string, DeviceSensorSummary | undefined>>({});
   const [sensorFetching, setSensorFetching] = useState<Record<string, boolean>>({});
@@ -177,6 +178,29 @@ export const DeviceManagement: React.FC<DeviceManagementProps> = ({ onDeviceSele
     updateSensorSnapshot(device.deviceId);
   }, [onDeviceSelect, updateSensorSnapshot]);
 
+  const handleDeleteDevice = useCallback(async (device: ManagedDevice) => {
+    const confirmed = window.confirm(`Remove device ${device.deviceId} from the system? This also removes stored telemetry snapshots for this device.`);
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingDeviceId(device.id);
+    try {
+      await deviceService.remove(device.deviceId);
+      setSensorSnapshots((prev) => {
+        const next = { ...prev };
+        delete next[device.deviceId];
+        return next;
+      });
+      await loadDevices();
+    } catch (err) {
+      console.error('Failed to delete device:', err);
+      setError(`Unable to delete device ${device.deviceId}.`);
+    } finally {
+      setDeletingDeviceId(null);
+    }
+  }, [loadDevices]);
+
   const selectedDevice = useMemo(() => devices.find((device) => device.id === selectedDeviceId) || null, [devices, selectedDeviceId]);
   const selectedSensorLoading = selectedDevice ? sensorFetching[selectedDevice.deviceId] : false;
 
@@ -256,6 +280,16 @@ export const DeviceManagement: React.FC<DeviceManagementProps> = ({ onDeviceSele
                   {snapshot?.latestTimestamp && (
                     <div>Latest: {formatLastSeen(snapshot.latestTimestamp)}</div>
                   )}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteDevice(device);
+                    }}
+                    disabled={deletingDeviceId === device.id}
+                    className="mt-2 inline-flex items-center rounded-md border border-rose-200 px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-700 dark:text-rose-200 dark:hover:bg-rose-900/30"
+                  >
+                    {deletingDeviceId === device.id ? 'Removing...' : 'Remove Device'}
+                  </button>
                 </div>
               </div>
 

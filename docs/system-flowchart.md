@@ -11,17 +11,11 @@ Web Browser]
 
     subgraph PM2[PM2 start-all.ps1]
         B[Frontend SPA
-React + Vite
+React
 btb-frontend @3002]
         C[Backend API
 Express + Socket.IO
 btb-backend @5000]
-        D[WS Simulator
-Smoke actuator
-btb-ws-sim-smoke]
-        E[WS Simulator
-ESP32 telemetry
-btb-ws-sim-esp32]
     end
 
     subgraph Data[Persistent Storage]
@@ -38,11 +32,16 @@ sync_models.js
 seed-admin.js]
     end
 
-    subgraph Devices[Physical / Virtual Devices]
+    subgraph Devices[Physical Devices]
         I[ESP32 Hardware]
         J[Field Sensors
 (temperature, humidity,
 moisture)]
+    end
+
+    subgraph Broker[MQTT Broker]
+        L[HiveMQ Cloud
+mqtts:8883]
     end
 
     subgraph External[Automation / Tooling]
@@ -59,14 +58,10 @@ read/write| F
     H -->|Invoked manually
 pre-start| C
 
-    C <-->|Raw WebSocket JSON| D
-    C <-->|Raw WebSocket JSON| E
-    E -->|Simulated telemetry| C
-    D <--|Actuator commands| C
-
-    C <-->|WebSocket commands| I
-    I -->|Sensor payload| C
-    I --> J
+    I -->|Sensor payload| J
+    I -->|Publish telemetry/state| L
+    L -->|MQTT topics vermilinks/+/telemetry| C
+    C -->|Device commands| L
 
     G -->|Internal HTTP + services| C
 
@@ -74,13 +69,11 @@ pre-start| C
 
     PM2 -. supervises .-> C
     PM2 -. supervises .-> B
-    PM2 -. supervises .-> D
-    PM2 -. supervises .-> E
 ```
 
 ## Notes
-- `start-all.ps1` wraps PM2 to launch the backend, frontend, and both simulator processes.
+- `start-all.ps1` wraps PM2 to launch backend and frontend processes.
 - PostgreSQL runs inside Docker (`docker-compose up db`); all Sequelize connections use port `5075`.
-- Telemetry sources (real ESP32 hardware or the PM2 simulators) push JSON via raw WebSockets; actuator commands flow back over the same socket.
+- Telemetry source is real ESP32 hardware publishing to HiveMQ Cloud; backend ingestion runs through the `iotMqtt` client.
 - The optional sensor poller (`RUN_POLLER=true`) runs inside the backend process to ingest data from external services.
-- Ensure simulators stay disabled in production deployments unless needed for demos.
+- Production deployments should keep telemetry strictly MQTT-based from physical devices.

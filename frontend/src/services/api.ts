@@ -594,6 +594,8 @@ export const deviceService = {
   getStatus: () => withRetry(() => api.get<{ devices: DeviceStatusSnapshot[] }>('/devices/status'), { retries: 3, delayMs: 500 }),
   getSensors: (deviceId: string, params?: { limit?: number }) =>
     api.get<ApiResponse<DeviceSensorSummary>>(`/devices/${encodeURIComponent(deviceId)}/sensors`, { params }),
+  remove: (deviceId: string) =>
+    api.delete<ApiResponse<{ deviceId: string; deleted: { device: number; sensorSnapshot: number; sensorData: number } }>>(`/devices/${encodeURIComponent(deviceId)}`),
 };
 
 export const settingsService = {

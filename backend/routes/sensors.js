@@ -468,22 +468,22 @@ router.post('/register', auth, [
 
     const { deviceId } = req.body;
 
-    // Check if sensor already exists
-    const existing = await SensorData.findOne({ where: { deviceId } });
-    if (existing) {
-      return res.status(409).json({ success: false, message: 'Sensor with this device ID already exists' });
+    const existingDevice = await Device.findOne({ where: { deviceId } });
+    if (existingDevice) {
+      return res.status(409).json({ success: false, message: 'Device with this ID already exists' });
     }
 
-    // Create a placeholder sensor entry
-    const newSensor = await SensorData.create({
+    const now = new Date();
+    const registeredDevice = await Device.create({
       deviceId,
-      temperature: null,
-      humidity: null,
-      moisture: null,
-      status: 'registered'
+      status: 'offline',
+      online: false,
+      lastHeartbeat: now,
+      lastSeen: now,
+      metadata: { registrationSource: 'admin' },
     });
 
-    res.json({ success: true, message: 'Sensor registered successfully', data: newSensor });
+    res.json({ success: true, message: 'Device registered successfully', data: registeredDevice });
   } catch (error) {
     console.error('Error registering sensor:', error);
     res.status(500).json({ success: false, message: 'Error registering sensor' });

@@ -4,6 +4,7 @@ const Device = require('../models/Device');
 const SensorData = require('../models/SensorData');
 const SensorSnapshot = require('../models/SensorSnapshot');
 // SensorSnapshot reserved for future device snapshot usage.
+const Alert = require('../models/Alert');
 const { markDeviceOnline, resetOfflineTimer } = require('../services/deviceManager');
 const devicePortsService = require('../services/devicePortsService');
 const { auth, optionalAuth } = require('../middleware/auth');
@@ -270,6 +271,45 @@ router.get('/:deviceId/sensors', optionalAuth, async (req, res) => {
   } catch (error) {
     console.error('devices: sensors summary failed', error);
     res.status(500).json({ success: false, message: 'Failed to load device sensors' });
+  }
+});
+
+// DELETE /api/devices/:deviceId
+// Remove a device and associated telemetry footprint from system tracking
+router.delete('/:deviceId', auth, async (req, res) => {
+  const deviceId = (req.params.deviceId || '').toString().trim();
+  if (!deviceId) {
+    return res.status(400).json({ success: false, message: 'deviceId is required' });
+  }
+
+  try {
+    const [deviceDeleted, snapshotDeleted, telemetryDeleted] = await Promise.all([
+      Device.destroy({ where: { deviceId } }).catch(() => 0),
+      SensorSnapshot.destroy({ where: { deviceId } }).catch(() => 0),
+      SensorData.destroy({ where: { deviceId } }).catch(() => 0),
+    ]);
+
+    await Alert.update(
+      { isResolved: true, resolvedAt: new Date() },
+      { where: { deviceId, isResolved: false } },
+    ).catch(() => null);
+
+    resetOfflineTimer(deviceId);
+
+    return res.json({
+      success: true,
+      data: {
+        deviceId,
+        deleted: {
+          device: deviceDeleted,
+          sensorSnapshot: snapshotDeleted,
+          sensorData: telemetryDeleted,
+        },
+      },
+    });
+  } catch (error) {
+    console.error('devices: delete failed', error);
+    return res.status(500).json({ success: false, message: 'Failed to delete device' });
   }
 });
 

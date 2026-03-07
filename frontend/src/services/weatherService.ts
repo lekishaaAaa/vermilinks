@@ -130,8 +130,8 @@ class WeatherService {
         moisture: this.calculateMoisture(data.main.humidity, data.main.temp),
         timestamp: new Date().toISOString(),
         status: this.determineStatus(data.main.temp, data.main.humidity),
-        batteryLevel: 85 + Math.floor(Math.random() * 15), // Simulated
-        signalStrength: -50 - Math.floor(Math.random() * 20), // Simulated
+        batteryLevel: undefined,
+        signalStrength: undefined,
         location: location.name,
         description: data.weather[0]?.description || 'Clear'
       };
@@ -167,8 +167,8 @@ class WeatherService {
         moisture: this.calculateMoisture(data.humidity, data.temp_c),
         timestamp: new Date().toISOString(),
         status: this.determineStatus(data.temp_c, data.humidity),
-        batteryLevel: 85 + Math.floor(Math.random() * 15),
-        signalStrength: -50 - Math.floor(Math.random() * 20),
+        batteryLevel: undefined,
+        signalStrength: undefined,
         location: location.name,
         description: data.condition?.text || 'Clear'
       };
@@ -185,8 +185,7 @@ class WeatherService {
   private calculateMoisture(humidity: number, temperature: number): number {
     // Estimation: Higher humidity and moderate temps = higher soil moisture
     let moisture = humidity * 0.6 + (30 - Math.abs(temperature - 25)) * 1.5;
-    moisture = Math.max(20, Math.min(80, moisture + (Math.random() - 0.5) * 15));
-    return Math.round(moisture);
+    return Math.round(Math.max(20, Math.min(80, moisture)));
   }
 
   /**
@@ -216,40 +215,12 @@ class WeatherService {
   }
 
   /**
-   * Get Manila weather pattern (simulated based on current conditions)
+   * Historical weather pattern is disabled for telemetry-hardening mode.
+   * Only live API-backed values should be surfaced in production dashboards.
    */
   async getHistoricalPattern(hours: number = 24): Promise<WeatherData[]> {
-    const currentData = await this.getAllLocationsWeather();
-    const historicalData: WeatherData[] = [];
-    
-    for (let i = hours; i >= 0; i--) {
-      const timestamp = new Date(Date.now() - i * 60 * 60 * 1000);
-      
-      currentData.forEach(current => {
-        const hourOfDay = timestamp.getHours();
-        
-        // Simulate Manila daily temperature pattern
-        let tempVariation = 0;
-        if (hourOfDay >= 6 && hourOfDay <= 18) {
-          tempVariation = Math.sin((hourOfDay - 6) / 12 * Math.PI) * 3; // Manila pattern
-        } else {
-          tempVariation = -1.5 - Math.random() * 1.5; // Manila night cooling
-        }
-        
-        historicalData.push({
-          ...current,
-          temperature: Math.round((current.temperature + tempVariation + (Math.random() - 0.5) * 1.5) * 10) / 10,
-          humidity: Math.max(60, Math.min(90, current.humidity + (Math.random() - 0.5) * 8)),
-          moisture: Math.max(25, Math.min(75, current.moisture + (Math.random() - 0.5) * 6)),
-          timestamp: timestamp.toISOString(),
-          batteryLevel: Math.max(20, 100 - (i * 0.5) + (Math.random() - 0.5) * 5)
-        });
-      });
-    }
-    
-    return historicalData.sort((a, b) => 
-      new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-    );
+    void hours;
+    return [];
   }
 
   /**
@@ -291,10 +262,10 @@ class WeatherService {
     
     if (allData.length === 0) {
       return {
-        averageTemp: 30,
-        averageHumidity: 75,
-        averageMoisture: 45,
-        status: 'normal',
+        averageTemp: 0,
+        averageHumidity: 0,
+        averageMoisture: 0,
+        status: 'warning',
         lastUpdated: new Date().toISOString()
       };
     }

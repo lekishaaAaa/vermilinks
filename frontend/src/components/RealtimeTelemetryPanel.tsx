@@ -17,6 +17,7 @@ const resolveTargetDeviceId = () => {
 };
 
 const TARGET_DEVICE_ID = resolveTargetDeviceId();
+const STRICT_DASHBOARD_SOURCE = (process.env.REACT_APP_STRICT_DASHBOARD_SOURCE || 'true').toString().toLowerCase() !== 'false';
 
 const formatTimestamp = (value?: string | Date | null) => {
   if (!value) return '—';
@@ -61,6 +62,13 @@ const RealtimeTelemetryPanel: React.FC<RealtimeTelemetryPanelProps> = ({ latest,
   const [lastTelemetry, setLastTelemetry] = useState<SensorData | null>(null);
 
   useEffect(() => {
+    if (STRICT_DASHBOARD_SOURCE) {
+      setLiveLatest(null);
+      setLiveHistory([]);
+      setSocketConnected(false);
+      setDeviceOnline(null);
+      return undefined;
+    }
     if (telemetryDisabled) {
       setLiveLatest(null);
       setLiveHistory([]);
@@ -130,6 +138,12 @@ const RealtimeTelemetryPanel: React.FC<RealtimeTelemetryPanelProps> = ({ latest,
 
   useEffect(() => {
     let mounted = true;
+    if (STRICT_DASHBOARD_SOURCE) {
+      setPolledHistory([]);
+      return () => {
+        mounted = false;
+      };
+    }
     if (telemetryDisabled) {
       setPolledHistory([]);
       return () => {
@@ -183,14 +197,18 @@ const RealtimeTelemetryPanel: React.FC<RealtimeTelemetryPanelProps> = ({ latest,
   }, [telemetryDisabled]);
 
   const mergedHistory = useMemo(() => {
-    const merged = [...(history || []), ...polledHistory, ...liveHistory];
+    const merged = STRICT_DASHBOARD_SOURCE
+      ? [...(history || [])]
+      : [...(history || []), ...polledHistory, ...liveHistory];
     return merged
       .filter(Boolean)
       .sort((a, b) => (new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime()))
       .slice(-336);
   }, [history, liveHistory, polledHistory]);
 
-  const effectiveLatest = liveLatest ?? latest ?? lastTelemetry ?? (mergedHistory.length ? mergedHistory[mergedHistory.length - 1] : null);
+  const effectiveLatest = STRICT_DASHBOARD_SOURCE
+    ? (latest ?? (mergedHistory.length ? mergedHistory[mergedHistory.length - 1] : null))
+    : (liveLatest ?? latest ?? lastTelemetry ?? (mergedHistory.length ? mergedHistory[mergedHistory.length - 1] : null));
   const hasTelemetryData = Boolean(effectiveLatest) || mergedHistory.length > 0;
   const showPausedNotice = Boolean(telemetryDisabled) && !hasTelemetryData;
   const latestTimestamp = effectiveLatest?.timestamp || (mergedHistory.length ? mergedHistory[mergedHistory.length - 1].timestamp : null);

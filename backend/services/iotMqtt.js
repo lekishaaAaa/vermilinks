@@ -5,8 +5,12 @@ const Device = require('../models/Device');
 const { REALTIME_EVENTS, emitRealtime } = require('../utils/realtime');
 const { broadcastSensorData, checkThresholds } = require('../utils/sensorEvents');
 const sensorLogService = require('./sensorLogService');
+const alertService = require('./alertService');
 const { markDeviceOnline } = require('./deviceManager');
 
+const MQTT_HOST = (process.env.MQTT_HOST || '').toString().trim();
+const MQTT_PORT = parseInt(process.env.MQTT_PORT || '8883', 10);
+const MQTT_PROTOCOL = (process.env.MQTT_PROTOCOL || 'mqtts').toString().trim().toLowerCase();
 const BROKER = process.env.MQTT_BROKER_URL || process.env.MQTT_URL || process.env.MQTT_BROKER;
 const TOPICS = {
   state: 'vermilinks/esp32a/state',
@@ -112,26 +116,6 @@ function normalizeFloatNumeric(value) {
   if (state === 'FULL') return 2;
   if (state === 'NORMAL') return 1;
   return null;
-}
-
-async function createReservoirLowAlert(deviceId, sensorData) {
-  const where = { type: 'water_reservoir_low', deviceId: deviceId || null, isResolved: false };
-  const recent = await Alert.findOne({ where, order: [['createdAt', 'DESC']] }).catch(() => null);
-  if (recent && recent.createdAt) {
-    const createdAt = new Date(recent.createdAt).getTime();
-    if (Number.isFinite(createdAt) && (Date.now() - createdAt) < 5 * 60 * 1000) {
-      return recent;
-    }
-  }
-  return Alert.createAlert({
-    type: 'water_reservoir_low',
-    severity: 'high',
-    message: 'Layer 4 water reservoir is low. Please refill the reservoir manually.',
-    deviceId: deviceId || null,
-    sensorData: sensorData || null,
-    status: 'new',
-    createdAt: new Date(),
-  });
 }
 
 function toNullableNumber(value) {
@@ -357,7 +341,7 @@ async function handleStateMessage(payload) {
 
   if (isReservoirLow) {
     try {
-      const reservoirAlert = await createReservoirLowAlert(deviceId, {
+      const reservoirAlert = await alertService.createWaterReservoirLowAlert(deviceId, {
         floatSensor: floatNumeric,
         pump: false,
         floatState,
@@ -648,7 +632,10 @@ function buildTelemetryRecord(payload, topic) {
 }
 
 function startIotMqtt() {
-  if (!BROKER) {
+  const mqttHost = MQTT_HOST || (BROKER ? undefined : '5d106b9834c64a1099a6a01ccba8c6c4.s1.eu.hivemq.cloud');
+  const mqttPort = Number.isFinite(MQTT_PORT) && MQTT_PORT > 0 ? MQTT_PORT : 8883;
+  const mqttProtocol = MQTT_PROTOCOL || 'mqtts';
+  if (!BROKER && !mqttHost) {
     logger.info('iotMqtt: broker not configured; skipping MQTT startup');
     return null;
   }
@@ -673,8 +660,11 @@ function startIotMqtt() {
     `${TOPICS.deviceStatusPrefix}#`,
   ];
 
-  client = mqtt.connect(BROKER, {
+  const connectionOptions = {
     clientId: iotClientId,
+    host: mqttHost,
+    port: mqttPort,
+    protocol: mqttProtocol,
     username: mqttUsername || undefined,
     password: mqttPassword || undefined,
     reconnectPeriod: Number.isFinite(reconnectPeriod) && reconnectPeriod > 0 ? reconnectPeriod : 5000,
@@ -682,11 +672,17 @@ function startIotMqtt() {
     clean: true,
     connectTimeout: Number.isFinite(connectTimeout) && connectTimeout > 0 ? connectTimeout : 30000,
     resubscribe: false,
-  });
+    rejectUnauthorized: false,
+  };
+
+  const connectArgs = BROKER
+    ? [BROKER, connectionOptions]
+    : [connectionOptions];
+  client = mqtt.connect(...connectArgs);
 
   client.on('connect', () => {
     lastConnectionState = 'connected';
-    logger.info('iotMqtt connected', { broker: BROKER });
+    logger.info('iotMqtt connected', { broker: BROKER || `${mqttProtocol}://${mqttHost}:${mqttPort}` });
     client.subscribe(subscriptionTopics, { qos: 0 }, (err) => {
       if (err) {
         logger.warn('iotMqtt subscribe failed', err && err.message ? err.message : err);
@@ -774,7 +770,7 @@ function publishCommand(commandPayload) {
 
 function getConnectionStatus() {
   return {
-    broker: BROKER || null,
+    broker: BROKER || (MQTT_HOST ? `${MQTT_PROTOCOL}://${MQTT_HOST}:${MQTT_PORT}` : null),
     connected: Boolean(client && client.connected),
     state: Boolean(client && client.connected) ? 'connected' : lastConnectionState,
   };

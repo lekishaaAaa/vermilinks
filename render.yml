@@ -39,6 +39,12 @@ services:
         sync: false
       - key: FRONTEND_URL
         sync: false
+      - key: MQTT_PROTOCOL
+        value: "mqtts"
+      - key: MQTT_HOST
+        sync: false
+      - key: MQTT_PORT
+        value: "8883"
       - key: MQTT_BROKER_URL
         sync: false
       - key: MQTT_USERNAME
@@ -49,8 +55,6 @@ services:
         value: "30"
       - key: MQTT_TOPIC_DEVICE_REGEX
         value: "vermilinks/([^/]+)"
-      - key: ENABLE_MOCKS
-        value: "false"
       - key: ESP32_URL
         sync: false
       - key: ESP32_COMMAND_TIMEOUT_MS
@@ -85,8 +89,6 @@ services:
         sync: false
       - key: REACT_APP_SENSOR_POLL_INTERVAL_MS
         value: "5000"
-      - key: REACT_APP_ENABLE_MOCKS
-        value: "false"
       - key: REACT_APP_DUMMY_MODE
         value: "false"
       - key: REACT_APP_ENABLE_SOCKETS
