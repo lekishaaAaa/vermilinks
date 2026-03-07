@@ -30,10 +30,35 @@ const TELEMETRY_TOPICS = new Set([
 ]);
 const TELEMETRY_WILDCARD_TOPIC = 'vermilinks/+/telemetry';
 const METRICS_WILDCARD_TOPIC = 'vermilinks/+/metrics';
+const STATE_WILDCARD_TOPIC = 'vermilinks/+/state';
+const COMMANDS_WILDCARD_TOPIC = 'vermilinks/+/commands';
 
 const STATE_TOPICS = new Set(['vermilinks/esp32a/state']);
 const ACK_TOPICS = new Set(['vermilinks/esp32a/ack']);
 const STATUS_TOPICS = new Set(['vermilinks/esp32a/status', 'vermilinks/esp32b/status']);
+
+function isStateTopic(topic) {
+  if (!topic) return false;
+  if (STATE_TOPICS.has(topic)) return true;
+  return /^vermilinks\/[^/]+\/state$/.test(topic);
+}
+
+function isAckTopic(topic) {
+  if (!topic) return false;
+  if (ACK_TOPICS.has(topic)) return true;
+  return /^vermilinks\/[^/]+\/ack$/.test(topic);
+}
+
+function isStatusTopic(topic) {
+  if (!topic) return false;
+  if (STATUS_TOPICS.has(topic)) return true;
+  return /^vermilinks\/[^/]+\/status$/.test(topic);
+}
+
+function isCommandsTopic(topic) {
+  if (!topic) return false;
+  return /^vermilinks\/[^/]+\/commands$/.test(topic);
+}
 
 let client = null;
 let lastConnectionState = 'disconnected';
@@ -657,6 +682,8 @@ function startIotMqtt() {
     ...TELEMETRY_TOPICS,
     TELEMETRY_WILDCARD_TOPIC,
     METRICS_WILDCARD_TOPIC,
+    STATE_WILDCARD_TOPIC,
+    COMMANDS_WILDCARD_TOPIC,
     `${TOPICS.deviceStatusPrefix}#`,
   ];
 
@@ -708,24 +735,30 @@ function startIotMqtt() {
 
     const normalizedTopic = (topic || '').toString().trim().toLowerCase();
 
-    if (STATE_TOPICS.has(normalizedTopic)) {
+    if (isStateTopic(normalizedTopic)) {
       handleStateMessage(payload).catch((error) => {
         logger.warn('iotMqtt state handler failed', error && error.message ? error.message : error);
       });
       return;
     }
 
-    if (ACK_TOPICS.has(normalizedTopic)) {
+    if (isAckTopic(normalizedTopic)) {
       handleAckMessage(payload).catch((error) => {
         logger.warn('iotMqtt ack handler failed', error && error.message ? error.message : error);
       });
       return;
     }
 
-    if (STATUS_TOPICS.has(normalizedTopic)) {
+    if (isStatusTopic(normalizedTopic)) {
       handleStatusMessage(payload).catch((error) => {
         logger.warn('iotMqtt status handler failed', error && error.message ? error.message : error);
       });
+      return;
+    }
+
+    if (isCommandsTopic(normalizedTopic)) {
+      // Commands topics are subscribed for fleet compatibility/observability.
+      logger.info('iotMqtt command topic observed', { topic: normalizedTopic });
       return;
     }
 
