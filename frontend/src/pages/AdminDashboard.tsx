@@ -1361,12 +1361,34 @@ export default function AdminDashboard(): React.ReactElement {
               <div className="space-y-6">
                 <SensorSummaryPanel />
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-                  <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/60 p-5">
-                    <h4 className="text-base font-semibold text-gray-800 dark:text-gray-100 mb-2">System Summary</h4>
-                    <div className="space-y-2 text-sm text-gray-600 dark:text-gray-300">
-                      <div className="flex items-center justify-between"><span>Server</span><span className="font-semibold capitalize">{systemStatus.server}</span></div>
-                      <div className="flex items-center justify-between"><span>Database</span><span className="font-semibold capitalize">{systemStatus.database}</span></div>
-                      <div className="flex items-center justify-between"><span>API Latency</span><span className="font-semibold">{Math.round(systemStatus.apiLatency || 0)} ms</span></div>
+                  <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900/60">
+                    <div className="border-b border-slate-200 bg-gradient-to-r from-slate-50 via-white to-blue-50 px-5 py-4 dark:border-gray-800 dark:from-gray-900 dark:via-gray-900 dark:to-slate-900/60">
+                      <div className="flex items-center justify-between gap-4">
+                        <div>
+                          <h4 className="text-base font-semibold text-gray-900 dark:text-gray-100">System Summary</h4>
+                          <p className="mt-1 text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-gray-400">Overview Health Snapshot</p>
+                        </div>
+                        <span className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-200">
+                          Live Status
+                        </span>
+                      </div>
+                    </div>
+                    <div className="grid gap-3 p-5 md:grid-cols-3">
+                      <div className="rounded-xl border border-emerald-100 bg-emerald-50/80 p-4 dark:border-emerald-900/60 dark:bg-emerald-900/20">
+                        <p className="text-xs uppercase tracking-wide text-emerald-700 dark:text-emerald-300">Server</p>
+                        <p className="mt-3 text-2xl font-semibold capitalize text-emerald-900 dark:text-emerald-100">{systemStatus.server}</p>
+                        <p className="mt-2 text-xs text-emerald-700/80 dark:text-emerald-200/80">Application runtime and API availability.</p>
+                      </div>
+                      <div className="rounded-xl border border-sky-100 bg-sky-50/80 p-4 dark:border-sky-900/60 dark:bg-sky-900/20">
+                        <p className="text-xs uppercase tracking-wide text-sky-700 dark:text-sky-300">Database</p>
+                        <p className="mt-3 text-2xl font-semibold capitalize text-sky-900 dark:text-sky-100">{systemStatus.database}</p>
+                        <p className="mt-2 text-xs text-sky-700/80 dark:text-sky-200/80">Primary persistence and telemetry storage state.</p>
+                      </div>
+                      <div className="rounded-xl border border-violet-100 bg-violet-50/80 p-4 dark:border-violet-900/60 dark:bg-violet-900/20">
+                        <p className="text-xs uppercase tracking-wide text-violet-700 dark:text-violet-300">API Latency</p>
+                        <p className="mt-3 text-2xl font-semibold text-violet-900 dark:text-violet-100">{Math.round(systemStatus.apiLatency || 0)} ms</p>
+                        <p className="mt-2 text-xs text-violet-700/80 dark:text-violet-200/80">Observed round-trip response time for the dashboard.</p>
+                      </div>
                     </div>
                   </div>
                   <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/60 p-5">

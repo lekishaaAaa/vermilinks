@@ -183,9 +183,6 @@ const SensorSummaryPanel: React.FC<SensorSummaryPanelProps> = ({ className = '',
         </div>
       )}
 
-      <footer className="mt-6 rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-700 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-200">
-        Looking for actuator controls? Use the “View VermiLinks Actuators” button in the dashboard header to launch the control panel.
-      </footer>
     </section>
   );
 };
