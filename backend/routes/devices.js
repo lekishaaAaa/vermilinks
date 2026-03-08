@@ -17,7 +17,6 @@ const {
 const router = express.Router();
 
 const DEVICE_ONLINE_WINDOW_MS = 15 * 1000;
-const MONITORED_DEVICE_IDS = ['esp32A', 'esp32B'];
 
 const DEVICE_STATUS_TIMEOUT_MS = Math.max(
   2000,
@@ -114,7 +113,6 @@ router.get('/', optionalAuth, async (req, res) => {
 router.get('/status', optionalAuth, async (req, res) => {
   try {
     const now = Date.now();
-    const includeSet = new Set(MONITORED_DEVICE_IDS.map((value) => value.toLowerCase()));
     const normalizedId = (value) => (value || '').toString().trim();
 
     const [devices, snapshots] = await Promise.all([
@@ -128,7 +126,6 @@ router.get('/status', optionalAuth, async (req, res) => {
       const plain = toPlainDevice(record);
       const deviceId = normalizedId(plain?.deviceId);
       if (!deviceId) return;
-      if (!includeSet.has(deviceId.toLowerCase())) return;
 
       const heartbeatTs = toTimestampMs(plain?.lastHeartbeat);
       const lastSeenTs = toTimestampMs(plain?.lastSeen ?? plain?.last_seen);
@@ -145,7 +142,6 @@ router.get('/status', optionalAuth, async (req, res) => {
     (snapshots || []).forEach((snapshot) => {
       const deviceId = normalizedId(snapshot?.deviceId || snapshot?.device_id);
       if (!deviceId) return;
-      if (!includeSet.has(deviceId.toLowerCase())) return;
 
       const snapshotTs = toTimestampMs(snapshot?.timestamp);
       const existing = statusMap.get(deviceId.toLowerCase()) || {
@@ -164,17 +160,6 @@ router.get('/status', optionalAuth, async (req, res) => {
         last_seen: Number.isFinite(lastSeenTimestamp) ? new Date(lastSeenTimestamp).toISOString() : null,
         signalStrength: snapshot?.signalStrength ?? snapshot?.signal_strength ?? existing.signalStrength ?? null,
       });
-    });
-
-    MONITORED_DEVICE_IDS.forEach((deviceId) => {
-      if (!statusMap.has(deviceId.toLowerCase())) {
-        statusMap.set(deviceId.toLowerCase(), {
-          device_id: deviceId,
-          online: false,
-          last_seen: null,
-          signalStrength: null,
-        });
-      }
     });
 
     const devicesPayload = Array.from(statusMap.values()).sort((a, b) => {

@@ -32,7 +32,6 @@ const STALE_SENSOR_MAX_AGE_MS = Math.max(
 
 const router = express.Router();
 const sensorCache = new NodeCache({ stdTTL: 5, checkperiod: 2 });
-const DEFAULT_TELEMETRY_DEVICE_ID = (process.env.PRIMARY_SENSOR_DEVICE_ID || process.env.TELEMETRY_DEVICE_ID || 'esp32B').toString().trim() || 'esp32B';
 
 const normalizeDeviceId = (value) => {
   const normalized = (value || '').toString().trim().toLowerCase();
@@ -341,15 +340,9 @@ router.get('/latest', async (req, res) => {
         formatted = formatLatestSnapshot(snapshot);
       }
     } else {
-      const preferredSnapshot = await SensorSnapshot.findByPk(normalizeDeviceId(DEFAULT_TELEMETRY_DEVICE_ID), { raw: true });
-      if (preferredSnapshot) {
-        formatted = formatLatestSnapshot(preferredSnapshot);
-      }
-      if (!formatted) {
-        const snapshot = await SensorSnapshot.findOne({ order: [['timestamp', 'DESC']], raw: true });
-        if (snapshot) {
-          formatted = formatLatestSnapshot(snapshot);
-        }
+      const snapshot = await SensorSnapshot.findOne({ order: [['timestamp', 'DESC']], raw: true });
+      if (snapshot) {
+        formatted = formatLatestSnapshot(snapshot);
       }
     }
 

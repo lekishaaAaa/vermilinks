@@ -337,7 +337,8 @@ export const SystemDiagnostics: React.FC = () => {
       try {
         const snapshot = await sensorService.getLatestData();
         const timestampIso = ensureIsoString(snapshot?.updated_at ?? null);
-        const deviceId = snapshot ? 'vermilinks-esp32' : null;
+        const snapshotRecord = snapshot as any;
+        const deviceId = snapshot ? String(snapshotRecord?.device_id ?? snapshotRecord?.deviceId ?? '') || null : null;
 
         let ageSeconds: number | null = null;
         if (timestampIso) {

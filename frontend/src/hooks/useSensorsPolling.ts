@@ -39,7 +39,7 @@ const normalizeReading = (input: SensorData): SensorData => {
   };
 };
 
-const defaultTelemetryDeviceId = (process.env.REACT_APP_PRIMARY_SENSOR_DEVICE_ID || 'esp32B').toString().trim() || 'esp32B';
+const defaultTelemetryDeviceId = (process.env.REACT_APP_PRIMARY_SENSOR_DEVICE_ID || '').toString().trim() || null;
 
 export const useSensorsPolling = (options: SensorsPollingOptions = {}): SensorsPollingState => {
   const {
@@ -130,8 +130,10 @@ export const useSensorsPolling = (options: SensorsPollingOptions = {}): SensorsP
     setStatus((prev) => (prev === 'success' && !force ? prev : 'loading'));
 
     try {
-      const resolvedDeviceId = deviceId || defaultTelemetryDeviceId;
-      const snapshot: LatestSnapshot | null = await sensorService.getLatestData(resolvedDeviceId);
+      const requestedDeviceId = deviceId || defaultTelemetryDeviceId || undefined;
+      const snapshot: LatestSnapshot | null = await sensorService.getLatestData(requestedDeviceId);
+      const snapshotRecord = snapshot as any;
+      const resolvedDeviceId = snapshotRecord?.device_id || snapshotRecord?.deviceId || requestedDeviceId || 'unknown-device';
 
       const reading: SensorData | null = snapshot
         ? {

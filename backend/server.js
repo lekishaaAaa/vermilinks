@@ -537,13 +537,17 @@ app.get('/api/system/info', auth, adminOnly, async (req, res) => {
       dbStatus = 'disconnected';
     }
 
-    const trackedDeviceIds = ['esp32A', 'esp32B'];
     const now = Date.now();
     const onlineWindowMs = 15 * 1000;
     const [devices, snapshots] = await Promise.all([
       Device.findAll({ raw: true }).catch(() => []),
       SensorSnapshot.findAll({ raw: true }).catch(() => []),
     ]);
+
+    const knownDeviceIds = Array.from(new Set([
+      ...(devices || []).map((item) => (item.deviceId || '').toString().trim()).filter(Boolean),
+      ...(snapshots || []).map((item) => (item.deviceId || item.device_id || '').toString().trim()).filter(Boolean),
+    ]));
 
     const snapshotByDevice = new Map();
     (snapshots || []).forEach((item) => {
@@ -552,7 +556,7 @@ app.get('/api/system/info', auth, adminOnly, async (req, res) => {
       snapshotByDevice.set(id.toLowerCase(), item);
     });
 
-    const devicesPayload = trackedDeviceIds.map((deviceId) => {
+    const devicesPayload = knownDeviceIds.map((deviceId) => {
       const match = (devices || []).find((device) => (device.deviceId || '').toString().toLowerCase() === deviceId.toLowerCase());
       const snapshot = snapshotByDevice.get(deviceId.toLowerCase());
       const heartbeatTs = match && match.lastHeartbeat ? new Date(match.lastHeartbeat).getTime() : NaN;
@@ -591,13 +595,17 @@ app.get('/api/system/info', auth, adminOnly, async (req, res) => {
 
 app.get('/api/devices/status', async (req, res) => {
   try {
-    const trackedDeviceIds = ['esp32A', 'esp32B'];
     const now = Date.now();
     const onlineWindowMs = 15 * 1000;
     const [devices, snapshots] = await Promise.all([
       Device.findAll({ raw: true }).catch(() => []),
       SensorSnapshot.findAll({ raw: true }).catch(() => []),
     ]);
+
+    const knownDeviceIds = Array.from(new Set([
+      ...(devices || []).map((item) => (item.deviceId || '').toString().trim()).filter(Boolean),
+      ...(snapshots || []).map((item) => (item.deviceId || item.device_id || '').toString().trim()).filter(Boolean),
+    ]));
 
     const snapshotByDevice = new Map();
     (snapshots || []).forEach((item) => {
@@ -606,7 +614,7 @@ app.get('/api/devices/status', async (req, res) => {
       snapshotByDevice.set(id.toLowerCase(), item);
     });
 
-    const payload = trackedDeviceIds.map((deviceId) => {
+    const payload = knownDeviceIds.map((deviceId) => {
       const device = (devices || []).find((item) => (item.deviceId || '').toString().toLowerCase() === deviceId.toLowerCase());
       const snapshot = snapshotByDevice.get(deviceId.toLowerCase());
       const heartbeatTs = device && device.lastHeartbeat ? new Date(device.lastHeartbeat).getTime() : NaN;

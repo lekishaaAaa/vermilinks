@@ -64,7 +64,7 @@ type StatusPillProps = { label: string; status: string };
 
 const SENSOR_STALE_THRESHOLD_MS = 60_000;
 
-const mapSensorDataToSensor = (reading: Partial<SensorDataType> | null | undefined, fallbackId = 'esp32b'): Sensor | null => {
+const mapSensorDataToSensor = (reading: Partial<SensorDataType> | null | undefined, fallbackId = 'unknown-device'): Sensor | null => {
   if (!reading) {
     return null;
   }
@@ -82,9 +82,9 @@ const mapSensorDataToSensor = (reading: Partial<SensorDataType> | null | undefin
   const hasNpk = npkValues.n !== undefined || npkValues.p !== undefined || npkValues.k !== undefined;
 
   return {
-    id: (reading.deviceId || fallbackId || 'esp32b').toString(),
-    name: 'ESP32-B Telemetry',
-    deviceId: (reading.deviceId || fallbackId || 'esp32b').toString(),
+    id: (reading.deviceId || fallbackId || 'unknown-device').toString(),
+    name: reading.deviceId ? `${reading.deviceId} Telemetry` : 'Live Telemetry',
+    deviceId: (reading.deviceId || fallbackId || 'unknown-device').toString(),
     temperature: toNumber(reading.temperature),
     humidity: toNumber(reading.humidity),
     moisture: toNumber(reading.moisture),
@@ -96,8 +96,8 @@ const mapSensorDataToSensor = (reading: Partial<SensorDataType> | null | undefin
     floatSensor: toNumber(reading.floatSensor),
     batteryLevel: toNumber(reading.batteryLevel),
     lastSeen: timestamp,
-    deviceOnline: reading.deviceOnline ?? true,
-    deviceStatus: reading.deviceStatus ?? 'online',
+    deviceOnline: reading.deviceOnline ?? false,
+    deviceStatus: reading.deviceStatus ?? 'offline',
     timestamp,
   };
 };
