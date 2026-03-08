@@ -1,9 +1,23 @@
 const express = require('express');
+const { fn, col, where } = require('sequelize');
 const SensorSnapshot = require('../models/SensorSnapshot');
 const SensorData = require('../models/SensorData');
 const logger = require('../utils/logger');
 
 const router = express.Router();
+
+const normalizeDeviceId = (value) => {
+  const normalized = (value || '').toString().trim().toLowerCase();
+  return normalized || null;
+};
+
+const buildDeviceIdWhere = (deviceId) => {
+  const normalized = normalizeDeviceId(deviceId);
+  if (!normalized) {
+    return null;
+  }
+  return where(fn('lower', col('device_id')), normalized);
+};
 
 const toNumber = (value) => {
   if (value === null || value === undefined) {
@@ -37,21 +51,24 @@ const formatSnapshot = (snapshot) => {
 
 router.get('/telemetry', async (req, res) => {
   try {
-    const deviceId = (req.query.deviceId || req.query.device_id || '').toString().trim();
+    const deviceId = normalizeDeviceId(req.query.deviceId || req.query.device_id);
 
     let snapshot = null;
     if (deviceId) {
       snapshot = await SensorSnapshot.findByPk(deviceId, { raw: true });
+      if (!snapshot) {
+        snapshot = await SensorSnapshot.findOne({ where: buildDeviceIdWhere(deviceId), raw: true });
+      }
     } else {
       snapshot = await SensorSnapshot.findOne({ order: [['timestamp', 'DESC']], raw: true });
     }
 
     if (!snapshot) {
-      const where = {};
+      const conditions = {};
       if (deviceId) {
-        where.deviceId = deviceId;
+        Object.assign(conditions, { [require('sequelize').Op.and]: [buildDeviceIdWhere(deviceId)] });
       }
-      const latestData = await SensorData.findOne({ where, order: [['timestamp', 'DESC']], raw: true });
+      const latestData = await SensorData.findOne({ where: conditions, order: [['timestamp', 'DESC']], raw: true });
       if (latestData) {
         snapshot = {
           temperature: latestData.temperature,

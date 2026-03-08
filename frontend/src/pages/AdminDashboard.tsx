@@ -174,11 +174,8 @@ export default function AdminDashboard(): React.ReactElement {
     if (Array.isArray(ctxSensorBuffer) && ctxSensorBuffer.length > 0) {
       return true;
     }
-    if (latestSensor) {
-      return true;
-    }
-    return sensorHistory.length > 0;
-  }, [ctxSensorBuffer, ctxTelemetry, latestSensor, sensorHistory]);
+    return false;
+  }, [ctxSensorBuffer, ctxTelemetry]);
 
   const classifySeverity = useCallback((value: unknown): 'critical' | 'warning' | 'info' => {
     const normalized = (value || '').toString().toLowerCase();
@@ -1047,48 +1044,15 @@ export default function AdminDashboard(): React.ReactElement {
     if (Array.isArray(ctxSensorBuffer) && ctxSensorBuffer.length > 0) {
       return ctxSensorBuffer[ctxSensorBuffer.length - 1];
     }
-    if (!latestSensor) {
-      return null;
-    }
-    return {
-      deviceId: latestSensor.deviceId,
-      temperature: latestSensor.temperature ?? undefined,
-      moisture: latestSensor.moisture ?? undefined,
-      ph: latestSensor.ph ?? undefined,
-      ec: latestSensor.ec ?? undefined,
-      nitrogen: latestSensor.npk?.n ?? undefined,
-      phosphorus: latestSensor.npk?.p ?? undefined,
-      potassium: latestSensor.npk?.k ?? undefined,
-      waterLevel: latestSensor.waterLevel ?? undefined,
-      floatSensor: latestSensor.waterLevel ?? undefined,
-      batteryLevel: latestSensor.batteryLevel ?? undefined,
-      signalStrength: latestSensor.signalStrength ?? undefined,
-      timestamp: latestSensor.timestamp || latestSensor.lastSeen || undefined,
-    } as SensorDataType;
-  }, [ctxSensorBuffer, ctxTelemetry, latestSensor]);
+    return null;
+  }, [ctxSensorBuffer, ctxTelemetry]);
 
   const telemetryHistory = useMemo<SensorDataType[]>(() => {
     if (Array.isArray(ctxSensorBuffer) && ctxSensorBuffer.length > 0) {
       return ctxSensorBuffer;
     }
-    if (!sensorHistory.length) {
-      return [];
-    }
-    return sensorHistory.map((entry) => ({
-      deviceId: entry.deviceId,
-      temperature: entry.temperature ?? undefined,
-      moisture: entry.moisture ?? undefined,
-      ph: entry.ph ?? undefined,
-      ec: entry.ec ?? undefined,
-      nitrogen: entry.npk?.n ?? undefined,
-      phosphorus: entry.npk?.p ?? undefined,
-      potassium: entry.npk?.k ?? undefined,
-      waterLevel: entry.waterLevel ?? undefined,
-      batteryLevel: entry.batteryLevel ?? undefined,
-      signalStrength: entry.signalStrength ?? undefined,
-      timestamp: entry.timestamp || entry.lastSeen || undefined,
-    }));
-  }, [ctxSensorBuffer, sensorHistory]);
+    return [];
+  }, [ctxSensorBuffer]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -1396,7 +1360,31 @@ export default function AdminDashboard(): React.ReactElement {
             {activeTab === 'overview' && (
               <div className="space-y-6">
                 <SensorSummaryPanel />
-                <ActuatorControls />
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                  <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/60 p-5">
+                    <h4 className="text-base font-semibold text-gray-800 dark:text-gray-100 mb-2">System Summary</h4>
+                    <div className="space-y-2 text-sm text-gray-600 dark:text-gray-300">
+                      <div className="flex items-center justify-between"><span>Server</span><span className="font-semibold capitalize">{systemStatus.server}</span></div>
+                      <div className="flex items-center justify-between"><span>Database</span><span className="font-semibold capitalize">{systemStatus.database}</span></div>
+                      <div className="flex items-center justify-between"><span>API Latency</span><span className="font-semibold">{Math.round(systemStatus.apiLatency || 0)} ms</span></div>
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/60 p-5">
+                    <h4 className="text-base font-semibold text-gray-800 dark:text-gray-100 mb-2">Recent Alerts</h4>
+                    {filteredAlerts.length === 0 ? (
+                      <p className="text-sm text-gray-500 dark:text-gray-400">No recent alerts.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {filteredAlerts.slice(0, 5).map((alert) => (
+                          <div key={alert.id || alert._id} className="text-sm border-b border-gray-100 dark:border-gray-800 pb-2">
+                            <p className="font-medium text-gray-800 dark:text-gray-200">{formatAlertLabel(alert.type || alert.title || 'Alert')}</p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">{formatAlertTimestamp(alert.createdAt)}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
 
@@ -1492,7 +1480,7 @@ export default function AdminDashboard(): React.ReactElement {
                   isConnected={Boolean(socketsConnected || hasLiveTelemetry)}
                   onRefresh={handleRealtimeRefresh}
                   refreshing={realtimeRefreshing}
-                  telemetryDisabled={false}
+                  telemetryDisabled={telemetryDisabled}
                 />
               </div>
             )}

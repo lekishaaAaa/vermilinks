@@ -475,7 +475,7 @@ When a real ESP32 device is connected through HiveMQ, telemetry should appear in
 
   ```powershell
   Invoke-RestMethod -Headers @{ Authorization = "Bearer $env:RENDER_API_KEY" } \
-    -Uri "https://api.render.com/v1/services/srv-d43v9q0dl3ps73aarv30/outboundIPs"
+    -Uri "https://api.render.com/v1/services/srv-d6dvkosr85hc73c5qb20/outboundIPs"
   ```
 
   Add each `outboundIPs[]` value with `/32` under **Render → vermilinks-db → Networking → Allowed inbound IPs**.

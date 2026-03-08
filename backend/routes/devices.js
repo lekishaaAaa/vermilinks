@@ -29,6 +29,11 @@ const SENSOR_STALE_THRESHOLD_MS = Math.max(
   parseInt(process.env.SENSOR_STALE_THRESHOLD_MS || process.env.DEVICE_OFFLINE_TIMEOUT_MS || '60000', 10)
 );
 
+const normalizeDeviceId = (value) => {
+  const normalized = (value || '').toString().trim().toLowerCase();
+  return normalized || null;
+};
+
 
 const toPlainDevice = (record) => {
   if (!record) {
@@ -78,7 +83,8 @@ router.post('/heartbeat', [
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
 
-  const { deviceId, timestamp, metadata } = req.body;
+  const { timestamp, metadata } = req.body;
+  const deviceId = normalizeDeviceId(req.body.deviceId || req.body.device_id);
   try {
     const md = metadata || {};
     const device = await markDeviceOnline(deviceId, md);
@@ -202,7 +208,7 @@ router.post('/:deviceHardwareId/port-report', async (req, res) => {
 // GET /api/devices/:deviceId/sensors
 // Returns a summary of the latest sensor readings for a specific device
 router.get('/:deviceId/sensors', optionalAuth, async (req, res) => {
-  const { deviceId } = req.params;
+  const deviceId = normalizeDeviceId(req.params.deviceId);
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 200);
 
   if (!deviceId) {

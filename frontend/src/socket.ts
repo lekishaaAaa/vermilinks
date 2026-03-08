@@ -12,7 +12,7 @@ const inferDefaultUrl = (): string => {
   if (typeof window !== 'undefined' && window.location && window.location.origin) {
     return window.location.origin;
   }
-  return 'http://localhost:4000';
+  return 'https://vermilinks.onrender.com';
 };
 
 const defaultUrl = inferDefaultUrl();

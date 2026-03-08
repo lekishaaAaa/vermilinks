@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { fetchLatest, sendActuatorCommand, DeviceStatePayload } from '../services/iotControl';
+import { sensorService } from '../services/api';
 import { socket as sharedSocket } from '../socket';
 
 const initialState = {
@@ -21,6 +22,20 @@ const ACTUATOR_LABEL_MAP: Record<keyof typeof initialState, string> = {
   valve1: 'Layer 1 Solenoid',
   valve2: 'Layer 2 Solenoid',
   valve3: 'Layer 3 Solenoid',
+};
+
+const ACTUATOR_DEVICE_ID = 'esp32A';
+const ONLINE_WINDOW_MS = 15_000;
+
+const isTelemetryFresh = (timestamp?: string | null) => {
+  if (!timestamp) {
+    return false;
+  }
+  const parsed = new Date(timestamp).getTime();
+  if (!Number.isFinite(parsed)) {
+    return false;
+  }
+  return Date.now() - parsed < ONLINE_WINDOW_MS;
 };
 
 const ActuatorControls: React.FC = () => {
@@ -65,10 +80,19 @@ const ActuatorControls: React.FC = () => {
 
   const loadLatest = useCallback(async () => {
     try {
-      const latest = await fetchLatest();
+      const [latest, snapshot] = await Promise.all([
+        fetchLatest(),
+        sensorService.getLatestData(ACTUATOR_DEVICE_ID),
+      ]);
+
+      const telemetryTimestamp = snapshot?.updated_at || null;
+      setOnline(isTelemetryFresh(telemetryTimestamp));
+      if (telemetryTimestamp) {
+        setLastUpdated(telemetryTimestamp);
+      }
+
       if (latest?.deviceState) {
         applyDeviceState(latest.deviceState);
-        setOnline(Boolean((latest.deviceState as any).online));
       }
       if (latest?.pendingCommand?.requestId) {
         setPendingRequestId(latest.pendingCommand.requestId);
@@ -119,7 +143,7 @@ const ActuatorControls: React.FC = () => {
 
     try {
       const result = await sendActuatorCommand({
-        device_id: 'esp32A',
+        device_id: ACTUATOR_DEVICE_ID,
         actuator: ACTUATOR_COMMAND_MAP[key],
         state: nextState[key] ? 'on' : 'off',
       });

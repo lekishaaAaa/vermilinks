@@ -189,10 +189,7 @@ function resolveTelemetryTimestamp(payload, fallbackNow) {
 function canonicalDeviceId(value) {
   const normalized = (value || '').toString().trim();
   if (!normalized) return null;
-  const lower = normalized.toLowerCase();
-  if (lower === 'esp32a') return 'esp32A';
-  if (lower === 'esp32b') return 'esp32B';
-  return normalized;
+  return normalized.toLowerCase();
 }
 
 function isTelemetryTopic(topic) {
@@ -222,19 +219,19 @@ async function upsertActuatorState(deviceId, state) {
   return ActuatorState.create({ actuatorKey: deviceId, state, reportedAt: new Date() });
 }
 
-async function handleStateMessage(payload) {
-  if (!isStatePayload(payload)) {
+async function handleStateMessage(payload, topic) {
+  if (!payload || typeof payload !== 'object') {
     logger.warn('iotMqtt: invalid state payload ignored');
     return;
   }
-  const rawDeviceId = payload.deviceId || payload.device_id;
-  if (typeof rawDeviceId !== 'string' || rawDeviceId.trim().length === 0) {
+  const rawDeviceId = payload.deviceId || payload.device_id || resolveDeviceIdFromTopic(topic);
+  const deviceId = canonicalDeviceId(rawDeviceId);
+  if (!deviceId) {
     logger.warn('iotMqtt: state payload rejected (missing deviceId)');
     return;
   }
 
   const now = new Date();
-  const deviceId = rawDeviceId.trim();
   const floatState = normalizeFloatState(
     payload.float
       ?? payload.floatState
@@ -244,13 +241,17 @@ async function handleStateMessage(payload) {
   ) || 'UNKNOWN';
   const isReservoirLow = floatState === 'LOW';
   const isReservoirFull = floatState === 'FULL';
-  const requestedPumpState = Boolean(payload.pump);
+  const priorRow = await ActuatorState.findOne({ where: { actuatorKey: deviceId } });
+  const priorState = priorRow && priorRow.state ? priorRow.state : null;
+  const requestedPumpState = typeof payload.pump === 'boolean'
+    ? payload.pump
+    : Boolean(priorState && priorState.pump);
   const enforcedPumpState = (isReservoirLow || isReservoirFull) ? false : requestedPumpState;
   const statePayload = {
     pump: enforcedPumpState,
-    valve1: payload.valve1,
-    valve2: payload.valve2,
-    valve3: payload.valve3,
+    valve1: typeof payload.valve1 === 'boolean' ? payload.valve1 : Boolean(priorState && priorState.valve1),
+    valve2: typeof payload.valve2 === 'boolean' ? payload.valve2 : Boolean(priorState && priorState.valve2),
+    valve3: typeof payload.valve3 === 'boolean' ? payload.valve3 : Boolean(priorState && priorState.valve3),
     float: floatState,
     requestId: payload.requestId || null,
     source: (isReservoirLow || isReservoirFull) && requestedPumpState ? 'safety_override' : (payload.source || 'applied'),
@@ -258,12 +259,10 @@ async function handleStateMessage(payload) {
     online: true,
     lastSeen: now.toISOString(),
   };
-
-  const priorRow = await ActuatorState.findOne({ where: { actuatorKey: deviceId } });
-  const priorState = priorRow && priorRow.state ? priorRow.state : null;
   const priorPump = priorState ? Boolean(priorState.pump) : null;
 
   await upsertActuatorState(deviceId, statePayload);
+  console.log('MQTT state processed', { topic, deviceId, floatState, pump: statePayload.pump });
 
   if (priorState) {
     const changes = [
@@ -539,8 +538,10 @@ async function handleTelemetryMessage(payload, topic) {
   }
 
   const { deviceId, timestamp } = telemetry;
+  console.log('MQTT telemetry accepted', { topic, deviceId, timestamp: timestamp.toISOString() });
 
   await SensorData.create(telemetry);
+  console.log('SensorData row inserted', { deviceId, timestamp: timestamp.toISOString() });
   const existingSnapshot = await SensorSnapshot.findByPk(deviceId, { raw: true }).catch(() => null);
   await SensorSnapshot.upsert({
     deviceId,
@@ -553,6 +554,7 @@ async function handleTelemetryMessage(payload, topic) {
     signalStrength: telemetry.signalStrength ?? existingSnapshot?.signalStrength ?? null,
     timestamp,
   });
+  console.log('Snapshot updated', { deviceId, timestamp: timestamp.toISOString() });
 
   await markDeviceOnline(deviceId, { via: 'mqtt', lastTelemetryAt: timestamp.toISOString() });
 
@@ -710,16 +712,19 @@ function startIotMqtt() {
   client.on('connect', () => {
     lastConnectionState = 'connected';
     logger.info('iotMqtt connected', { broker: BROKER || `${mqttProtocol}://${mqttHost}:${mqttPort}` });
+    console.log(`MQTT connected ${mqttProtocol}://${mqttHost}:${mqttPort}`);
     client.subscribe(subscriptionTopics, { qos: 0 }, (err) => {
       if (err) {
         logger.warn('iotMqtt subscribe failed', err && err.message ? err.message : err);
       } else {
         logger.info('iotMqtt subscriptions active', { topics: subscriptionTopics });
+        console.log('MQTT subscribed', subscriptionTopics);
       }
     });
   });
 
   client.on('message', (topic, message) => {
+    console.log('MQTT message received', topic);
     const lwtPayload = parseLwtPayload(topic, message);
     if (lwtPayload) {
       handleLwtStatusMessage(lwtPayload).catch((error) => {
@@ -736,7 +741,7 @@ function startIotMqtt() {
     const normalizedTopic = (topic || '').toString().trim().toLowerCase();
 
     if (isStateTopic(normalizedTopic)) {
-      handleStateMessage(payload).catch((error) => {
+      handleStateMessage(payload, topic).catch((error) => {
         logger.warn('iotMqtt state handler failed', error && error.message ? error.message : error);
       });
       return;

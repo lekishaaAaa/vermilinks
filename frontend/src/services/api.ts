@@ -16,9 +16,8 @@ import {
 } from '../types';
 
 // Create axios instance with base configuration
-// Build a normalized API base URL. Users may set REACT_APP_API_URL with or without
-// a trailing '/api'. Normalize to avoid accidentally producing '/api/api' in requests.
-const RAW_API_ROOT = (process.env.REACT_APP_API_URL || 'https://api.vermilinks.com').toString();
+// Build a normalized API base URL. Production must resolve to the active backend only.
+const RAW_API_ROOT = (process.env.REACT_APP_API_URL || 'https://vermilinks.onrender.com').toString();
 // Remove any trailing slashes and any repeated '/api' segments to avoid producing '/api/api'
 const API_ROOT = RAW_API_ROOT.replace(/(\/api)+\/?$/i, '').replace(/\/+$/,'');
 export const API_BASE_URL = API_ROOT;
@@ -229,23 +228,9 @@ export async function discoverApi(options?: { candidates?: string[]; timeout?: n
   const candidates = options?.candidates ?? (() => {
     const envRoot = (process.env.REACT_APP_API_URL || '').toString();
     const normalized = envRoot.replace(/(\/api)+\/?$/i, '').replace(/\/+$/,'');
-    const isBrowser = typeof window !== 'undefined';
-    const isLocalHost = isBrowser && /^(localhost|127\.0\.0\.1)$/i.test(window.location.hostname);
-    const allowLocalCandidates = process.env.NODE_ENV !== 'production' || isLocalHost;
-    // include current configured base plus common dev ports
     const list = [] as string[];
     if (normalized) list.push(normalized);
-    list.push('https://api.vermilinks.com');
     list.push('https://vermilinks.onrender.com');
-
-    if (allowLocalCandidates) {
-      list.push('http://127.0.0.1:5000');
-      list.push('http://127.0.0.1:8000');
-      list.push('http://127.0.0.1:10000');
-      list.push('http://localhost:5000');
-      list.push('http://localhost:8000');
-      list.push('http://localhost:10000');
-    }
 
     return Array.from(new Set(list));
   })();
@@ -372,12 +357,7 @@ export const adminAuthService = {
     pushCandidate(process.env.REACT_APP_API_URL);
     pushCandidate(discoveryBase);
     pushCandidate(api.defaults.baseURL);
-  pushCandidate('http://127.0.0.1:5000');
-  pushCandidate('http://127.0.0.1:8000');
-  pushCandidate('http://127.0.0.1:10000');
-  pushCandidate('http://localhost:5000');
-  pushCandidate('http://localhost:8000');
-  pushCandidate('http://localhost:10000');
+    pushCandidate('https://vermilinks.onrender.com');
 
     const roots = Array.from(candidateRoots);
     let networkIssueDetected = false;

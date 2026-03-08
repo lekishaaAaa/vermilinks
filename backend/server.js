@@ -116,10 +116,7 @@ const envSocketOrigins = (process.env.SOCKETIO_CORS_ORIGINS || process.env.CORS_
   .map((value) => value.trim())
   .filter(Boolean);
 const allowedSocketOrigins = [
-  'https://vermilinks-frontend.onrender.com',
-  'https://vermilinksfrontend.onrender.com',
   'https://vermilinks-frontend-17l6.onrender.com',
-  'http://localhost:3000',
 ];
 envSocketOrigins.forEach((origin) => {
   if (!allowedSocketOrigins.includes(origin)) {
@@ -370,10 +367,7 @@ app.use(helmet());
 app.use(compression());
 
 const allowedHttpOrigins = [
-  'https://vermilinks-frontend.onrender.com',
-  'https://vermilinksfrontend.onrender.com',
   'https://vermilinks-frontend-17l6.onrender.com',
-  'http://localhost:3000',
 ];
 const envHttpOrigins = (process.env.CORS_ORIGINS || process.env.CORS_ORIGIN || '')
   .split(',')

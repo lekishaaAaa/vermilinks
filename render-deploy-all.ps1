@@ -277,7 +277,7 @@ function Test-WebSocketConnection {
 }
 
 # Script parameters and constants
-$backendId = 'srv-d43v9q0dl3ps73aarv30'
+$backendId = 'srv-d6dvkosr85hc73c5qb20'
 $frontendId = 'srv-d43v9h0dl3ps73aarlgg'
 
 Write-Section "Starting full VermiLinks deployment"
@@ -291,11 +291,11 @@ $statuses = Show-ServiceStatuses -ServiceIds @($backendId, $frontendId)
 Show-BackendLogs -ServiceId $backendId
 
 # Run comprehensive health checks
-$backendUrl = "https://vermilinks-backend.onrender.com"
+$backendUrl = "https://vermilinks.onrender.com"
 $healthPassed = Test-HealthChecks -BackendUrl $backendUrl
 
 # Test WebSocket connection
-$wsUrl = "wss://vermilinks-backend.onrender.com"
+$wsUrl = "wss://vermilinks.onrender.com"
 $wsPassed = Test-WebSocketConnection -WsUrl $wsUrl -DeviceId "deploy-smoke-test"
 
 if ($backendExit -eq 0 -and $frontendExit -eq 0) {
@@ -317,11 +317,11 @@ if ($backendExit -eq 0 -and $frontendExit -eq 0) {
         Write-Success "VermiLinks deployment complete. Verify service statuses above."
     }
 
-    Write-Info "Backend URL: https://vermilinks-backend.onrender.com"
+    Write-Info "Backend URL: https://vermilinks.onrender.com"
     Write-Info "Frontend URL: https://vermilinks-frontend.onrender.com"
-    Write-Info "Health Check: https://vermilinks-backend.onrender.com/api/health"
-    Write-Info "Admin Alerts: https://vermilinks-backend.onrender.com/api/admin/alerts"
-    Write-Info "WebSocket URL: wss://vermilinks-backend.onrender.com"
+    Write-Info "Health Check: https://vermilinks.onrender.com/api/health"
+    Write-Info "Admin Alerts: https://vermilinks.onrender.com/api/admin/alerts"
+    Write-Info "WebSocket URL: wss://vermilinks.onrender.com"
 
     if (-not $healthPassed) {
         Write-WarningLine "Some health checks failed. Check the logs above."

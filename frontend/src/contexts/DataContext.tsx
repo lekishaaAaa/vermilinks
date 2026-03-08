@@ -517,13 +517,16 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
 
     const connectionHealthy = !isStale || allowStaleTelemetry;
     if (isStale && !allowStaleTelemetry) {
-      setLatestTelemetry(null);
-      setLastTelemetry(null);
-      updateTelemetryCache(null);
-      setActuatorStates(null);
+      const fallbackTelemetry = latestTelemetryRef.current || lastTelemetry;
+      if (fallbackTelemetry) {
+        setLatestTelemetry(fallbackTelemetry);
+        setLastTelemetry(fallbackTelemetry);
+        updateTelemetryCache(fallbackTelemetry);
+        setActuatorStates(fallbackTelemetry.actuatorStates || null);
+      }
       setIsConnected(false);
       setLastFetchError('Awaiting live telemetry from sensors');
-      return null;
+      return fallbackTelemetry || null;
     }
 
     if (!connectionHealthy && !latestTelemetryRef.current) {
@@ -582,7 +585,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
       updatedAt: new Date().toISOString(),
     });
     return normalized;
-  }, [mergeDeviceStatus, telemetryDisabled, updateTelemetryCache]);
+  }, [lastTelemetry, mergeDeviceStatus, telemetryDisabled, updateTelemetryCache]);
 
   const refreshTelemetry = useCallback(async (options?: { background?: boolean }) => {
     if (telemetryDisabled) {
@@ -638,11 +641,20 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
         }
         setActuatorStates(reading.actuatorStates || null);
       } else {
-        setLatestTelemetry(null);
-        setLastTelemetry(null);
-        updateTelemetryCache(null);
-        setActuatorStates(null);
-        setIsConnected(false);
+        const fallbackTelemetry = latestTelemetryRef.current || lastTelemetry;
+        if (fallbackTelemetry) {
+          setLatestTelemetry(fallbackTelemetry);
+          setLastTelemetry(fallbackTelemetry);
+          updateTelemetryCache(fallbackTelemetry);
+          setActuatorStates(fallbackTelemetry.actuatorStates || null);
+          setIsConnected(false);
+        } else {
+          setLatestTelemetry(null);
+          setLastTelemetry(null);
+          updateTelemetryCache(null);
+          setActuatorStates(null);
+          setIsConnected(false);
+        }
       }
       if (!background) {
         setLastFetchError(null);
@@ -663,7 +675,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
         setIsLoading(false);
       }
     }
-  }, [ensureBackendBase, getStableTelemetry, handleTelemetryPayload, telemetryDisabled, updateTelemetryCache]);
+  }, [ensureBackendBase, getStableTelemetry, handleTelemetryPayload, lastTelemetry, telemetryDisabled, updateTelemetryCache]);
 
   const refreshSensors = useCallback(async (options?: { background?: boolean }) => {
     await refreshTelemetry(options);

@@ -1,6 +1,6 @@
 ✅ VermiLinks Deployment Report
 Time: 2025-11-08T09:01:28.326Z
-Backend: https://vermilinks-backend.onrender.com
+Backend: https://vermilinks.onrender.com
 Frontend: https://vermilinks-frontend.onrender.com
 
 ✅ Backend Deploy — Deploy succeeded

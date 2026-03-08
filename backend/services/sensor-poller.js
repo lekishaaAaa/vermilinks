@@ -11,7 +11,7 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 
-const POLL_URL = process.env.POLL_URL || 'http://localhost:5000/api/sensors/latest';
+const POLL_URL = process.env.POLL_URL || 'https://vermilinks.onrender.com/api/sensors/latest';
 const POLL_MS = parseInt(process.env.POLL_MS || '5000', 10);
 const MAX_CONCURRENT = parseInt(process.env.MAX_CONCURRENT || '3', 10);
 const DATA_DIR = path.join(__dirname, '..', 'data');

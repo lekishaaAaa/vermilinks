@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Download, RefreshCw, Search, Filter, Trash2 } from 'lucide-react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import * as XLSX from 'xlsx';
 import DarkModeToggle from '../../components/DarkModeToggle';
 import { sensorLogService } from '../../services/api';
 import { PaginationInfo, SensorLogEntry } from '../../types';
@@ -107,20 +110,33 @@ const SensorLogsPage: React.FC = () => {
     if (!logs.length) {
       return;
     }
-    const header = ['"Timestamp"', '"Device"', '"Sensor"', '"Value"', '"Origin"', '"Topic"', '"Raw"'];
     const rows = logs.map((log) => {
-      const row = [
-        new Date(log.recordedAt).toISOString(),
-        log.deviceId,
-        log.sensorName,
-        `${log.value}${log.unit ? ` ${log.unit}` : ''}`,
-        log.origin || '',
-        log.mqttTopic || '',
-        log.rawPayload ? JSON.stringify(log.rawPayload) : '',
-      ];
-      return row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',');
+      const payload = (log.rawPayload && typeof log.rawPayload === 'object') ? log.rawPayload as Record<string, unknown> : {};
+      const sensorKey = (log.sensorName || '').toString().toLowerCase();
+      const row: Record<string, string | number | null> = {
+        timestamp: new Date(log.recordedAt).toISOString(),
+        device_id: log.deviceId,
+        temperature: payload.temperature as number ?? null,
+        humidity: payload.humidity as number ?? null,
+        soil_temperature: payload.soil_temperature as number ?? null,
+        soil_moisture: payload.soil_moisture as number ?? null,
+        water_level: payload.water_level as number ?? null,
+        float_state: payload.float_state as string ?? null,
+      };
+
+      if (sensorKey === 'temperature') row.temperature = log.value;
+      if (sensorKey === 'humidity') row.humidity = log.value;
+      if (sensorKey === 'soil_temperature' || sensorKey === 'soiltemperature') row.soil_temperature = log.value;
+      if (sensorKey === 'soil_moisture' || sensorKey === 'moisture') row.soil_moisture = log.value;
+      if (sensorKey === 'water_level' || sensorKey === 'waterlevel') row.water_level = log.value;
+      if (sensorKey === 'float_state' || sensorKey === 'floatsensor') row.float_state = String(log.value);
+
+      return row;
     });
-    const csv = [header.join(','), ...rows].join('\n');
+
+    const header = ['timestamp', 'device_id', 'temperature', 'humidity', 'soil_temperature', 'soil_moisture', 'water_level', 'float_state'];
+    const csvRows = rows.map((row) => header.map((field) => `"${String(row[field] ?? '').replace(/"/g, '""')}"`).join(','));
+    const csv = [header.join(','), ...csvRows].join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
@@ -128,6 +144,72 @@ const SensorLogsPage: React.FC = () => {
     anchor.download = `sensor-logs-${new Date().toISOString().slice(0, 19)}.csv`;
     anchor.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handleExportExcel = () => {
+    if (!logs.length) {
+      return;
+    }
+    const rows = logs.map((log) => {
+      const payload = (log.rawPayload && typeof log.rawPayload === 'object') ? log.rawPayload as Record<string, unknown> : {};
+      return {
+        timestamp: new Date(log.recordedAt).toISOString(),
+        device_id: log.deviceId,
+        temperature: payload.temperature ?? (log.sensorName === 'temperature' ? log.value : null),
+        humidity: payload.humidity ?? (log.sensorName === 'humidity' ? log.value : null),
+        soil_temperature: payload.soil_temperature ?? ((log.sensorName === 'soil_temperature' || log.sensorName === 'soilTemperature') ? log.value : null),
+        soil_moisture: payload.soil_moisture ?? ((log.sensorName === 'soil_moisture' || log.sensorName === 'moisture') ? log.value : null),
+        water_level: payload.water_level ?? ((log.sensorName === 'water_level' || log.sensorName === 'waterLevel') ? log.value : null),
+        float_state: payload.float_state ?? ((log.sensorName === 'float_state' || log.sensorName === 'floatSensor') ? String(log.value) : null),
+      };
+    });
+
+    const sheet = XLSX.utils.json_to_sheet(rows, {
+      header: ['timestamp', 'device_id', 'temperature', 'humidity', 'soil_temperature', 'soil_moisture', 'water_level', 'float_state'],
+    });
+    const book = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(book, sheet, 'Sensor Logs');
+    XLSX.writeFile(book, `sensor-logs-${new Date().toISOString().slice(0, 19)}.xlsx`);
+  };
+
+  const handleExportPdf = () => {
+    if (!logs.length) {
+      return;
+    }
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+    const rows = logs.map((log) => {
+      const payload = (log.rawPayload && typeof log.rawPayload === 'object') ? log.rawPayload as Record<string, unknown> : {};
+      return [
+        new Date(log.recordedAt).toISOString(),
+        log.deviceId,
+        String(payload.temperature ?? (log.sensorName === 'temperature' ? log.value : '')),
+        String(payload.humidity ?? (log.sensorName === 'humidity' ? log.value : '')),
+        String(payload.soil_temperature ?? ((log.sensorName === 'soil_temperature' || log.sensorName === 'soilTemperature') ? log.value : '')),
+        String(payload.soil_moisture ?? ((log.sensorName === 'soil_moisture' || log.sensorName === 'moisture') ? log.value : '')),
+        String(payload.water_level ?? ((log.sensorName === 'water_level' || log.sensorName === 'waterLevel') ? log.value : '')),
+        String(payload.float_state ?? ((log.sensorName === 'float_state' || log.sensorName === 'floatSensor') ? log.value : '')),
+      ];
+    });
+
+    const headers = ['timestamp', 'device_id', 'temperature', 'humidity', 'soil_temperature', 'soil_moisture', 'water_level', 'float_state'];
+    doc.setFontSize(12);
+    doc.text('VermiLinks Sensor Logs Export', 40, 32);
+    autoTable(doc, {
+      startY: 48,
+      head: [headers],
+      body: rows,
+      styles: {
+        fontSize: 8,
+        cellPadding: 4,
+      },
+      headStyles: {
+        fillColor: [30, 41, 59],
+      },
+      margin: { left: 24, right: 24 },
+      tableWidth: 'auto',
+    });
+
+    doc.save(`sensor-logs-${new Date().toISOString().slice(0, 19)}.pdf`);
   };
 
   const totalPages = pagination?.pages ?? 1;
@@ -388,6 +470,24 @@ const SensorLogsPage: React.FC = () => {
             >
               <Download className="h-4 w-4" />
               Export CSV
+            </button>
+            <button
+              type="button"
+              onClick={handleExportExcel}
+              className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-500"
+              disabled={!logs.length}
+            >
+              <Download className="h-4 w-4" />
+              Export Excel
+            </button>
+            <button
+              type="button"
+              onClick={handleExportPdf}
+              className="inline-flex items-center gap-2 rounded-xl bg-slate-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-600"
+              disabled={!logs.length}
+            >
+              <Download className="h-4 w-4" />
+              Export PDF
             </button>
           </div>
         </section>

@@ -20,7 +20,13 @@ const PRESENCE_SWEEP_INTERVAL_MS = Math.max(
 );
 let presenceSweepStarted = false;
 
+function normalizeDeviceId(value) {
+  const normalized = (value || '').toString().trim().toLowerCase();
+  return normalized || null;
+}
+
 async function markDeviceOnline(deviceId, metadata = {}) {
+  deviceId = normalizeDeviceId(deviceId);
   if (!deviceId) return null;
   await ensureReady();
   const now = new Date();
@@ -112,6 +118,7 @@ function startPresenceReconciliation() {
 }
 
 async function markDeviceOffline(deviceId) {
+  deviceId = normalizeDeviceId(deviceId);
   if (!deviceId) return null;
   await ensureReady();
   const device = await Device.findOne({ where: { deviceId } });

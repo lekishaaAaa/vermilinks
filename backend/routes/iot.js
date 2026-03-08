@@ -1,20 +1,29 @@
 const express = require('express');
+const { fn, col, where } = require('sequelize');
 const { SensorData, SensorSnapshot, ActuatorState, PendingCommand, Alert, Settings } = require('../models');
 const { validateControlPayload, createCommand } = require('../services/iotCommandService');
 const { auth, adminOnly, requireOtpVerified } = require('../middleware/auth');
 
 const router = express.Router();
 
+const PRIMARY_DEVICE_ID = 'esp32a';
+const buildDeviceIdWhere = (deviceId) => where(fn('lower', col('device_id')), deviceId);
+
 router.get('/latest', async (req, res) => {
   try {
-    const telemetrySnapshot = await SensorSnapshot.findOne({
-      order: [['timestamp', 'DESC']],
-      raw: true,
-    });
+    let telemetrySnapshot = await SensorSnapshot.findByPk(PRIMARY_DEVICE_ID, { raw: true });
+    if (!telemetrySnapshot) {
+      telemetrySnapshot = await SensorSnapshot.findOne({
+        where: buildDeviceIdWhere(PRIMARY_DEVICE_ID),
+        order: [['timestamp', 'DESC']],
+        raw: true,
+      });
+    }
 
     let telemetry = telemetrySnapshot || null;
     if (!telemetry) {
       const latest = await SensorData.findOne({
+        where: buildDeviceIdWhere(PRIMARY_DEVICE_ID),
         order: [['timestamp', 'DESC']],
         raw: true,
       });

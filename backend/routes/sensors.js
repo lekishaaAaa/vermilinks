@@ -1,6 +1,6 @@
 const express = require('express');
 const { body, query, validationResult } = require('express-validator');
-const { Op } = require('sequelize');
+const { Op, fn, col, where } = require('sequelize');
 const NodeCache = require('node-cache');
 const SensorData = require('../models/SensorData');
 const Device = require('../models/Device');
@@ -33,6 +33,19 @@ const STALE_SENSOR_MAX_AGE_MS = Math.max(
 const router = express.Router();
 const sensorCache = new NodeCache({ stdTTL: 5, checkperiod: 2 });
 const DEFAULT_TELEMETRY_DEVICE_ID = (process.env.PRIMARY_SENSOR_DEVICE_ID || process.env.TELEMETRY_DEVICE_ID || 'esp32B').toString().trim() || 'esp32B';
+
+const normalizeDeviceId = (value) => {
+  const normalized = (value || '').toString().trim().toLowerCase();
+  return normalized || null;
+};
+
+const buildDeviceIdWhere = (deviceId) => {
+  const normalized = normalizeDeviceId(deviceId);
+  if (!normalized) {
+    return null;
+  }
+  return where(fn('lower', col('device_id')), normalized);
+};
 
 
 const formatLatestSnapshot = (snapshot) => {
@@ -75,8 +88,13 @@ const hydrateMissingTelemetryFields = async (snapshotPayload) => {
     return snapshotPayload;
   }
 
+  const deviceIdWhere = buildDeviceIdWhere(deviceId);
+  if (!deviceIdWhere) {
+    return snapshotPayload;
+  }
+
   const fallback = await SensorData.findAll({
-    where: { deviceId },
+    where: deviceIdWhere,
     order: [['timestamp', 'DESC']],
     limit: 25,
     raw: true,
@@ -141,7 +159,7 @@ router.post('/', [
       });
     }
 
-    const normalizedDeviceId = (req.body.deviceId || req.body.device_id || '').toString().trim();
+    const normalizedDeviceId = normalizeDeviceId(req.body.deviceId || req.body.device_id);
     if (!normalizedDeviceId) {
       return res.status(400).json({ success: false, message: 'Device ID is required' });
     }
@@ -298,7 +316,7 @@ router.post('/', [
 // @access  Public
 router.get('/latest', async (req, res) => {
   try {
-    const deviceId = (req.query.device_id || req.query.deviceId || '').toString().trim();
+    const deviceId = normalizeDeviceId(req.query.device_id || req.query.deviceId);
     const cacheKey = deviceId ? `latest:${deviceId}` : 'latest:all';
     const cached = sensorCache.get(cacheKey);
     if (cached !== undefined) {
@@ -311,12 +329,19 @@ router.get('/latest', async (req, res) => {
     let formatted = null;
 
     if (deviceId) {
-      const snapshot = await SensorSnapshot.findByPk(deviceId, { raw: true });
+      let snapshot = await SensorSnapshot.findByPk(deviceId, { raw: true });
+      if (!snapshot) {
+        const snapshotWhere = buildDeviceIdWhere(deviceId);
+        snapshot = await SensorSnapshot.findOne({
+          where: snapshotWhere,
+          raw: true,
+        });
+      }
       if (snapshot) {
         formatted = formatLatestSnapshot(snapshot);
       }
     } else {
-      const preferredSnapshot = await SensorSnapshot.findByPk(DEFAULT_TELEMETRY_DEVICE_ID, { raw: true });
+      const preferredSnapshot = await SensorSnapshot.findByPk(normalizeDeviceId(DEFAULT_TELEMETRY_DEVICE_ID), { raw: true });
       if (preferredSnapshot) {
         formatted = formatLatestSnapshot(preferredSnapshot);
       }
@@ -329,17 +354,18 @@ router.get('/latest', async (req, res) => {
     }
 
     if (!formatted) {
-      const where = {};
+      const dataWhere = {};
       if (deviceId) {
-        where.deviceId = deviceId;
+        Object.assign(dataWhere, { [Op.and]: [buildDeviceIdWhere(deviceId)] });
       }
-      const latest = await SensorData.findOne({ where, order: [['timestamp', 'DESC']], raw: true });
+      const latest = await SensorData.findOne({ where: dataWhere, order: [['timestamp', 'DESC']], raw: true });
       formatted = latest ? formatLatestSnapshot({
-        deviceId: latest.deviceId,
+        deviceId: latest.deviceId || latest.device_id,
         temperature: latest.temperature,
         humidity: latest.humidity,
         moisture: latest.moisture,
         soilTemperature: latest.soilTemperature,
+        waterLevel: latest.waterLevel,
         floatSensor: latest.floatSensor,
         timestamp: latest.timestamp,
       }) : null;

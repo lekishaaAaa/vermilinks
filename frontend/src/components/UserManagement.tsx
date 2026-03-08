@@ -19,6 +19,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUserRole 
   const [loading, setLoading] = useState(true);
   const [showAddUser, setShowAddUser] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     loadUsers();
@@ -27,37 +28,11 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUserRole 
   const loadUsers = async () => {
     setLoading(true);
     try {
-      // In a real implementation, this would fetch from /api/admin/users
-      // For now, we'll simulate with mock data
-      const mockUsers: User[] = [
-        {
-          id: '1',
-          username: 'beantobin',
-          role: 'admin',
-          createdAt: '2024-01-01T00:00:00Z',
-          lastLogin: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(), // 2 hours ago
-          isActive: true
-        },
-        {
-          id: '2',
-          username: 'operator1',
-          role: 'user',
-          createdAt: '2024-01-15T00:00:00Z',
-          lastLogin: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(), // 1 day ago
-          isActive: true
-        },
-        {
-          id: '3',
-          username: 'monitor',
-          role: 'user',
-          createdAt: '2024-02-01T00:00:00Z',
-          lastLogin: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(), // 1 week ago
-          isActive: false
-        }
-      ];
-      setUsers(mockUsers);
+      setUsers([]);
+      setErrorMessage('User management API is not configured in production. No placeholder users are shown.');
     } catch (error) {
       console.error('Failed to load users:', error);
+      setErrorMessage('Failed to load users.');
     } finally {
       setLoading(false);
     }
@@ -65,16 +40,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUserRole 
 
   const handleAddUser = async (userData: { username: string; password: string; role: 'admin' | 'user' }) => {
     try {
-      // In a real implementation, this would POST to /api/admin/users
-      const newUser: User = {
-        id: Date.now().toString(),
-        username: userData.username,
-        role: userData.role,
-        createdAt: new Date().toISOString(),
-        isActive: true
-      };
-      setUsers([...users, newUser]);
-      setShowAddUser(false);
+      throw new Error('User management API is unavailable in production.');
     } catch (error) {
       console.error('Failed to add user:', error);
       alert('Failed to add user. Please try again.');
@@ -83,11 +49,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUserRole 
 
   const handleUpdateUser = async (userId: string, updates: Partial<User>) => {
     try {
-      // In a real implementation, this would PUT to /api/admin/users/:id
-      setUsers(users.map(user =>
-        user.id === userId ? { ...user, ...updates } : user
-      ));
-      setEditingUser(null);
+      throw new Error('User management API is unavailable in production.');
     } catch (error) {
       console.error('Failed to update user:', error);
       alert('Failed to update user. Please try again.');
@@ -97,8 +59,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUserRole 
   const handleDeleteUser = async (userId: string) => {
     if (window.confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
       try {
-        // In a real implementation, this would DELETE to /api/admin/users/:id
-        setUsers(users.filter(user => user.id !== userId));
+        throw new Error('User management API is unavailable in production.');
       } catch (error) {
         console.error('Failed to delete user:', error);
         alert('Failed to delete user. Please try again.');
@@ -152,9 +113,20 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUserRole 
         </div>
       </div>
 
+      {errorMessage && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-100">
+          {errorMessage}
+        </div>
+      )}
+
       {/* Users Table */}
       <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
         <div className="overflow-x-auto">
+          {users.length === 0 ? (
+            <div className="p-6 text-sm text-gray-600 dark:text-gray-300">
+              No users available.
+            </div>
+          ) : (
           <table className="w-full">
             <thead className="bg-gray-50 dark:bg-gray-700">
               <tr>
@@ -240,6 +212,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUserRole 
               ))}
             </tbody>
           </table>
+          )}
         </div>
       </div>
 

@@ -2,22 +2,7 @@ import React, { useMemo, useEffect, useState } from 'react';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { SensorData } from '../types';
-import { getSocket } from '../socket';
-import { sensorService } from '../services/api';
 import SensorOverview from './SensorOverview';
-
-const resolveTargetDeviceId = () => {
-  const candidates = [process.env.REACT_APP_DEVICE_ID, process.env.REACT_APP_PRIMARY_DEVICE];
-  for (const value of candidates) {
-    if (value && value.trim().length > 0) {
-      return value.trim();
-    }
-  }
-  return 'esp32b';
-};
-
-const TARGET_DEVICE_ID = resolveTargetDeviceId();
-const STRICT_DASHBOARD_SOURCE = (process.env.REACT_APP_STRICT_DASHBOARD_SOURCE || 'true').toString().toLowerCase() !== 'false';
 
 const formatTimestamp = (value?: string | Date | null) => {
   if (!value) return '—';
@@ -47,174 +32,50 @@ interface RealtimeTelemetryPanelProps {
 }
 
 const RealtimeTelemetryPanel: React.FC<RealtimeTelemetryPanelProps> = ({ latest, history, isConnected, onRefresh, refreshing, telemetryDisabled }) => {
-  // local live state merged with incoming props
-  const [liveLatest, setLiveLatest] = useState<SensorData | null>(null);
-  const [liveHistory, setLiveHistory] = useState<SensorData[]>([]);
-  const [socketConnected, setSocketConnected] = useState<boolean>(() => {
-    try {
-      return getSocket().connected;
-    } catch (error) {
-      return false;
-    }
-  });
-  const [deviceOnline, setDeviceOnline] = useState<boolean | null>(null);
-  const [polledHistory, setPolledHistory] = useState<SensorData[]>([]);
+  const [cachedLatest, setCachedLatest] = useState<SensorData | null>(null);
   const [lastTelemetry, setLastTelemetry] = useState<SensorData | null>(null);
 
   useEffect(() => {
-    if (STRICT_DASHBOARD_SOURCE) {
-      setLiveLatest(null);
-      setLiveHistory([]);
-      setSocketConnected(false);
-      setDeviceOnline(null);
-      return undefined;
-    }
     if (telemetryDisabled) {
-      setLiveLatest(null);
-      setLiveHistory([]);
-      setSocketConnected(false);
-      setDeviceOnline(null);
-      return undefined;
+      return;
     }
-    const socket = getSocket();
-    if (!socket || typeof socket.on !== 'function') {
-      // Socket client may be disabled/mocked during tests or in telemetry-off mode
-      setSocketConnected(false);
-      return undefined;
+    const source = latest ?? (Array.isArray(history) && history.length > 0 ? history[history.length - 1] : null);
+    if (!source) {
+      return;
     }
 
-    const handleConnect = () => setSocketConnected(true);
-    const handleDisconnect = () => setSocketConnected(false);
-
-    const handleSensorUpdate = (payload: Partial<SensorData> & { deviceId?: string }) => {
-      if (!payload) return;
-      if (payload.deviceId && payload.deviceId !== TARGET_DEVICE_ID) {
-        return;
+    // Keep previous values for missing fields so cards stay rendered under partial payloads.
+    setCachedLatest((prev) => {
+      if (!prev) {
+        return source;
       }
-
-      const timestamp = payload.timestamp || new Date().toISOString();
-      const incoming: SensorData = {
-        ...payload,
-        deviceId: payload.deviceId || TARGET_DEVICE_ID,
-        waterLevel: typeof (payload as any).waterLevel === 'number'
-          ? (payload as any).waterLevel
-          : typeof (payload as any).water_level === 'number'
-            ? (payload as any).water_level
-            : undefined,
-        floatSensor: typeof (payload as any).floatSensor === 'number'
-          ? (payload as any).floatSensor
-          : typeof (payload as any).float_state === 'number'
-            ? (payload as any).float_state
-            : undefined,
-        timestamp,
-      } as SensorData;
-
-      setLiveLatest(incoming);
-      setLastTelemetry(incoming);
-      setLiveHistory((prev) => [...prev, incoming].slice(-336));
-    };
-
-    const handleDeviceStatus = (status: { deviceId?: string; online?: boolean; status?: string }) => {
-      if (!status) return;
-      if (status.deviceId && status.deviceId !== TARGET_DEVICE_ID) {
-        return;
-      }
-      const online = status.online !== false && status.status !== 'offline';
-      setDeviceOnline(online);
-    };
-
-    socket.on('connect', handleConnect);
-    socket.on('disconnect', handleDisconnect);
-    socket.on('sensor:update', handleSensorUpdate);
-    socket.on('device:status', handleDeviceStatus);
-
-    return (): void => {
-      socket.off('connect', handleConnect);
-      socket.off('disconnect', handleDisconnect);
-      socket.off('sensor:update', handleSensorUpdate);
-      socket.off('device:status', handleDeviceStatus);
-    };
-  }, [telemetryDisabled]);
-
-  useEffect(() => {
-    let mounted = true;
-    if (STRICT_DASHBOARD_SOURCE) {
-      setPolledHistory([]);
-      return () => {
-        mounted = false;
+      const merged: SensorData = {
+        ...prev,
+        ...source,
+        temperature: source.temperature ?? prev.temperature,
+        humidity: source.humidity ?? prev.humidity,
+        soilTemperature: source.soilTemperature ?? prev.soilTemperature,
+        moisture: source.moisture ?? prev.moisture,
+        waterLevel: source.waterLevel ?? prev.waterLevel,
       };
-    }
-    if (telemetryDisabled) {
-      setPolledHistory([]);
-      return () => {
-        mounted = false;
-      };
-    }
-
-    const normalize = (entry: any): SensorData => ({
-      ...entry,
-      deviceId: entry.deviceId || entry.device_id || TARGET_DEVICE_ID,
-      moisture: typeof entry.moisture === 'number' ? entry.moisture : entry.soil_moisture,
-      soilTemperature: typeof entry.soilTemperature === 'number' ? entry.soilTemperature : entry.soil_temperature,
-      waterLevel: typeof entry.waterLevel === 'number'
-        ? entry.waterLevel
-        : typeof entry.water_level === 'number'
-          ? entry.water_level
-          : (typeof entry.float_state === 'number' ? entry.float_state : undefined),
-      floatSensor: typeof entry.floatSensor === 'number'
-        ? entry.floatSensor
-        : typeof entry.float_state === 'number'
-          ? entry.float_state
-          : undefined,
-      batteryLevel: typeof entry.batteryLevel === 'number' ? entry.batteryLevel : entry.battery_level,
-      signalStrength: typeof entry.signalStrength === 'number' ? entry.signalStrength : entry.signal_strength,
-      timestamp: entry.timestamp || entry.updated_at || new Date().toISOString(),
+      return merged;
     });
-
-    const pollHistory = async () => {
-      try {
-        const response = await sensorService.getHistory({ deviceId: TARGET_DEVICE_ID, limit: 50 });
-        const readings = response?.data?.data?.readings;
-        if (!mounted || !Array.isArray(readings)) {
-          return;
-        }
-        const normalizedReadings = readings.map(normalize);
-        setPolledHistory(normalizedReadings);
-        if (normalizedReadings.length > 0) {
-          setLastTelemetry(normalizedReadings[normalizedReadings.length - 1]);
-        }
-      } catch (error) {
-        // Keep existing socket/prop data if history endpoint is unavailable for this session
-      }
-    };
-
-    pollHistory();
-    const timer = window.setInterval(pollHistory, 5000);
-    return () => {
-      mounted = false;
-      window.clearInterval(timer);
-    };
-  }, [telemetryDisabled]);
+    setLastTelemetry(source);
+  }, [history, latest, telemetryDisabled]);
 
   const mergedHistory = useMemo(() => {
-    const merged = STRICT_DASHBOARD_SOURCE
-      ? [...(history || [])]
-      : [...(history || []), ...polledHistory, ...liveHistory];
-    return merged
+    return [...(history || [])]
       .filter(Boolean)
       .sort((a, b) => (new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime()))
       .slice(-336);
-  }, [history, liveHistory, polledHistory]);
+  }, [history]);
 
-  const effectiveLatest = STRICT_DASHBOARD_SOURCE
-    ? (latest ?? (mergedHistory.length ? mergedHistory[mergedHistory.length - 1] : null))
-    : (liveLatest ?? latest ?? lastTelemetry ?? (mergedHistory.length ? mergedHistory[mergedHistory.length - 1] : null));
+  const effectiveLatest = cachedLatest ?? latest ?? lastTelemetry ?? (mergedHistory.length ? mergedHistory[mergedHistory.length - 1] : null);
   const hasTelemetryData = Boolean(effectiveLatest) || mergedHistory.length > 0;
   const showPausedNotice = Boolean(telemetryDisabled) && !hasTelemetryData;
   const latestTimestamp = effectiveLatest?.timestamp || (mergedHistory.length ? mergedHistory[mergedHistory.length - 1].timestamp : null);
 
-  const realtimeHealthy = socketConnected && (deviceOnline !== false);
-  const effectiveIsConnected = showPausedNotice ? false : realtimeHealthy || isConnected;
+  const effectiveIsConnected = showPausedNotice ? false : isConnected;
   const outOfRangeWarnings = useMemo(() => {
     if (!effectiveLatest) return [] as string[];
     return SENSOR_VALID_RANGES
@@ -266,17 +127,21 @@ const RealtimeTelemetryPanel: React.FC<RealtimeTelemetryPanelProps> = ({ latest,
 
       {showPausedNotice ? (
         <div className="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-5 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-100">
-          Telemetry panels are paused until physical sensors report in. You will not see live metrics until hardware is online.
+          No telemetry received
         </div>
-      ) : (
+      ) : hasTelemetryData ? (
         <SensorOverview telemetry={effectiveLatest} lastTelemetry={lastTelemetry} />
+      ) : (
+        <div className="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-5 text-sm text-gray-700 dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-200">
+          No telemetry received
+        </div>
       )}
 
       {!showPausedNotice && (
         <div className="mt-6 rounded-lg border border-gray-100 bg-gray-50/50 p-4 dark:border-gray-800 dark:bg-gray-900/40">
           <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">Realtime Telemetry Graphs</h4>
           {chartData.length === 0 ? (
-            <div className="text-xs text-gray-500 dark:text-gray-400">Awaiting history data from /api/sensors/history?limit=50</div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">No telemetry received</div>
           ) : (
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <div className="h-44 rounded-md border border-gray-200 bg-white p-2 dark:border-gray-700 dark:bg-gray-900">
