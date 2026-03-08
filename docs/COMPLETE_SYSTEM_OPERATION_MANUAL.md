@@ -53,13 +53,13 @@ Float logic from `safety.cpp`:
 
 From `esp32/firmware_esp32b/src/config.h`:
 
-- DHT22 #1 data: **GPIO16**
-- DHT22 #2 data: **GPIO17**
-- Soil analog #1: **GPIO32** (ADC1)
-- Soil analog #2: **GPIO33** (ADC1)
-- Soil analog #3: **GPIO34** (ADC1 input-only)
-- Soil analog #4: **GPIO35** (ADC1 input-only)
-- DS18B20 one-wire bus: **GPIO18**
+- DHT22 #1 data: **GPIO4**
+- DHT22 #2 data: **GPIO16**
+- Soil analog #1: **GPIO34** (ADC1 input-only)
+- Soil analog #2: **GPIO35** (ADC1 input-only)
+- Soil analog #3: **GPIO32** (ADC1)
+- Soil analog #4: **GPIO33** (ADC1)
+- DS18B20 one-wire bus: **GPIO17**
 - Status LED: **GPIO13**
 
 ## 2.4 Mandatory External Electrical Protections

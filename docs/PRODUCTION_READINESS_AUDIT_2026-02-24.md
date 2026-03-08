@@ -35,8 +35,8 @@ What remains mandatory to claim full production-ready:
 
 | Function | Pin | Validation |
 |---|---:|---|
-| Float switch input | GPIO32 | ADC1-capable, input-safe, not boot strap pin |
-| Pump control output | GPIO18 | Output-capable, not input-only, not boot strap pin |
+| Float switch input | GPIO14 | Digital input-safe, uses pull-up logic, not boot strap pin |
+| Pump control output | GPIO5 | Output-capable, not input-only, not boot strap pin |
 | Solenoid valve 1 | GPIO25 | Output-capable, not boot strap pin |
 | Solenoid valve 2 | GPIO26 | Output-capable, not boot strap pin |
 | Solenoid valve 3 | GPIO27 | Output-capable, not boot strap pin |
@@ -52,13 +52,13 @@ Validation outcome:
 
 | Function | Pin | Validation |
 |---|---:|---|
-| DHT22 #1 data | GPIO16 | Digital IO-safe, not boot strap pin |
-| DHT22 #2 data | GPIO17 | Digital IO-safe, not boot strap pin |
-| Soil analog #1 | GPIO32 | ADC1 (valid with Wi-Fi) |
-| Soil analog #2 | GPIO33 | ADC1 (valid with Wi-Fi) |
-| Soil analog #3 | GPIO34 | ADC1 input-only (correct for analog input) |
-| Soil analog #4 | GPIO35 | ADC1 input-only (correct for analog input) |
-| DS18B20 one-wire bus | GPIO18 | Digital IO-safe for one-wire bus |
+| DHT22 #1 data | GPIO4 | Digital IO-safe, not boot strap pin |
+| DHT22 #2 data | GPIO16 | Digital IO-safe, not boot strap pin |
+| Soil analog #1 | GPIO34 | ADC1 input-only (correct for analog input) |
+| Soil analog #2 | GPIO35 | ADC1 input-only (correct for analog input) |
+| Soil analog #3 | GPIO32 | ADC1 (valid with Wi-Fi) |
+| Soil analog #4 | GPIO33 | ADC1 (valid with Wi-Fi) |
+| DS18B20 one-wire bus | GPIO17 | Digital IO-safe for one-wire bus |
 | Status LED | GPIO13 | Output-capable indicator pin |
 
 Validation outcome:
