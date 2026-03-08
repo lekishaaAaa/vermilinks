@@ -66,7 +66,9 @@ const SensorSummaryPanel: React.FC<SensorSummaryPanelProps> = ({ className = '',
   useEffect(() => {
     if (latest) {
       setLastTelemetry(latest);
+      return;
     }
+    setLastTelemetry(null);
   }, [latest]);
 
   const actuatorItems = useMemo(() => {

@@ -38,6 +38,41 @@ const normalizeDeviceId = (value) => {
   return normalized || null;
 };
 
+const isSyntheticDeviceId = (value) => {
+  const normalized = normalizeDeviceId(value);
+  if (!normalized) {
+    return true;
+  }
+  return /^(mock|dummy|demo|sim|simulated|test)[-_]/i.test(normalized);
+};
+
+const toTelemetryTimestampMs = (payload) => {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+  const raw = payload.timestamp || payload.updated_at || payload.created_at;
+  if (!raw) {
+    return null;
+  }
+  const parsed = new Date(raw).getTime();
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const isLiveTelemetryPayload = (payload) => {
+  if (!payload || typeof payload !== 'object') {
+    return false;
+  }
+  const deviceId = payload.deviceId || payload.device_id;
+  if (isSyntheticDeviceId(deviceId)) {
+    return false;
+  }
+  const timestampMs = toTelemetryTimestampMs(payload);
+  if (!Number.isFinite(timestampMs)) {
+    return false;
+  }
+  return (Date.now() - timestampMs) <= STALE_SENSOR_MAX_AGE_MS;
+};
+
 const buildDeviceIdWhere = (deviceId) => {
   const normalized = normalizeDeviceId(deviceId);
   if (!normalized) {
@@ -327,45 +362,79 @@ router.get('/latest', async (req, res) => {
 
     let formatted = null;
 
-    if (deviceId) {
-      let snapshot = await SensorSnapshot.findByPk(deviceId, { raw: true });
-      if (!snapshot) {
-        const snapshotWhere = buildDeviceIdWhere(deviceId);
-        snapshot = await SensorSnapshot.findOne({
-          where: snapshotWhere,
-          raw: true,
+    const findLatestLiveSnapshot = async (queryDeviceId) => {
+      if (queryDeviceId) {
+        let snapshot = await SensorSnapshot.findByPk(queryDeviceId, { raw: true });
+        if (!snapshot) {
+          const snapshotWhere = buildDeviceIdWhere(queryDeviceId);
+          snapshot = await SensorSnapshot.findOne({
+            where: snapshotWhere,
+            raw: true,
+          });
+        }
+        if (!snapshot) {
+          return null;
+        }
+        const candidate = formatLatestSnapshot(snapshot);
+        return isLiveTelemetryPayload(candidate) ? candidate : null;
+      }
+
+      const snapshots = await SensorSnapshot.findAll({
+        order: [['timestamp', 'DESC']],
+        limit: 25,
+        raw: true,
+      });
+      for (const snapshot of snapshots) {
+        const candidate = formatLatestSnapshot(snapshot);
+        if (isLiveTelemetryPayload(candidate)) {
+          return candidate;
+        }
+      }
+      return null;
+    };
+
+    const findLatestLiveSensorData = async (queryDeviceId) => {
+      const dataWhere = {};
+      if (queryDeviceId) {
+        Object.assign(dataWhere, { [Op.and]: [buildDeviceIdWhere(queryDeviceId)] });
+      }
+      const rows = await SensorData.findAll({
+        where: dataWhere,
+        order: [['timestamp', 'DESC']],
+        limit: queryDeviceId ? 5 : 25,
+        raw: true,
+      });
+
+      for (const latest of rows) {
+        const candidate = formatLatestSnapshot({
+          deviceId: latest.deviceId || latest.device_id,
+          temperature: latest.temperature,
+          humidity: latest.humidity,
+          moisture: latest.moisture,
+          soilTemperature: latest.soilTemperature,
+          waterLevel: latest.waterLevel,
+          floatSensor: latest.floatSensor,
+          timestamp: latest.timestamp,
         });
+        if (isLiveTelemetryPayload(candidate)) {
+          return candidate;
+        }
       }
-      if (snapshot) {
-        formatted = formatLatestSnapshot(snapshot);
-      }
-    } else {
-      const snapshot = await SensorSnapshot.findOne({ order: [['timestamp', 'DESC']], raw: true });
-      if (snapshot) {
-        formatted = formatLatestSnapshot(snapshot);
-      }
-    }
+
+      return null;
+    };
+
+    formatted = await findLatestLiveSnapshot(deviceId);
 
     if (!formatted) {
-      const dataWhere = {};
-      if (deviceId) {
-        Object.assign(dataWhere, { [Op.and]: [buildDeviceIdWhere(deviceId)] });
-      }
-      const latest = await SensorData.findOne({ where: dataWhere, order: [['timestamp', 'DESC']], raw: true });
-      formatted = latest ? formatLatestSnapshot({
-        deviceId: latest.deviceId || latest.device_id,
-        temperature: latest.temperature,
-        humidity: latest.humidity,
-        moisture: latest.moisture,
-        soilTemperature: latest.soilTemperature,
-        waterLevel: latest.waterLevel,
-        floatSensor: latest.floatSensor,
-        timestamp: latest.timestamp,
-      }) : null;
+      formatted = await findLatestLiveSensorData(deviceId);
     }
 
     if (formatted) {
       formatted = await hydrateMissingTelemetryFields(formatted);
+      if (!isLiveTelemetryPayload(formatted)) {
+        formatted = null;
+      }
     }
 
     sensorCache.set(cacheKey, formatted || null);
