@@ -160,6 +160,25 @@ const ActuatorControls: React.FC = () => {
   };
 
   const formatStatus = (value: boolean) => (value ? 'On' : 'Off');
+  const getToggleDisabled = (key: keyof typeof initialState) => {
+    return loading || controlMode !== 'manual' || (key === 'pump' && floatLow) || !online;
+  };
+
+  const getHelperText = (key: keyof typeof initialState) => {
+    if (controlMode !== 'manual') {
+      return 'Disabled in Automatic Mode';
+    }
+    if (!online) {
+      return 'Unavailable while device is offline';
+    }
+    if (key === 'pump' && floatLow) {
+      return 'Pump locked (float LOW)';
+    }
+    if (loading) {
+      return 'Awaiting device confirmation';
+    }
+    return 'Ready for manual control';
+  };
 
   return (
     <div className="rounded-2xl border border-gray-100 bg-white/80 p-6 shadow dark:border-gray-800 dark:bg-gray-900/60">
@@ -206,23 +225,43 @@ const ActuatorControls: React.FC = () => {
       </div>
 
       <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {(['pump', 'valve1', 'valve2', 'valve3'] as const).map((key) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => handleToggle(key)}
-            disabled={loading || controlMode !== 'manual' || (key === 'pump' && floatLow) || !online}
-            className={`flex flex-col gap-1 rounded-xl border px-4 py-3 text-left text-sm font-semibold transition ${loading || !online || controlMode !== 'manual' ? 'cursor-not-allowed border-gray-200 bg-gray-50 text-gray-400 dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-500' : desiredState[key] ? 'border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900/40 dark:text-gray-200'}`}
-          >
-            <span className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">{ACTUATOR_LABEL_MAP[key]}</span>
-            <span className="text-xl font-bold">{formatStatus(desiredState[key])}</span>
-            {controlMode !== 'manual' ? (
-              <span className="text-xs text-gray-500 dark:text-gray-400">Disabled in Automatic Mode</span>
-            ) : key === 'pump' && floatLow ? (
-              <span className="text-xs text-rose-600 dark:text-rose-300">Pump locked (float LOW)</span>
-            ) : null}
-          </button>
-        ))}
+        {(['pump', 'valve1', 'valve2', 'valve3'] as const).map((key) => {
+          const disabled = getToggleDisabled(key);
+          const checked = desiredState[key];
+
+          return (
+            <div
+              key={key}
+              className={`rounded-xl border px-4 py-4 transition ${disabled ? 'border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900/40' : checked ? 'border-emerald-300 bg-emerald-50 dark:border-emerald-700 dark:bg-emerald-900/20' : 'border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900/40'}`}
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">{ACTUATOR_LABEL_MAP[key]}</p>
+                  <p className={`mt-2 text-xl font-bold ${disabled ? 'text-gray-400 dark:text-gray-500' : checked ? 'text-emerald-700 dark:text-emerald-200' : 'text-gray-800 dark:text-gray-100'}`}>
+                    {formatStatus(checked)}
+                  </p>
+                  <p className={`mt-2 text-xs ${key === 'pump' && floatLow && controlMode === 'manual' ? 'text-rose-600 dark:text-rose-300' : disabled ? 'text-gray-500 dark:text-gray-400' : 'text-gray-600 dark:text-gray-300'}`}>
+                    {getHelperText(key)}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={checked}
+                  aria-label={`${ACTUATOR_LABEL_MAP[key]} ${checked ? 'on' : 'off'}`}
+                  onClick={() => handleToggle(key)}
+                  disabled={disabled}
+                  className={`relative inline-flex h-8 w-14 shrink-0 items-center rounded-full border transition ${disabled ? 'cursor-not-allowed border-gray-300 bg-gray-200 dark:border-gray-700 dark:bg-gray-800' : checked ? 'border-emerald-500 bg-emerald-500' : 'border-gray-300 bg-gray-300 dark:border-gray-600 dark:bg-gray-700'}`}
+                >
+                  <span
+                    className={`inline-block h-6 w-6 transform rounded-full bg-white shadow transition ${checked ? 'translate-x-7' : 'translate-x-1'}`}
+                  />
+                </button>
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       <div className="mt-4 flex flex-col gap-2 text-xs text-gray-500 dark:text-gray-400 md:flex-row md:items-center md:justify-between">
