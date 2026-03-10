@@ -119,6 +119,30 @@ const ActuatorControls: React.FC = () => {
 
   const commandPending = pendingRequestIds.length > 0 || Object.keys(pendingActuators).length > 0 || Boolean(pendingOverride);
 
+  const getBaseControlBlockReason = useCallback(() => {
+    if (controlMode !== 'manual') {
+      return 'Disabled in Automatic Mode';
+    }
+    if (!online) {
+      return 'Unavailable while device is offline';
+    }
+    if (commandPending) {
+      return 'Awaiting command acknowledgement from backend';
+    }
+    return null;
+  }, [commandPending, controlMode, online]);
+
+  const getToggleDisabledReason = useCallback((key: ActuatorKey) => {
+    const baseReason = getBaseControlBlockReason();
+    if (baseReason) {
+      return baseReason;
+    }
+    if (key === 'pump' && floatLow && !displayForcePumpOverride) {
+      return 'Pump locked until force override is enabled';
+    }
+    return null;
+  }, [displayForcePumpOverride, floatLow, getBaseControlBlockReason]);
+
   const applyOnlineStatus = useCallback((timestamp?: string | null) => {
     setOnline(isDeviceFresh(timestamp));
     if (timestamp) {
@@ -250,7 +274,19 @@ const ActuatorControls: React.FC = () => {
   }, [loadLatest, pendingActuators, pendingOverride, setPendingOverrideState, updatePendingActuatorsState]);
 
   const handleToggle = async (key: ActuatorKey) => {
-    if (controlMode !== 'manual') {
+    const disabledReason = getToggleDisabledReason(key);
+    console.log(key === 'pump' ? 'Pump toggle clicked' : 'Valve toggle clicked', {
+      actuator: key,
+      disabledReason,
+      online,
+      controlMode,
+      commandPending,
+      floatLow,
+      forcePumpOverride: displayForcePumpOverride,
+    });
+
+    if (disabledReason) {
+      setErrorMessage(disabledReason);
       return;
     }
 
@@ -323,7 +359,25 @@ const ActuatorControls: React.FC = () => {
   };
 
   const handleOverrideToggle = async (nextChecked: boolean) => {
-    if (controlMode !== 'manual' || !online) {
+    console.log('Force override toggle clicked', {
+      nextChecked,
+      online,
+      controlMode,
+      pendingOverride: Boolean(pendingOverrideRef.current),
+      commandPending,
+      floatLow,
+    });
+
+    if (controlMode !== 'manual') {
+      setErrorMessage('Disabled in Automatic Mode');
+      return;
+    }
+    if (!online) {
+      setErrorMessage('Unavailable while device is offline');
+      return;
+    }
+    if (pendingOverrideRef.current) {
+      setErrorMessage('Awaiting command acknowledgement from backend');
       return;
     }
 
@@ -331,10 +385,6 @@ const ActuatorControls: React.FC = () => {
     if ((now - lastCommandAtRef.current) < RAPID_TOGGLE_DEBOUNCE_MS) {
       return;
     }
-    if (pendingOverrideRef.current) {
-      return;
-    }
-
     if (nextChecked) {
       const confirmed = window.confirm('Force pump override will allow manual pump control even while the float reads LOW. Continue?');
       if (!confirmed) {
@@ -382,33 +432,17 @@ const ActuatorControls: React.FC = () => {
     return Boolean(entry && Date.now() < entry.lockUntil);
   };
 
-  const getToggleDisabled = (key: ActuatorKey) => {
-    if (controlMode !== 'manual' || !online) {
-      return true;
-    }
-    if (isActuatorPending(key)) {
-      return true;
-    }
-    if (key === 'pump' && floatLow && !displayForcePumpOverride) {
-      return true;
-    }
-    return false;
-  };
+  const getToggleDisabled = (key: ActuatorKey) => Boolean(getToggleDisabledReason(key));
 
   const getHelperText = (key: ActuatorKey) => {
-    if (controlMode !== 'manual') {
-      return 'Disabled in Automatic Mode';
-    }
-    if (!online) {
-      return 'Unavailable while device is offline';
+    const disabledReason = getToggleDisabledReason(key);
+    if (disabledReason && !isActuatorPending(key)) {
+      return disabledReason;
     }
     if (isActuatorPending(key)) {
       return isActuatorLockActive(key)
         ? 'Control locked during the 3 second command window'
         : 'Awaiting ESP32 state confirmation';
-    }
-    if (key === 'pump' && floatLow && !displayForcePumpOverride) {
-      return 'Pump locked until force override is enabled';
     }
     if (key === 'pump' && floatLow && displayForcePumpOverride) {
       return 'Force override armed: pump may run while float is LOW';
@@ -480,7 +514,6 @@ const ActuatorControls: React.FC = () => {
               onChange={(event) => {
                 handleOverrideToggle(event.target.checked).catch(() => null);
               }}
-              disabled={controlMode !== 'manual' || !online || Boolean(pendingOverride)}
               className="h-4 w-4 rounded border-amber-400 text-amber-600 focus:ring-amber-500"
             />
             Enable force pump override
