@@ -359,18 +359,21 @@ router.post('/', [
 });
 
 // @route   GET /api/sensors/latest
-// @desc    Get latest sensor reading (cached 5s)
+// @desc    Get latest sensor reading (device-specific actuator reads bypass cache)
 // @access  Public
 router.get('/latest', async (req, res) => {
   try {
     const deviceId = normalizeDeviceId(req.query.device_id || req.query.deviceId);
     const cacheKey = deviceId ? `latest:${deviceId}` : 'latest:all';
-    const cached = sensorCache.get(cacheKey);
-    if (cached !== undefined) {
-      if (cached === null) {
-        return res.status(204).send();
+    const shouldUseCache = !deviceId;
+    if (shouldUseCache) {
+      const cached = sensorCache.get(cacheKey);
+      if (cached !== undefined) {
+        if (cached === null) {
+          return res.status(204).send();
+        }
+        return res.json(cached);
       }
-      return res.json(cached);
     }
 
     let formatted = null;
@@ -525,7 +528,9 @@ router.get('/latest', async (req, res) => {
       lastHeartbeat: lastSeenIso,
     } : null;
 
-    sensorCache.set(cacheKey, enrichedPayload || null);
+    if (shouldUseCache) {
+      sensorCache.set(cacheKey, enrichedPayload || null);
+    }
 
     if (!enrichedPayload) {
       return res.status(204).send();
