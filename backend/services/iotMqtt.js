@@ -332,6 +332,8 @@ async function handleStateMessage(payload, topic) {
     valve2: statePayload.valve2,
     valve3: statePayload.valve3,
     float: statePayload.float,
+    float_state: statePayload.float_state,
+    forcePumpOverride: statePayload.forcePumpOverride,
     requestId: statePayload.requestId,
     source: statePayload.source,
     ts: statePayload.ts,

@@ -83,8 +83,6 @@ const ActuatorControls: React.FC = () => {
     }
     if (payload.forcePumpOverride === true) {
       setForcePumpOverride(true);
-    } else if (!payload.pump) {
-      setForcePumpOverride(false);
     }
   }, [pendingRequestId]);
 
@@ -173,6 +171,8 @@ const ActuatorControls: React.FC = () => {
       [key]: !desiredState[key],
     };
 
+    setDesiredState(nextState);
+
     setLoading(true);
     setErrorMessage(null);
 
@@ -190,6 +190,7 @@ const ActuatorControls: React.FC = () => {
         setErrorMessage('Command dispatched but no confirmation ID returned.');
       }
     } catch (error: any) {
+      setDesiredState(desiredState);
       setLoading(false);
       setErrorMessage(error?.response?.data?.message || 'Failed to send command.');
     }
