@@ -516,6 +516,13 @@ async function upsertDeviceStatusSnapshot(deviceId, online) {
   }
 
   await device.update(updatePayload);
+  console.log('Device lastSeen updated', {
+    deviceId,
+    via: 'mqtt-lwt',
+    online,
+    lastHeartbeat: updatePayload.lastHeartbeat ? new Date(updatePayload.lastHeartbeat).toISOString() : (device.lastHeartbeat ? new Date(device.lastHeartbeat).toISOString() : null),
+    lastSeen: updatePayload.lastSeen ? new Date(updatePayload.lastSeen).toISOString() : (device.lastSeen ? new Date(device.lastSeen).toISOString() : null),
+  });
   return device;
 }
 

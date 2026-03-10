@@ -39,6 +39,12 @@ async function markDeviceOnline(deviceId, metadata = {}) {
     device.online = true;
     device.metadata = metadata || device.metadata;
     await device.save();
+    console.log('Device lastSeen updated', {
+      deviceId,
+      via: metadata?.via || 'unknown',
+      lastHeartbeat: device.lastHeartbeat ? new Date(device.lastHeartbeat).toISOString() : null,
+      lastSeen: device.lastSeen ? new Date(device.lastSeen).toISOString() : null,
+    });
   }
   // Broadcast device status via Socket.IO
   try {
