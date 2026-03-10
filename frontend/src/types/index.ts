@@ -91,6 +91,7 @@ export interface LatestSnapshot {
   signal_strength?: number | null;
   actuator_states?: Record<string, boolean | number | null> | null;
   actuatorStates?: Record<string, boolean | number | null> | null;
+  deviceOnline?: boolean;
   updated_at: string;
 }
 

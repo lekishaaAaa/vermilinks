@@ -612,7 +612,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
             actuatorStates: snapshot.actuatorStates ?? snapshot.actuator_states ?? null,
             timestamp: snapshot.updated_at,
             isOfflineData: false,
-            deviceOnline: true,
+            deviceOnline: snapshot.deviceOnline ?? false,
           }, resolvedDeviceId)
         : null;
 

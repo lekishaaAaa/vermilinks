@@ -168,10 +168,25 @@ export default function AdminDashboard(): React.ReactElement {
   const [exportEndDate, setExportEndDate] = useState<string>('');
 
   const hasLiveTelemetry = useMemo(() => {
-    if (ctxTelemetry) {
+    const isFreshTelemetry = (sample: Partial<SensorDataType> | null | undefined) => {
+      if (!sample) {
+        return false;
+      }
+      if (sample.isStale === true) {
+        return false;
+      }
+      if (typeof sample.deviceOnline === 'boolean' && !sample.deviceOnline) {
+        return false;
+      }
+      const timestampSource = sample.timestamp ?? sample.lastSeen ?? null;
+      const timestampMs = timestampSource ? new Date(timestampSource).getTime() : NaN;
+      return Number.isFinite(timestampMs) && (Date.now() - timestampMs) < SENSOR_STALE_THRESHOLD_MS;
+    };
+
+    if (isFreshTelemetry(ctxTelemetry)) {
       return true;
     }
-    if (Array.isArray(ctxSensorBuffer) && ctxSensorBuffer.length > 0) {
+    if (Array.isArray(ctxSensorBuffer) && ctxSensorBuffer.some((entry) => isFreshTelemetry(entry))) {
       return true;
     }
     return false;
