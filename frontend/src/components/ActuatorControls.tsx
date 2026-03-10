@@ -212,8 +212,15 @@ const ActuatorControls: React.FC = () => {
     try {
       const latest = await fetchLatest();
 
-      const lastSeen = latest?.lastSeen ?? latest?.lastHeartbeat ?? latest?.deviceState?.ts ?? latest?.telemetry?.updated_at ?? latest?.telemetry?.timestamp ?? null;
-      applyOnlineStatus(lastSeen);
+      const derivedTimestamp = latest?.lastSeen ?? latest?.lastHeartbeat ?? latest?.deviceState?.lastSeen ?? latest?.deviceState?.ts ?? latest?.telemetry?.updated_at ?? latest?.telemetry?.timestamp ?? null;
+      if (latest?.deviceOnline === true) {
+        setOnline(true);
+        if (derivedTimestamp) {
+          setLastUpdated(derivedTimestamp);
+        }
+      } else {
+        applyOnlineStatus(derivedTimestamp);
+      }
 
       if (latest?.deviceState) {
         applyDeviceState(latest.deviceState);

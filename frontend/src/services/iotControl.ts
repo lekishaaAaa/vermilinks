@@ -11,6 +11,8 @@ export interface DeviceStatePayload {
   source?: string | null;
   ts?: string | null;
   forcePumpOverride?: boolean;
+  online?: boolean;
+  lastSeen?: string | null;
 }
 
 export interface LatestPayload {
@@ -21,6 +23,34 @@ export interface LatestPayload {
   lastSeen?: string | null;
   lastHeartbeat?: string | null;
 }
+
+const DEVICE_FRESHNESS_MS = 60000;
+
+const toTimestampMs = (value?: string | null) => {
+  if (!value) {
+    return NaN;
+  }
+  return new Date(value).getTime();
+};
+
+const isFreshTimestamp = (value?: string | null) => {
+  const timestampMs = toTimestampMs(value);
+  return Number.isFinite(timestampMs) && (Date.now() - timestampMs) < DEVICE_FRESHNESS_MS;
+};
+
+const pickFreshestTimestamp = (...values: Array<string | null | undefined>) => {
+  return values.reduce<string | null>((freshest, candidate) => {
+    const candidateMs = toTimestampMs(candidate || null);
+    const freshestMs = toTimestampMs(freshest);
+    if (!Number.isFinite(candidateMs)) {
+      return freshest;
+    }
+    if (!Number.isFinite(freshestMs) || candidateMs > freshestMs) {
+      return candidate || null;
+    }
+    return freshest;
+  }, null);
+};
 
 export async function fetchLatest() {
   const response = await api.get('/sensors/latest', {
@@ -40,17 +70,35 @@ export async function fetchLatest() {
   }
 
   const payload = response?.data || {};
+  const deviceState = payload.deviceState ?? null;
+  const actuatorLastSeen = pickFreshestTimestamp(
+    deviceState?.lastSeen ?? null,
+    deviceState?.ts ?? null,
+    payload.lastSeen ?? null,
+    payload.lastHeartbeat ?? null,
+    payload.updated_at ?? null,
+    payload.timestamp ?? null,
+  );
+  const derivedDeviceOnline = Boolean(
+    payload.deviceOnline === true ||
+    deviceState?.online === true ||
+    isFreshTimestamp(deviceState?.lastSeen ?? null) ||
+    isFreshTimestamp(deviceState?.ts ?? null) ||
+    isFreshTimestamp(actuatorLastSeen)
+  );
+
   return {
     telemetry: payload,
-    deviceState: payload.deviceState ?? null,
+    deviceState,
     pendingCommand: payload.pendingCommand ?? null,
-    deviceOnline: payload.deviceOnline,
-    lastSeen: payload.lastSeen ?? payload.lastHeartbeat ?? payload.updated_at ?? payload.timestamp ?? null,
-    lastHeartbeat: payload.lastHeartbeat ?? payload.lastSeen ?? null,
+    deviceOnline: derivedDeviceOnline,
+    lastSeen: actuatorLastSeen,
+    lastHeartbeat: actuatorLastSeen,
   } as LatestPayload;
 }
 
 export async function sendControl(desired: { pump: boolean; valve1: boolean; valve2: boolean; valve3: boolean; forcePumpOverride?: boolean }) {
+  console.log('Sending actuator command', desired);
   const response = await api.post('/control', desired);
   return response?.data?.data;
 }

@@ -151,4 +151,51 @@ describe('ActuatorControls', () => {
       });
     });
   });
+
+  test('keeps actuator controls online when top-level telemetry is stale but deviceState is fresh', async () => {
+    const staleTimestamp = '2026-03-10T17:51:30.867Z';
+    const freshTimestamp = new Date().toISOString();
+
+    mockFetchLatest.mockResolvedValue(buildLatestPayload({
+      deviceOnline: true,
+      lastSeen: staleTimestamp,
+      lastHeartbeat: staleTimestamp,
+      deviceState: {
+        pump: false,
+        valve1: false,
+        valve2: false,
+        valve3: false,
+        float: 'LOW',
+        float_state: 'LOW',
+        requestId: null,
+        source: 'safety_override',
+        ts: freshTimestamp,
+        lastSeen: freshTimestamp,
+        online: true,
+        forcePumpOverride: false,
+      },
+    }));
+    mockSendControl.mockResolvedValue({ requestId: 'req-valve-fresh' } as any);
+
+    await renderComponent();
+
+    expect(screen.getByText(/esp32-a online/i)).toBeInTheDocument();
+    const overrideCheckbox = screen.getByRole('checkbox', { name: /enable force pump override/i });
+    const valve1Switch = screen.getByRole('switch', { name: /layer 1 solenoid/i });
+
+    expect(overrideCheckbox).toBeEnabled();
+    expect(valve1Switch).toBeEnabled();
+
+    fireEvent.click(valve1Switch);
+
+    await waitFor(() => {
+      expect(mockSendControl).toHaveBeenCalledWith({
+        pump: false,
+        valve1: true,
+        valve2: false,
+        valve3: false,
+        forcePumpOverride: false,
+      });
+    });
+  });
 });
