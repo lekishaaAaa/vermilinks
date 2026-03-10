@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const { Op, fn, col, where } = require('sequelize');
 const { ActuatorState, PendingCommand, AuditLog } = require('../models');
 const Device = require('../models/Device');
+const SensorSnapshot = require('../models/SensorSnapshot');
 const { publishCommand } = require('./iotMqtt');
 const { evaluatePumpSafety } = require('./actuatorSafetyService');
 
@@ -12,6 +13,11 @@ const COMMAND_ACK_TIMEOUT_MS = (() => {
   }
   return Math.min(Math.max(raw, 3000), 5000);
 })();
+
+const DEVICE_FRESHNESS_MS = Math.max(
+  2000,
+  parseInt(process.env.DEVICE_OFFLINE_TIMEOUT_MS || process.env.SENSOR_STALE_THRESHOLD_MS || '60000', 10),
+);
 
 let timeoutSweeperStarted = false;
 
@@ -26,6 +32,60 @@ function normalizeDeviceId(value) {
 
 function buildDeviceIdWhere(deviceId) {
   return where(fn('lower', col('device_id')), deviceId);
+}
+
+function buildActuatorKeyWhere(deviceId) {
+  return where(fn('lower', col('actuator_key')), deviceId);
+}
+
+function toTimestampMs(value) {
+  if (!value) {
+    return NaN;
+  }
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : NaN;
+}
+
+async function resolveCommandTargetAvailability(deviceId) {
+  const [device, actuatorState, snapshot] = await Promise.all([
+    Device.findOne({ where: buildDeviceIdWhere(deviceId) }).catch(() => null),
+    ActuatorState.findOne({ where: buildActuatorKeyWhere(deviceId), raw: true }).catch(() => null),
+    SensorSnapshot.findOne({ where: buildDeviceIdWhere(deviceId), raw: true }).catch(() => null),
+  ]);
+
+  const deviceOnline = Boolean(device && (device.online === true || device.status === 'online'));
+  const timestampCandidates = [
+    device?.lastHeartbeat,
+    device?.lastSeen,
+    actuatorState?.reportedAt,
+    actuatorState?.state?.ts,
+    snapshot?.timestamp,
+    snapshot?.updated_at,
+  ]
+    .map(toTimestampMs)
+    .filter((value) => Number.isFinite(value));
+
+  const lastSeenMs = timestampCandidates.length > 0 ? Math.max(...timestampCandidates) : NaN;
+  const lastSeenIso = Number.isFinite(lastSeenMs) ? new Date(lastSeenMs).toISOString() : null;
+  const freshSignalSeen = Number.isFinite(lastSeenMs) ? (Date.now() - lastSeenMs) < DEVICE_FRESHNESS_MS : false;
+
+  if (device && freshSignalSeen && !deviceOnline) {
+    const lastSeenDate = new Date(lastSeenMs);
+    await device.update({
+      status: 'online',
+      online: true,
+      lastSeen: lastSeenDate,
+      lastHeartbeat: device.lastHeartbeat || lastSeenDate,
+      updatedAt: new Date(),
+    }).catch(() => null);
+  }
+
+  return {
+    online: deviceOnline || freshSignalSeen,
+    lastSeen: lastSeenIso,
+    deviceOnline,
+    freshSignalSeen,
+  };
 }
 
 function validateControlPayload(payload) {
@@ -99,9 +159,8 @@ async function createCommand({ deviceId = 'esp32a', desiredState, actor = null, 
   ensureCommandTimeoutSweeper();
   await failStalePendingCommands();
 
-  const device = await Device.findOne({ where: buildDeviceIdWhere(normalizedDeviceId) });
-  const isOnline = Boolean(device && (device.online === true || device.status === 'online'));
-  if (!isOnline) {
+  const availability = await resolveCommandTargetAvailability(normalizedDeviceId);
+  if (!availability.online) {
     return {
       ok: false,
       status: 503,
