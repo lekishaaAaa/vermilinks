@@ -7,10 +7,13 @@ const { auth, adminOnly, requireOtpVerified } = require('../middleware/auth');
 const router = express.Router();
 
 const PRIMARY_DEVICE_ID = 'esp32a';
-const COMMAND_ACK_TIMEOUT_MS = Math.max(
-  5000,
-  parseInt(process.env.COMMAND_ACK_TIMEOUT_MS || '25000', 10),
-);
+const COMMAND_ACK_TIMEOUT_MS = (() => {
+  const raw = parseInt(process.env.COMMAND_ACK_TIMEOUT_MS || '5000', 10);
+  if (!Number.isFinite(raw) || raw <= 0) {
+    return 5000;
+  }
+  return Math.min(Math.max(raw, 3000), 5000);
+})();
 const buildDeviceIdWhere = (deviceId) => where(fn('lower', col('device_id')), deviceId);
 
 router.get('/latest', async (req, res) => {

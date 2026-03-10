@@ -33,7 +33,7 @@ const STALE_SENSOR_MAX_AGE_MS = Math.max(
 );
 
 const DEVICE_FRESHNESS_MS = 60000;
-const COMMAND_PENDING_UI_TIMEOUT_MS = 3000;
+const COMMAND_PENDING_UI_TIMEOUT_MS = 5000;
 
 const router = express.Router();
 const sensorCache = new NodeCache({ stdTTL: 5, checkperiod: 2 });

@@ -5,10 +5,13 @@ const Device = require('../models/Device');
 const { publishCommand } = require('./iotMqtt');
 const { evaluatePumpSafety } = require('./actuatorSafetyService');
 
-const COMMAND_ACK_TIMEOUT_MS = Math.max(
-  5000,
-  parseInt(process.env.COMMAND_ACK_TIMEOUT_MS || '25000', 10),
-);
+const COMMAND_ACK_TIMEOUT_MS = (() => {
+  const raw = parseInt(process.env.COMMAND_ACK_TIMEOUT_MS || '5000', 10);
+  if (!Number.isFinite(raw) || raw <= 0) {
+    return 5000;
+  }
+  return Math.min(Math.max(raw, 3000), 5000);
+})();
 
 let timeoutSweeperStarted = false;
 
@@ -48,10 +51,12 @@ function validateControlPayload(payload) {
 }
 
 async function ensureNoPendingCommand(deviceId) {
+  const cutoff = new Date(Date.now() - COMMAND_ACK_TIMEOUT_MS);
   const existing = await PendingCommand.findOne({
     where: {
       deviceId,
       status: { [Op.in]: ['sent', 'waiting'] },
+      createdAt: { [Op.gte]: cutoff },
     },
   });
   return existing || null;
