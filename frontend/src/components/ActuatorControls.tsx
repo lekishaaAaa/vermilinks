@@ -161,17 +161,25 @@ const ActuatorControls: React.FC = () => {
     });
 
     const currentPendingOverride = pendingOverrideRef.current;
+    const sameOverrideRequest = Boolean(
+      currentPendingOverride?.requestId &&
+      payload.requestId &&
+      currentPendingOverride.requestId === payload.requestId
+    );
+    const overrideConfirmed =
+      typeof payload.forcePumpOverride === 'boolean' &&
+      Boolean(payload.forcePumpOverride) === currentPendingOverride?.desired;
     if (!currentPendingOverride) {
       setPendingOverrideState(null);
-    } else if (Boolean(payload.forcePumpOverride) === currentPendingOverride.desired || safetyOverrideApplied) {
+    } else if (overrideConfirmed) {
       setPendingOverrideState(null);
     } else {
       setPendingOverrideState(currentPendingOverride);
     }
 
-    if (payload.source === 'safety_override') {
+    if (safetyOverrideApplied && !Boolean(payload.forcePumpOverride) && !(currentPendingOverride?.desired && !sameOverrideRequest)) {
       setErrorMessage('Safety override applied. Pump disabled by float sensor.');
-    } else if (payload.source) {
+    } else if (payload.source && !currentPendingOverride?.desired) {
       setErrorMessage(null);
     }
   }, [setPendingOverrideState, updatePendingActuatorsState]);

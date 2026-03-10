@@ -1,4 +1,5 @@
 const mqtt = require('mqtt');
+const { Op } = require('sequelize');
 const logger = require('../utils/logger');
 const { SensorData, SensorSnapshot, ActuatorState, PendingCommand, Alert, ActuatorLog } = require('../models');
 const Device = require('../models/Device');
@@ -302,25 +303,32 @@ async function handleStateMessage(payload, topic) {
     const pending = await PendingCommand.findOne({ where: { requestId: payload.requestId, status: { [Op.in]: ['sent', 'waiting'] } } });
     if (pending) {
       const desired = pending.desiredState || {};
-      const matches =
-        desired.pump === payload.pump &&
-        desired.valve1 === payload.valve1 &&
-        desired.valve2 === payload.valve2 &&
-        desired.valve3 === payload.valve3;
+      const actuatorMatches =
+        desired.pump === statePayload.pump &&
+        desired.valve1 === statePayload.valve1 &&
+        desired.valve2 === statePayload.valve2 &&
+        desired.valve3 === statePayload.valve3;
+      const overrideMatches =
+        typeof desired.forcePumpOverride === 'boolean'
+          ? Boolean(statePayload.forcePumpOverride) === desired.forcePumpOverride
+          : true;
+      const matches = actuatorMatches && overrideMatches;
       const normalizedSource = (payload.source || '').toString().toLowerCase();
       const isSafetyOverride = normalizedSource === 'safety_override' || normalizedSource === 'safety';
-      const nextStatus = matches || isSafetyOverride ? 'acknowledged' : 'mismatch';
+      const safetyAppliedAsRequested = isSafetyOverride && actuatorMatches && desired.forcePumpOverride !== true;
+      const nextStatus = matches || safetyAppliedAsRequested ? 'acknowledged' : 'mismatch';
       await pending.update({
         status: nextStatus,
         responseState: {
-          pump: payload.pump,
-          valve1: payload.valve1,
-          valve2: payload.valve2,
-          valve3: payload.valve3,
+          pump: statePayload.pump,
+          valve1: statePayload.valve1,
+          valve2: statePayload.valve2,
+          valve3: statePayload.valve3,
           float: floatState,
-          source: payload.source || 'applied',
+          forcePumpOverride: Boolean(statePayload.forcePumpOverride),
+          source: statePayload.source || 'applied',
         },
-        error: matches || isSafetyOverride ? null : 'Device state mismatch',
+        error: matches || safetyAppliedAsRequested ? null : 'Device state mismatch',
         ackAt: now,
         updatedAt: now,
       });
@@ -833,6 +841,7 @@ module.exports = {
   __testHooks: {
     buildTelemetryRecord,
     handleTelemetryMessage,
+    handleStateMessage,
     parseLwtPayload,
   },
 };
