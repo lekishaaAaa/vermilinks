@@ -14,6 +14,7 @@ type ActuatorViewState = typeof initialState;
 type PendingControlState = {
   requestId: string | null;
   desiredState: ActuatorViewState;
+  desiredForcePumpOverride: boolean;
   changedKeys: ActuatorKey[];
   lockUntil: number;
   expiresAt: number;
@@ -82,6 +83,8 @@ const ActuatorControls: React.FC = () => {
     return backendActuatorState;
   }, [backendActuatorState, pendingControl]);
 
+  const displayForcePumpOverride = pendingControl?.desiredForcePumpOverride ?? forcePumpOverride;
+
   const pendingRequestId = pendingControl?.requestId ?? null;
   const commandPending = Boolean(pendingControl);
   const commandLockActive = Boolean(pendingControl && Date.now() < pendingControl.lockUntil);
@@ -128,8 +131,9 @@ const ActuatorControls: React.FC = () => {
     }
 
     const matchesPendingState = actuatorStatesMatch(polledActuatorState, currentPending.desiredState);
+    const matchesPendingOverride = Boolean(payload.forcePumpOverride) === currentPending.desiredForcePumpOverride;
 
-    if (matchesPendingState || safetyOverrideApplied) {
+    if ((matchesPendingState && matchesPendingOverride) || safetyOverrideApplied) {
       setPendingControl(null);
       setErrorMessage(safetyOverrideApplied ? 'Safety override applied. Pump disabled by float sensor.' : null);
     }
@@ -180,33 +184,18 @@ const ActuatorControls: React.FC = () => {
     };
   }, [loadLatest, pendingControl]);
 
-  const handleToggle = async (key: ActuatorKey) => {
-    if (controlMode !== 'manual') {
-      return;
-    }
-
+  const submitDesiredState = useCallback(async (
+    desiredState: ActuatorViewState,
+    desiredForceOverride: boolean,
+    changedKeys: ActuatorKey[],
+  ) => {
     const now = Date.now();
-    if ((now - lastCommandAtRef.current) < RAPID_TOGGLE_DEBOUNCE_MS) {
-      return;
-    }
-    if (pendingControlRef.current) {
-      return;
-    }
-    if (key === 'pump' && floatLow && !forcePumpOverride) {
-      return;
-    }
-
-    lastCommandAtRef.current = now;
-
-    const nextState = {
-      ...displayState,
-      [key]: !displayState[key],
-    };
 
     setPendingControl({
       requestId: null,
-      desiredState: nextState,
-      changedKeys: [key],
+      desiredState,
+      desiredForcePumpOverride: desiredForceOverride,
+      changedKeys,
       lockUntil: now + COMMAND_PENDING_TIMEOUT_MS,
       expiresAt: now + FAILSAFE_REFRESH_MS,
     });
@@ -214,8 +203,8 @@ const ActuatorControls: React.FC = () => {
 
     try {
       const result = await sendControl({
-        ...nextState,
-        forcePumpOverride,
+        ...desiredState,
+        forcePumpOverride: desiredForceOverride,
       });
       if (result?.requestId) {
         setPendingControl((current) => current ? { ...current, requestId: result.requestId } : current);
@@ -229,6 +218,56 @@ const ActuatorControls: React.FC = () => {
       setErrorMessage(error?.response?.data?.message || 'Failed to send command.');
       loadLatest().catch(() => null);
     }
+  }, [loadLatest]);
+
+  const handleToggle = async (key: ActuatorKey) => {
+    if (controlMode !== 'manual') {
+      return;
+    }
+
+    const now = Date.now();
+    if ((now - lastCommandAtRef.current) < RAPID_TOGGLE_DEBOUNCE_MS) {
+      return;
+    }
+    if (pendingControlRef.current) {
+      return;
+    }
+    if (key === 'pump' && floatLow && !displayForcePumpOverride) {
+      return;
+    }
+
+    lastCommandAtRef.current = now;
+
+    const nextState = {
+      ...displayState,
+      [key]: !displayState[key],
+    };
+
+    await submitDesiredState(nextState, displayForcePumpOverride, [key]);
+  };
+
+  const handleOverrideToggle = async (nextChecked: boolean) => {
+    if (controlMode !== 'manual' || !online) {
+      return;
+    }
+
+    const now = Date.now();
+    if ((now - lastCommandAtRef.current) < RAPID_TOGGLE_DEBOUNCE_MS) {
+      return;
+    }
+    if (pendingControlRef.current) {
+      return;
+    }
+
+    if (nextChecked) {
+      const confirmed = window.confirm('Force pump override will allow manual pump control even while the float reads LOW. Continue?');
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    lastCommandAtRef.current = now;
+    await submitDesiredState(displayState, nextChecked, []);
   };
 
   const formatStatus = (value: boolean) => (value ? 'On' : 'Off');
@@ -240,7 +279,7 @@ const ActuatorControls: React.FC = () => {
     if (commandPending) {
       return true;
     }
-    if (key === 'pump' && floatLow && !forcePumpOverride) {
+    if (key === 'pump' && floatLow && !displayForcePumpOverride) {
       return true;
     }
     return false;
@@ -258,10 +297,10 @@ const ActuatorControls: React.FC = () => {
         ? (commandLockActive ? 'Control locked during the 3 second command window' : 'Awaiting ESP32 state confirmation')
         : (commandLockActive ? 'Another control is inside its 3 second command window' : 'Another command is awaiting ESP32 confirmation');
     }
-    if (key === 'pump' && floatLow && !forcePumpOverride) {
+    if (key === 'pump' && floatLow && !displayForcePumpOverride) {
       return 'Pump locked until force override is enabled';
     }
-    if (key === 'pump' && floatLow && forcePumpOverride) {
+    if (key === 'pump' && floatLow && displayForcePumpOverride) {
       return 'Force override armed: pump may run while float is LOW';
     }
     return 'Ready for manual control';
@@ -308,7 +347,7 @@ const ActuatorControls: React.FC = () => {
               Float LOW
             </span>
           )}
-          {forcePumpOverride && (
+          {displayForcePumpOverride && (
             <span className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200">
               Pump Override Armed
             </span>
@@ -327,16 +366,9 @@ const ActuatorControls: React.FC = () => {
           <label className="inline-flex items-center gap-3 text-xs font-semibold md:text-sm">
             <input
               type="checkbox"
-              checked={forcePumpOverride}
+              checked={displayForcePumpOverride}
               onChange={(event) => {
-                const nextChecked = event.target.checked;
-                if (nextChecked) {
-                  const confirmed = window.confirm('Force pump override will allow manual pump control even while the float reads LOW. Continue?');
-                  if (!confirmed) {
-                    return;
-                  }
-                }
-                setForcePumpOverride(nextChecked);
+                handleOverrideToggle(event.target.checked).catch(() => null);
               }}
               disabled={controlMode !== 'manual' || !online || commandPending}
               className="h-4 w-4 rounded border-amber-400 text-amber-600 focus:ring-amber-500"
