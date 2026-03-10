@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { fetchLatest, sendActuatorCommand, DeviceStatePayload } from '../services/iotControl';
+import { fetchLatest, sendControl, DeviceStatePayload } from '../services/iotControl';
 
 const initialState = {
   pump: false,
@@ -19,13 +19,6 @@ type PendingControlState = {
   expiresAt: number;
 };
 
-const ACTUATOR_COMMAND_MAP: Record<ActuatorKey, string> = {
-  pump: 'pump',
-  valve1: 'solenoid_1',
-  valve2: 'solenoid_2',
-  valve3: 'solenoid_3',
-};
-
 const ACTUATOR_LABEL_MAP: Record<ActuatorKey, string> = {
   pump: 'Pump (Layer 4 Reservoir)',
   valve1: 'Layer 1 Solenoid',
@@ -33,7 +26,6 @@ const ACTUATOR_LABEL_MAP: Record<ActuatorKey, string> = {
   valve3: 'Layer 3 Solenoid',
 };
 
-const ACTUATOR_DEVICE_ID = 'esp32A';
 const DEVICE_FRESHNESS_MS = 60000;
 const COMMAND_PENDING_TIMEOUT_MS = 3000;
 const FAILSAFE_REFRESH_MS = 5000;
@@ -221,11 +213,9 @@ const ActuatorControls: React.FC = () => {
     setErrorMessage(null);
 
     try {
-      const result = await sendActuatorCommand({
-        device_id: ACTUATOR_DEVICE_ID,
-        actuator: ACTUATOR_COMMAND_MAP[key],
-        state: nextState[key] ? 'on' : 'off',
-        forcePumpOverride: key === 'pump' ? forcePumpOverride : false,
+      const result = await sendControl({
+        ...nextState,
+        forcePumpOverride,
       });
       if (result?.requestId) {
         setPendingControl((current) => current ? { ...current, requestId: result.requestId } : current);
