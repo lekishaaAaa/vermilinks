@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const { Op } = require('sequelize');
+const { Op, fn, col, where } = require('sequelize');
 const { ActuatorState, PendingCommand, AuditLog } = require('../models');
 const Device = require('../models/Device');
 const { publishCommand } = require('./iotMqtt');
@@ -14,6 +14,15 @@ let timeoutSweeperStarted = false;
 
 function isBoolean(value) {
   return typeof value === 'boolean';
+}
+
+function normalizeDeviceId(value) {
+  const normalized = (value || '').toString().trim().toLowerCase();
+  return normalized || null;
+}
+
+function buildDeviceIdWhere(deviceId) {
+  return where(fn('lower', col('device_id')), deviceId);
 }
 
 function validateControlPayload(payload) {
@@ -77,10 +86,11 @@ function ensureCommandTimeoutSweeper() {
 }
 
 async function createCommand({ deviceId = 'esp32a', desiredState, actor = null, actorMeta = null }) {
+  const normalizedDeviceId = normalizeDeviceId(deviceId) || 'esp32a';
   ensureCommandTimeoutSweeper();
   await failStalePendingCommands();
 
-  const device = await Device.findOne({ where: { deviceId } });
+  const device = await Device.findOne({ where: buildDeviceIdWhere(normalizedDeviceId) });
   const isOnline = Boolean(device && (device.online === true || device.status === 'online'));
   if (!isOnline) {
     return {
@@ -90,7 +100,7 @@ async function createCommand({ deviceId = 'esp32a', desiredState, actor = null, 
     };
   }
 
-  const pending = await ensureNoPendingCommand(deviceId);
+  const pending = await ensureNoPendingCommand(normalizedDeviceId);
   if (pending) {
     return {
       ok: false,
@@ -100,7 +110,7 @@ async function createCommand({ deviceId = 'esp32a', desiredState, actor = null, 
     };
   }
 
-  const safety = await evaluatePumpSafety({ deviceId, desiredState });
+  const safety = await evaluatePumpSafety({ deviceId: normalizedDeviceId, desiredState });
   if (!safety.allowed) {
     return {
       ok: false,
@@ -120,7 +130,7 @@ async function createCommand({ deviceId = 'esp32a', desiredState, actor = null, 
 
   await PendingCommand.create({
     requestId,
-    deviceId,
+    deviceId: normalizedDeviceId,
     command: 'set_state',
     desiredState: commandPayload,
     status: 'sent',
@@ -132,7 +142,7 @@ async function createCommand({ deviceId = 'esp32a', desiredState, actor = null, 
         eventType: 'actuator.command.requested',
         actor,
         data: {
-          deviceId,
+          deviceId: normalizedDeviceId,
           desiredState: commandPayload,
           requestId,
           meta: actorMeta || null,

@@ -16,7 +16,7 @@ const TOPICS = {
   state: 'vermilinks/esp32a/state',
   ack: 'vermilinks/esp32a/ack',
   statusA: 'vermilinks/esp32a/status',
-  command: 'vermilinks/esp32a/command',
+  command: 'vermilinks/esp32A/commands',
   telemetry: 'vermilinks/esp32b/metrics',
   statusB: 'vermilinks/esp32b/status',
   deviceStatusPrefix: 'vermilinks/device_status/',

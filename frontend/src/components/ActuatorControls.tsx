@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { fetchLatest, sendActuatorCommand, DeviceStatePayload } from '../services/iotControl';
-import { sensorService } from '../services/api';
+import { deviceService } from '../services/api';
 import { socket as sharedSocket } from '../socket';
 
 const initialState = {
@@ -25,17 +25,11 @@ const ACTUATOR_LABEL_MAP: Record<keyof typeof initialState, string> = {
 };
 
 const ACTUATOR_DEVICE_ID = 'esp32A';
-const ONLINE_WINDOW_MS = 15_000;
 
-const isTelemetryFresh = (timestamp?: string | null) => {
-  if (!timestamp) {
-    return false;
-  }
-  const parsed = new Date(timestamp).getTime();
-  if (!Number.isFinite(parsed)) {
-    return false;
-  }
-  return Date.now() - parsed < ONLINE_WINDOW_MS;
+const normalizeDeviceId = (value?: string | null) => (value || '').toString().trim().toLowerCase();
+
+const isActuatorDeviceStatusPayload = (payload: any) => {
+  return normalizeDeviceId(payload?.deviceId || payload?.device_id) === ACTUATOR_DEVICE_ID.toLowerCase();
 };
 
 const ActuatorControls: React.FC = () => {
@@ -49,6 +43,13 @@ const ActuatorControls: React.FC = () => {
   const [controlMode, setControlMode] = useState<'automatic' | 'manual'>('manual');
 
   const floatLow = useMemo(() => (deviceState?.float || '').toString().toUpperCase() === 'LOW', [deviceState?.float]);
+
+  const applyOnlineStatus = useCallback((nextOnline: boolean, timestamp?: string | null) => {
+    setOnline(Boolean(nextOnline));
+    if (timestamp) {
+      setLastUpdated(timestamp);
+    }
+  }, []);
 
   const applyDeviceState = useCallback((payload: DeviceStatePayload | null) => {
     if (!payload) {
@@ -80,16 +81,16 @@ const ActuatorControls: React.FC = () => {
 
   const loadLatest = useCallback(async () => {
     try {
-      const [latest, snapshot] = await Promise.all([
+      const [latest, statusResponse] = await Promise.all([
         fetchLatest(),
-        sensorService.getLatestData(ACTUATOR_DEVICE_ID),
+        deviceService.getStatus(),
       ]);
 
-      const telemetryTimestamp = snapshot?.updated_at || null;
-      setOnline(isTelemetryFresh(telemetryTimestamp));
-      if (telemetryTimestamp) {
-        setLastUpdated(telemetryTimestamp);
-      }
+      const statusEntry = (statusResponse?.data?.devices || []).find((device) => {
+        return normalizeDeviceId(device?.device_id) === ACTUATOR_DEVICE_ID.toLowerCase();
+      });
+
+      applyOnlineStatus(Boolean(statusEntry?.online), statusEntry?.last_seen || null);
 
       if (latest?.deviceState) {
         applyDeviceState(latest.deviceState);
@@ -116,11 +117,26 @@ const ActuatorControls: React.FC = () => {
       applyDeviceState(payload);
     };
 
+    const handleDeviceStatus = (payload: any) => {
+      if (!isActuatorDeviceStatusPayload(payload)) {
+        return;
+      }
+
+      const statusTimestamp = payload?.lastHeartbeat || payload?.last_seen || payload?.updatedAt || null;
+      applyOnlineStatus(Boolean(payload?.online ?? ((payload?.status || '').toString().toLowerCase() === 'online')), statusTimestamp);
+    };
+
     sharedSocket.on('actuator:state', handleState);
+    sharedSocket.on('device:status', handleDeviceStatus);
+    sharedSocket.on('device_status', handleDeviceStatus);
+    sharedSocket.on('deviceHeartbeat', handleDeviceStatus);
     return () => {
       sharedSocket.off('actuator:state', handleState);
+      sharedSocket.off('device:status', handleDeviceStatus);
+      sharedSocket.off('device_status', handleDeviceStatus);
+      sharedSocket.off('deviceHeartbeat', handleDeviceStatus);
     };
-  }, [applyDeviceState]);
+  }, [applyDeviceState, applyOnlineStatus]);
 
   const handleToggle = async (key: keyof typeof initialState) => {
     if (controlMode !== 'manual') {
