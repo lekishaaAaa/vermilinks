@@ -120,8 +120,7 @@ const TELEMETRY_SMOOTH_ALPHA = (() => {
   const raw = Number(process.env.REACT_APP_TELEMETRY_SMOOTH_ALPHA ?? 0.4);
   return Number.isFinite(raw) && raw > 0 && raw <= 1 ? raw : 0.4;
 })();
-const DEVICE_ONLINE_CONFIRM = Number(process.env.REACT_APP_DEVICE_ONLINE_CONFIRM || 3);
-const DEVICE_OFFLINE_CONFIRM = Number(process.env.REACT_APP_DEVICE_OFFLINE_CONFIRM || 3);
+const DEVICE_FRESHNESS_MS = 60000;
 const STALE_TELEMETRY_THRESHOLD_MS = (() => {
   const raw = Number(process.env.REACT_APP_HIDE_STALE_MS || 5 * 60 * 1000);
   return Number.isFinite(raw) && raw > 0 ? raw : 5 * 60 * 1000;
@@ -349,7 +348,6 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
   const backendBaseRef = useRef<string>('');
   const latestTelemetryRef = useRef<SensorData | null>(null);
   const telemetryCacheRef = useRef<SensorData[]>([]);
-  const deviceOnlineCountsRef = useRef<Record<string, number>>({});
   useEffect(() => {
     latestTelemetryRef.current = latestTelemetry;
   }, [latestTelemetry]);
@@ -382,23 +380,11 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
     setDeviceStatuses((prev) => {
       const existing = prev[update.deviceId];
       const deviceId = update.deviceId;
-      const wasOnline = existing?.online ?? false;
-
-      // Maintain a signed counter: positive = consecutive online confirmations, negative = consecutive offline confirmations
-      const counts = deviceOnlineCountsRef.current || {};
-      let counter = counts[deviceId] ?? 0;
-      if (update.online) {
-        counter = Math.min(counter + 1, DEVICE_ONLINE_CONFIRM);
-      } else if (typeof update.online === 'boolean') {
-        counter = Math.max(counter - 1, -DEVICE_OFFLINE_CONFIRM);
-      }
-      counts[deviceId] = counter;
-      deviceOnlineCountsRef.current = counts;
-
-      const nowConfirmedOnline = counter >= DEVICE_ONLINE_CONFIRM;
-      const nowConfirmedOffline = counter <= -DEVICE_OFFLINE_CONFIRM;
-
-      const nextOnline = nowConfirmedOnline ? true : nowConfirmedOffline ? false : wasOnline;
+      const heartbeat = update.lastHeartbeat ?? existing?.lastHeartbeat ?? null;
+      const heartbeatMs = heartbeat ? new Date(heartbeat).getTime() : NaN;
+      const nextOnline = Number.isFinite(heartbeatMs)
+        ? (Date.now() - heartbeatMs) < DEVICE_FRESHNESS_MS
+        : Boolean(update.online ?? existing?.online ?? false);
 
       const next: DeviceStatusInfo = {
         deviceId,

@@ -298,7 +298,7 @@ async function handleStateMessage(payload, topic) {
   }
 
   if (payload.requestId) {
-    const pending = await PendingCommand.findOne({ where: { requestId: payload.requestId, status: ['sent', 'waiting'] } });
+    const pending = await PendingCommand.findOne({ where: { requestId: payload.requestId, status: { [Op.in]: ['sent', 'waiting'] } } });
     if (pending) {
       const desired = pending.desiredState || {};
       const matches =
@@ -427,7 +427,7 @@ async function handleAckMessage(payload) {
     {
       where: {
         requestId,
-        status: ['sent', 'waiting'],
+        status: { [Op.in]: ['sent', 'waiting'] },
       },
     },
   );

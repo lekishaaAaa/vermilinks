@@ -51,7 +51,7 @@ async function ensureNoPendingCommand(deviceId) {
   const existing = await PendingCommand.findOne({
     where: {
       deviceId,
-      status: ['sent', 'waiting'],
+      status: { [Op.in]: ['sent', 'waiting'] },
     },
   });
   return existing || null;

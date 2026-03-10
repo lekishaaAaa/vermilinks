@@ -1,7 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchLatest, sendActuatorCommand, DeviceStatePayload } from '../services/iotControl';
-import { deviceService } from '../services/api';
-import { socket as sharedSocket } from '../socket';
 
 const initialState = {
   pump: false,
@@ -25,16 +23,23 @@ const ACTUATOR_LABEL_MAP: Record<keyof typeof initialState, string> = {
 };
 
 const ACTUATOR_DEVICE_ID = 'esp32A';
+const DEVICE_FRESHNESS_MS = 60000;
+const COMMAND_PENDING_TIMEOUT_MS = 3000;
+const FAILSAFE_REFRESH_MS = 5000;
+const RAPID_TOGGLE_DEBOUNCE_MS = 400;
+const ACTUATOR_REFRESH_INTERVAL_MS = 2000;
 
-const normalizeDeviceId = (value?: string | null) => (value || '').toString().trim().toLowerCase();
-
-const isActuatorDeviceStatusPayload = (payload: any) => {
-  return normalizeDeviceId(payload?.deviceId || payload?.device_id) === ACTUATOR_DEVICE_ID.toLowerCase();
+const isDeviceFresh = (timestamp?: string | null) => {
+  if (!timestamp) {
+    return false;
+  }
+  const parsed = new Date(timestamp).getTime();
+  return Number.isFinite(parsed) ? (Date.now() - parsed) < DEVICE_FRESHNESS_MS : false;
 };
 
 const ActuatorControls: React.FC = () => {
   const [deviceState, setDeviceState] = useState<DeviceStatePayload | null>(null);
-  const [desiredState, setDesiredState] = useState(initialState);
+  const [optimisticState, setOptimisticState] = useState<typeof initialState | null>(null);
   const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -42,14 +47,27 @@ const ActuatorControls: React.FC = () => {
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [controlMode, setControlMode] = useState<'automatic' | 'manual'>('manual');
   const [forcePumpOverride, setForcePumpOverride] = useState(false);
+  const lastCommandAtRef = useRef(0);
 
   const floatLow = useMemo(() => {
     const value = deviceState?.float_state ?? deviceState?.float ?? null;
     return (value || '').toString().toUpperCase() === 'LOW';
   }, [deviceState?.float, deviceState?.float_state]);
 
-  const applyOnlineStatus = useCallback((nextOnline: boolean, timestamp?: string | null) => {
-    setOnline(Boolean(nextOnline));
+  const displayState = useMemo(() => {
+    if (optimisticState) {
+      return optimisticState;
+    }
+    return {
+      pump: Boolean(deviceState?.pump),
+      valve1: Boolean(deviceState?.valve1),
+      valve2: Boolean(deviceState?.valve2),
+      valve3: Boolean(deviceState?.valve3),
+    };
+  }, [deviceState?.pump, deviceState?.valve1, deviceState?.valve2, deviceState?.valve3, optimisticState]);
+
+  const applyOnlineStatus = useCallback((timestamp?: string | null) => {
+    setOnline(isDeviceFresh(timestamp));
     if (timestamp) {
       setLastUpdated(timestamp);
     }
@@ -61,12 +79,7 @@ const ActuatorControls: React.FC = () => {
     }
 
     setDeviceState(payload);
-    setDesiredState({
-      pump: Boolean(payload.pump),
-      valve1: Boolean(payload.valve1),
-      valve2: Boolean(payload.valve2),
-      valve3: Boolean(payload.valve3),
-    });
+    setOptimisticState(null);
 
     if (payload.ts) {
       setLastUpdated(payload.ts);
@@ -80,6 +93,8 @@ const ActuatorControls: React.FC = () => {
 
     if (payload.source === 'safety_override') {
       setErrorMessage('Safety override applied. Pump disabled by float sensor.');
+    } else if (payload.source) {
+      setErrorMessage(null);
     }
     if (payload.forcePumpOverride === true) {
       setForcePumpOverride(true);
@@ -88,31 +103,27 @@ const ActuatorControls: React.FC = () => {
 
   const loadLatest = useCallback(async () => {
     try {
-      const [latest, statusResponse] = await Promise.all([
-        fetchLatest(),
-        deviceService.getStatus(),
-      ]);
+      const latest = await fetchLatest();
 
-      const statusEntry = (statusResponse?.data?.devices || []).find((device) => {
-        return normalizeDeviceId(device?.device_id) === ACTUATOR_DEVICE_ID.toLowerCase();
-      });
-
-      applyOnlineStatus(Boolean(statusEntry?.online), statusEntry?.last_seen || null);
+      const lastSeen = latest?.lastSeen ?? latest?.lastHeartbeat ?? latest?.deviceState?.ts ?? latest?.telemetry?.updated_at ?? latest?.telemetry?.timestamp ?? null;
+      applyOnlineStatus(lastSeen);
 
       if (latest?.deviceState) {
         applyDeviceState(latest.deviceState);
       }
-      if (latest?.pendingCommand?.requestId) {
+      if (pendingRequestId && latest?.pendingCommand?.requestId === pendingRequestId) {
         setPendingRequestId(latest.pendingCommand.requestId);
         setLoading(true);
       } else {
         setPendingRequestId(null);
         setLoading(false);
+        setOptimisticState(null);
       }
     } catch (error) {
       setErrorMessage('Unable to load actuator state.');
+      setLoading(false);
     }
-  }, [applyDeviceState]);
+  }, [applyDeviceState, applyOnlineStatus, pendingRequestId]);
 
   useEffect(() => {
     loadLatest();
@@ -121,7 +132,7 @@ const ActuatorControls: React.FC = () => {
   useEffect(() => {
     const intervalId = window.setInterval(() => {
       loadLatest();
-    }, 5000);
+    }, ACTUATOR_REFRESH_INTERVAL_MS);
 
     return () => {
       window.clearInterval(intervalId);
@@ -129,37 +140,33 @@ const ActuatorControls: React.FC = () => {
   }, [loadLatest]);
 
   useEffect(() => {
-    if (!sharedSocket) {
+    if (!pendingRequestId) {
       return undefined;
     }
 
-    const handleState = (payload: DeviceStatePayload) => {
-      applyDeviceState(payload);
-    };
+    const unlockTimer = window.setTimeout(() => {
+      setLoading(false);
+      setPendingRequestId(null);
+      setOptimisticState(null);
+      loadLatest().catch(() => null);
+    }, COMMAND_PENDING_TIMEOUT_MS);
 
-    const handleDeviceStatus = (payload: any) => {
-      if (!isActuatorDeviceStatusPayload(payload)) {
-        return;
-      }
+    const failsafeTimer = window.setTimeout(() => {
+      loadLatest().catch(() => null);
+    }, FAILSAFE_REFRESH_MS);
 
-      const statusTimestamp = payload?.lastHeartbeat || payload?.last_seen || payload?.updatedAt || null;
-      applyOnlineStatus(Boolean(payload?.online ?? ((payload?.status || '').toString().toLowerCase() === 'online')), statusTimestamp);
-    };
-
-    sharedSocket.on('actuator:state', handleState);
-    sharedSocket.on('device:status', handleDeviceStatus);
-    sharedSocket.on('device_status', handleDeviceStatus);
-    sharedSocket.on('deviceHeartbeat', handleDeviceStatus);
     return () => {
-      sharedSocket.off('actuator:state', handleState);
-      sharedSocket.off('device:status', handleDeviceStatus);
-      sharedSocket.off('device_status', handleDeviceStatus);
-      sharedSocket.off('deviceHeartbeat', handleDeviceStatus);
+      window.clearTimeout(unlockTimer);
+      window.clearTimeout(failsafeTimer);
     };
-  }, [applyDeviceState, applyOnlineStatus]);
+  }, [loadLatest, pendingRequestId]);
 
   const handleToggle = async (key: keyof typeof initialState) => {
     if (controlMode !== 'manual') {
+      return;
+    }
+    const now = Date.now();
+    if ((now - lastCommandAtRef.current) < RAPID_TOGGLE_DEBOUNCE_MS) {
       return;
     }
     if (loading) {
@@ -169,12 +176,14 @@ const ActuatorControls: React.FC = () => {
       return;
     }
 
+    lastCommandAtRef.current = now;
+
     const nextState = {
-      ...desiredState,
-      [key]: !desiredState[key],
+      ...displayState,
+      [key]: !displayState[key],
     };
 
-    setDesiredState(nextState);
+    setOptimisticState(nextState);
 
     setLoading(true);
     setErrorMessage(null);
@@ -189,13 +198,16 @@ const ActuatorControls: React.FC = () => {
       if (result?.requestId) {
         setPendingRequestId(result.requestId);
       } else {
+        setOptimisticState(null);
         setLoading(false);
         setErrorMessage('Command dispatched but no confirmation ID returned.');
+        loadLatest().catch(() => null);
       }
     } catch (error: any) {
-      setDesiredState(desiredState);
+      setOptimisticState(null);
       setLoading(false);
       setErrorMessage(error?.response?.data?.message || 'Failed to send command.');
+      loadLatest().catch(() => null);
     }
   };
 
@@ -305,7 +317,7 @@ const ActuatorControls: React.FC = () => {
       <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {(['pump', 'valve1', 'valve2', 'valve3'] as const).map((key) => {
           const disabled = getToggleDisabled(key);
-          const checked = desiredState[key];
+          const checked = displayState[key];
 
           return (
             <div

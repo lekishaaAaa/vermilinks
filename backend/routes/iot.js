@@ -39,7 +39,7 @@ router.get('/latest', async (req, res) => {
     const pending = await PendingCommand.findOne({
       where: {
         deviceId: 'esp32a',
-        status: ['sent', 'waiting'],
+        status: { [Op.in]: ['sent', 'waiting'] },
         createdAt: { [Op.gte]: pendingCutoff },
       },
       order: [['createdAt', 'DESC']],

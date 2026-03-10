@@ -6,6 +6,8 @@ const SensorData = require('../models/SensorData');
 const Device = require('../models/Device');
 const SensorSnapshot = require('../models/SensorSnapshot');
 const ActuatorLog = require('../models/ActuatorLog');
+const ActuatorState = require('../models/ActuatorState');
+const PendingCommand = require('../models/PendingCommand');
 const deviceManager = require('../services/deviceManager');
 const { auth, adminOnly } = require('../middleware/auth');
 const {
@@ -29,6 +31,9 @@ const STALE_SENSOR_MAX_AGE_MS = Math.max(
   2000,
   parseInt(process.env.SENSOR_STALE_THRESHOLD_MS || process.env.DEVICE_OFFLINE_TIMEOUT_MS || '60000', 10)
 );
+
+const DEVICE_FRESHNESS_MS = 60000;
+const COMMAND_PENDING_UI_TIMEOUT_MS = 3000;
 
 const router = express.Router();
 const sensorCache = new NodeCache({ stdTTL: 5, checkperiod: 2 });
@@ -437,13 +442,88 @@ router.get('/latest', async (req, res) => {
       }
     }
 
-    sensorCache.set(cacheKey, formatted || null);
+    let deviceState = null;
+    let pendingCommand = null;
+    let lastSeenIso = null;
+    let deviceOnline = false;
 
-    if (!formatted) {
+    if (deviceId) {
+      const [deviceRecord, stateRow, pendingRow] = await Promise.all([
+        Device.findOne({ where: buildDeviceIdWhere(deviceId), raw: true }).catch(() => null),
+        ActuatorState.findOne({ where: { actuatorKey: deviceId }, raw: true }).catch(() => null),
+        PendingCommand.findOne({
+          where: {
+            deviceId,
+            status: { [Op.in]: ['sent', 'waiting'] },
+            createdAt: { [Op.gte]: new Date(Date.now() - COMMAND_PENDING_UI_TIMEOUT_MS) },
+          },
+          order: [['createdAt', 'DESC']],
+          raw: true,
+        }).catch(() => null),
+      ]);
+
+      if (stateRow && stateRow.state && typeof stateRow.state === 'object') {
+        deviceState = {
+          ...stateRow.state,
+          ts: stateRow.state.ts || ensureIsoString(stateRow.reportedAt),
+          float_state: stateRow.state.float_state || stateRow.state.float || null,
+          forcePumpOverride: stateRow.state.forcePumpOverride === true,
+        };
+      }
+
+      const lastSeenCandidates = [
+        deviceRecord?.lastHeartbeat,
+        deviceRecord?.lastSeen,
+        stateRow?.reportedAt,
+        deviceState?.ts,
+        formatted?.updated_at,
+        formatted?.timestamp,
+      ]
+        .map((value) => value ? new Date(value).getTime() : NaN)
+        .filter((value) => Number.isFinite(value));
+
+      const lastSeenMs = lastSeenCandidates.length > 0 ? Math.max(...lastSeenCandidates) : NaN;
+      lastSeenIso = Number.isFinite(lastSeenMs) ? new Date(lastSeenMs).toISOString() : null;
+      deviceOnline = Number.isFinite(lastSeenMs) ? (Date.now() - lastSeenMs) < DEVICE_FRESHNESS_MS : false;
+
+      if (pendingRow) {
+        pendingCommand = {
+          requestId: pendingRow.requestId,
+          status: pendingRow.status,
+        };
+      }
+    }
+
+    const responsePayload = formatted || (deviceId ? {
+      deviceId,
+      device_id: deviceId,
+      temperature: null,
+      humidity: null,
+      soil_moisture: null,
+      soil_temperature: null,
+      water_level: null,
+      float_state: deviceState?.float_state === 'LOW' ? 0 : deviceState?.float_state === 'FULL' ? 2 : deviceState?.float_state === 'NORMAL' ? 1 : null,
+      signal_strength: null,
+      timestamp: lastSeenIso,
+      updated_at: lastSeenIso,
+    } : null);
+
+    const enrichedPayload = responsePayload ? {
+      ...responsePayload,
+      deviceState,
+      pendingCommand,
+      deviceOnline,
+      lastSeen: lastSeenIso,
+      lastHeartbeat: lastSeenIso,
+    } : null;
+
+    sensorCache.set(cacheKey, enrichedPayload || null);
+
+    if (!enrichedPayload) {
       return res.status(204).send();
     }
 
-    return res.json(formatted);
+    return res.json(enrichedPayload);
   } catch (error) {
     console.error('GET /api/sensors/latest err', error);
     return res.status(500).json({ error: 'server_error' });

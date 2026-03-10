@@ -17,11 +17,37 @@ export interface LatestPayload {
   telemetry: any | null;
   deviceState: DeviceStatePayload | null;
   pendingCommand: { requestId: string } | null;
+  deviceOnline?: boolean;
+  lastSeen?: string | null;
+  lastHeartbeat?: string | null;
 }
 
 export async function fetchLatest() {
-  const response = await api.get('/latest');
-  return response?.data?.data as LatestPayload;
+  const response = await api.get('/sensors/latest', {
+    params: { deviceId: 'esp32A' },
+    validateStatus: (status) => [200, 204].includes(status),
+  });
+
+  if (response.status === 204) {
+    return {
+      telemetry: null,
+      deviceState: null,
+      pendingCommand: null,
+      deviceOnline: false,
+      lastSeen: null,
+      lastHeartbeat: null,
+    } as LatestPayload;
+  }
+
+  const payload = response?.data || {};
+  return {
+    telemetry: payload,
+    deviceState: payload.deviceState ?? null,
+    pendingCommand: payload.pendingCommand ?? null,
+    deviceOnline: payload.deviceOnline,
+    lastSeen: payload.lastSeen ?? payload.lastHeartbeat ?? payload.updated_at ?? payload.timestamp ?? null,
+    lastHeartbeat: payload.lastHeartbeat ?? payload.lastSeen ?? null,
+  } as LatestPayload;
 }
 
 export async function sendControl(desired: { pump: boolean; valve1: boolean; valve2: boolean; valve3: boolean; forcePumpOverride?: boolean }) {
