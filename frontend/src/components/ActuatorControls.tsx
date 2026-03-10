@@ -25,6 +25,8 @@ type PendingOverrideState = {
   expiresAt: number;
 };
 
+type PendingActuatorsMap = Partial<Record<ActuatorKey, PendingActuatorState>>;
+
 const ACTUATOR_LABEL_MAP: Record<ActuatorKey, string> = {
   pump: 'Pump (Layer 4 Reservoir)',
   valve1: 'Layer 1 Solenoid',
@@ -56,7 +58,7 @@ const isDeviceFresh = (timestamp?: string | null) => {
 const ActuatorControls: React.FC = () => {
   const [deviceState, setDeviceState] = useState<DeviceStatePayload | null>(null);
   const [backendActuatorState, setBackendActuatorState] = useState<ActuatorViewState>(initialState);
-  const [pendingActuators, setPendingActuators] = useState<Partial<Record<ActuatorKey, PendingActuatorState>>>({});
+  const [pendingActuators, setPendingActuators] = useState<PendingActuatorsMap>({});
   const [pendingOverride, setPendingOverride] = useState<PendingOverrideState | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [online, setOnline] = useState(false);
@@ -64,8 +66,19 @@ const ActuatorControls: React.FC = () => {
   const [controlMode, setControlMode] = useState<'automatic' | 'manual'>('manual');
   const [forcePumpOverride, setForcePumpOverride] = useState(false);
   const lastCommandAtRef = useRef(0);
-  const pendingActuatorsRef = useRef<Partial<Record<ActuatorKey, PendingActuatorState>>>({});
+  const pendingActuatorsRef = useRef<PendingActuatorsMap>({});
   const pendingOverrideRef = useRef<PendingOverrideState | null>(null);
+
+  const setPendingOverrideState = useCallback((next: PendingOverrideState | null) => {
+    pendingOverrideRef.current = next;
+    setPendingOverride(next);
+  }, []);
+
+  const updatePendingActuatorsState: (updater: (current: PendingActuatorsMap) => PendingActuatorsMap) => void = useCallback((updater) => {
+    const next = updater(pendingActuatorsRef.current);
+    pendingActuatorsRef.current = next;
+    setPendingActuators(next);
+  }, []);
 
   useEffect(() => {
     pendingActuatorsRef.current = pendingActuators;
@@ -137,7 +150,7 @@ const ActuatorControls: React.FC = () => {
     const normalizedSource = (payload.source || '').toString().toLowerCase();
     const safetyOverrideApplied = normalizedSource === 'safety_override' || normalizedSource === 'safety';
 
-    setPendingActuators((current) => {
+    updatePendingActuatorsState((current: PendingActuatorsMap) => {
       const next = { ...current };
       (Object.keys(next) as ActuatorKey[]).forEach((key) => {
         if (polledActuatorState[key] === next[key]?.desired) {
@@ -147,22 +160,21 @@ const ActuatorControls: React.FC = () => {
       return next;
     });
 
-    setPendingOverride((current) => {
-      if (!current) {
-        return current;
-      }
-      if (Boolean(payload.forcePumpOverride) === current.desired || safetyOverrideApplied) {
-        return null;
-      }
-      return current;
-    });
+    const currentPendingOverride = pendingOverrideRef.current;
+    if (!currentPendingOverride) {
+      setPendingOverrideState(null);
+    } else if (Boolean(payload.forcePumpOverride) === currentPendingOverride.desired || safetyOverrideApplied) {
+      setPendingOverrideState(null);
+    } else {
+      setPendingOverrideState(currentPendingOverride);
+    }
 
     if (payload.source === 'safety_override') {
       setErrorMessage('Safety override applied. Pump disabled by float sensor.');
     } else if (payload.source) {
       setErrorMessage(null);
     }
-  }, []);
+  }, [setPendingOverrideState, updatePendingActuatorsState]);
 
   const loadLatest = useCallback(async () => {
     try {
@@ -203,11 +215,11 @@ const ActuatorControls: React.FC = () => {
 
     actuatorEntries.forEach(([key, entry]) => {
       timers.push(window.setTimeout(() => {
-        setPendingActuators((current) => {
-          if (!current[key]) {
-            return current;
+        updatePendingActuatorsState((current: PendingActuatorsMap) => {
+          if (!pendingActuatorsRef.current[key]) {
+            return pendingActuatorsRef.current;
           }
-          const next = { ...current };
+          const next = { ...pendingActuatorsRef.current };
           delete next[key];
           return next;
         });
@@ -218,7 +230,7 @@ const ActuatorControls: React.FC = () => {
 
     if (pendingOverride) {
       timers.push(window.setTimeout(() => {
-        setPendingOverride(null);
+        setPendingOverrideState(null);
         setErrorMessage('Force override confirmation timed out. Refreshed last known actuator state.');
         loadLatest().catch(() => null);
       }, Math.max(0, pendingOverride.expiresAt - Date.now())));
@@ -227,7 +239,7 @@ const ActuatorControls: React.FC = () => {
     return () => {
       timers.forEach((timerId) => window.clearTimeout(timerId));
     };
-  }, [loadLatest, pendingActuators, pendingOverride]);
+  }, [loadLatest, pendingActuators, pendingOverride, setPendingOverrideState, updatePendingActuatorsState]);
 
   const handleToggle = async (key: ActuatorKey) => {
     if (controlMode !== 'manual') {
@@ -252,7 +264,7 @@ const ActuatorControls: React.FC = () => {
       [key]: !displayState[key],
     };
 
-    setPendingActuators((current) => ({
+    updatePendingActuatorsState((current: PendingActuatorsMap) => ({
       ...current,
       [key]: {
         requestId: null,
@@ -269,7 +281,7 @@ const ActuatorControls: React.FC = () => {
         forcePumpOverride: displayForcePumpOverride,
       });
       if (result?.requestId) {
-        setPendingActuators((current) => {
+        updatePendingActuatorsState((current: PendingActuatorsMap) => {
           const entry = current[key];
           if (!entry) {
             return current;
@@ -283,7 +295,7 @@ const ActuatorControls: React.FC = () => {
           };
         });
       } else {
-        setPendingActuators((current) => {
+        updatePendingActuatorsState((current: PendingActuatorsMap) => {
           const next = { ...current };
           delete next[key];
           return next;
@@ -292,7 +304,7 @@ const ActuatorControls: React.FC = () => {
         loadLatest().catch(() => null);
       }
     } catch (error: any) {
-      setPendingActuators((current) => {
+      updatePendingActuatorsState((current: PendingActuatorsMap) => {
         const next = { ...current };
         delete next[key];
         return next;
@@ -323,12 +335,13 @@ const ActuatorControls: React.FC = () => {
     }
 
     lastCommandAtRef.current = now;
-    setPendingOverride({
+    const nextPendingOverride: PendingOverrideState = {
       requestId: null,
       desired: nextChecked,
       lockUntil: now + COMMAND_PENDING_TIMEOUT_MS,
       expiresAt: now + FAILSAFE_REFRESH_MS,
-    });
+    };
+    setPendingOverrideState(nextPendingOverride);
     setErrorMessage(null);
 
     try {
@@ -337,14 +350,17 @@ const ActuatorControls: React.FC = () => {
         forcePumpOverride: nextChecked,
       });
       if (result?.requestId) {
-        setPendingOverride((current) => current ? { ...current, requestId: result.requestId } : current);
+        setPendingOverrideState({
+          ...nextPendingOverride,
+          requestId: result.requestId,
+        });
       } else {
-        setPendingOverride(null);
+        setPendingOverrideState(null);
         setErrorMessage('Command dispatched but no confirmation ID returned.');
         loadLatest().catch(() => null);
       }
     } catch (error: any) {
-      setPendingOverride(null);
+      setPendingOverrideState(null);
       setErrorMessage(error?.response?.data?.message || 'Failed to send command.');
       loadLatest().catch(() => null);
     }
