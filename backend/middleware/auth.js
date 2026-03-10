@@ -123,6 +123,7 @@ const auth = async (req, res, next) => {
     }
 
     req.user = user;
+    req.authTokenPayload = decoded;
     next();
   } catch (error) {
     if (error.name === 'JsonWebTokenError') {
@@ -170,10 +171,22 @@ const requireOtpVerified = (req, res, next) => {
   const metadata = req.session && req.session.metadata ? req.session.metadata : null;
   const verifiedAt = metadata && (metadata.otpVerifiedAt || metadata.otp_verified_at);
   if (!verifiedAt) {
-    return res.status(403).json({
-      success: false,
-      message: 'OTP verification required.'
-    });
+    const tokenPayload = req.authTokenPayload && typeof req.authTokenPayload === 'object'
+      ? req.authTokenPayload
+      : null;
+    const isOtpBackedAdminToken = Boolean(
+      tokenPayload &&
+      tokenPayload.role === 'admin' &&
+      typeof tokenPayload.email === 'string' &&
+      tokenPayload.email.trim().length > 0
+    );
+
+    if (!isOtpBackedAdminToken) {
+      return res.status(403).json({
+        success: false,
+        message: 'OTP verification required.'
+      });
+    }
   }
 
   return next();
