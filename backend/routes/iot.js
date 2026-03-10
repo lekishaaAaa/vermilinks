@@ -1,5 +1,5 @@
 const express = require('express');
-const { fn, col, where } = require('sequelize');
+const { Op, fn, col, where } = require('sequelize');
 const { SensorData, SensorSnapshot, ActuatorState, PendingCommand, Alert, Settings } = require('../models');
 const { validateControlPayload, createCommand } = require('../services/iotCommandService');
 const { auth, adminOnly, requireOtpVerified } = require('../middleware/auth');
@@ -7,6 +7,10 @@ const { auth, adminOnly, requireOtpVerified } = require('../middleware/auth');
 const router = express.Router();
 
 const PRIMARY_DEVICE_ID = 'esp32a';
+const COMMAND_ACK_TIMEOUT_MS = Math.max(
+  5000,
+  parseInt(process.env.COMMAND_ACK_TIMEOUT_MS || '25000', 10),
+);
 const buildDeviceIdWhere = (deviceId) => where(fn('lower', col('device_id')), deviceId);
 
 router.get('/latest', async (req, res) => {
@@ -31,8 +35,13 @@ router.get('/latest', async (req, res) => {
     }
 
     const stateRow = await ActuatorState.findOne({ where: { actuatorKey: 'esp32a' }, raw: true });
+    const pendingCutoff = new Date(Date.now() - COMMAND_ACK_TIMEOUT_MS);
     const pending = await PendingCommand.findOne({
-      where: { deviceId: 'esp32a', status: ['sent', 'waiting'] },
+      where: {
+        deviceId: 'esp32a',
+        status: ['sent', 'waiting'],
+        createdAt: { [Op.gte]: pendingCutoff },
+      },
       order: [['createdAt', 'DESC']],
       raw: true,
     });

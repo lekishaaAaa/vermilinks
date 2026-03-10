@@ -31,6 +31,7 @@ const TELEMETRY_TOPICS = new Set([
 const TELEMETRY_WILDCARD_TOPIC = 'vermilinks/+/telemetry';
 const METRICS_WILDCARD_TOPIC = 'vermilinks/+/metrics';
 const STATE_WILDCARD_TOPIC = 'vermilinks/+/state';
+const STATUS_WILDCARD_TOPIC = 'vermilinks/+/status';
 const COMMANDS_WILDCARD_TOPIC = 'vermilinks/+/commands';
 
 const STATE_TOPICS = new Set(['vermilinks/esp32a/state']);
@@ -690,6 +691,7 @@ function startIotMqtt() {
     TELEMETRY_WILDCARD_TOPIC,
     METRICS_WILDCARD_TOPIC,
     STATE_WILDCARD_TOPIC,
+    STATUS_WILDCARD_TOPIC,
     COMMANDS_WILDCARD_TOPIC,
     `${TOPICS.deviceStatusPrefix}#`,
   ];

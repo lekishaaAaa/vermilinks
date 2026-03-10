@@ -105,6 +105,9 @@ const ActuatorControls: React.FC = () => {
       if (latest?.pendingCommand?.requestId) {
         setPendingRequestId(latest.pendingCommand.requestId);
         setLoading(true);
+      } else {
+        setPendingRequestId(null);
+        setLoading(false);
       }
     } catch (error) {
       setErrorMessage('Unable to load actuator state.');
