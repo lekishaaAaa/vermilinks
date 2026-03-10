@@ -20,7 +20,8 @@ static bool mqttClientIdReady = false;
 static ActuatorState lastState;
 
 static void onMqttMessage(char* topic, byte* payload, unsigned int length) {
-  if (String(topic) != TOPIC_COMMAND) {
+  const String topicValue(topic);
+  if (topicValue != TOPIC_COMMAND && topicValue != TOPIC_COMMAND_LEGACY) {
     return;
   }
 
@@ -88,6 +89,7 @@ void mqttEnsureConnected() {
   mqttClient.publish(kLwtTopic, kLwtOnlinePayload, kLwtQos, kLwtRetained);
 
   mqttClient.subscribe(TOPIC_COMMAND);
+  mqttClient.subscribe(TOPIC_COMMAND_LEGACY);
 
   if (stateRef) {
     mqttPublishState(*stateRef, true);
@@ -110,7 +112,9 @@ void mqttPublishState(const ActuatorState& state, bool retained) {
   payload += "\"valve1\":" + String(state.valve1 ? "true" : "false") + ",";
   payload += "\"valve2\":" + String(state.valve2 ? "true" : "false") + ",";
   payload += "\"valve3\":" + String(state.valve3 ? "true" : "false") + ",";
+  payload += "\"forcePumpOverride\":" + String(state.forcePumpOverride ? "true" : "false") + ",";
   payload += "\"float\":\"" + state.floatState + "\",";
+  payload += "\"float_state\":\"" + state.floatState + "\",";
   payload += "\"requestId\":\"" + state.requestId + "\",";
   payload += "\"source\":\"" + state.source + "\",";
   payload += "\"timestamp\":" + String(unixTs) + ",";
@@ -181,8 +185,9 @@ void mqttHandleCommand(const char* payload) {
   stateRef->valve1 = doc["valve1"].as<bool>();
   stateRef->valve2 = doc["valve2"].as<bool>();
   stateRef->valve3 = doc["valve3"].as<bool>();
+  stateRef->forcePumpOverride = doc["forcePumpOverride"].is<bool>() ? doc["forcePumpOverride"].as<bool>() : false;
   stateRef->requestId = String(requestId);
-  stateRef->source = "applied";
+  stateRef->source = stateRef->forcePumpOverride ? "forced_manual_override" : "applied";
 
   enforceFloatSafety(*stateRef);
   applyActuatorState(*stateRef);
@@ -197,6 +202,7 @@ void mqttHandleCommand(const char* payload) {
   ackPayload += "\"valve1\":" + String(stateRef->valve1 ? "true" : "false") + ",";
   ackPayload += "\"valve2\":" + String(stateRef->valve2 ? "true" : "false") + ",";
   ackPayload += "\"valve3\":" + String(stateRef->valve3 ? "true" : "false") + ",";
+  ackPayload += "\"forcePumpOverride\":" + String(stateRef->forcePumpOverride ? "true" : "false") + ",";
   ackPayload += "\"source\":\"" + stateRef->source + "\",";
   ackPayload += "\"ts\":" + String(static_cast<long>(time(nullptr)));
   ackPayload += "}";

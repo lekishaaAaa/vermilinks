@@ -17,6 +17,7 @@ const TOPICS = {
   ack: 'vermilinks/esp32a/ack',
   statusA: 'vermilinks/esp32a/status',
   command: 'vermilinks/esp32A/commands',
+  legacyCommand: 'vermilinks/esp32a/command',
   telemetry: 'vermilinks/esp32b/metrics',
   statusB: 'vermilinks/esp32b/status',
   deviceStatusPrefix: 'vermilinks/device_status/',
@@ -809,8 +810,12 @@ function publishCommand(commandPayload) {
   if (!client) {
     throw new Error('MQTT client not initialized');
   }
+  if (!client.connected) {
+    throw new Error('MQTT client is not connected');
+  }
   const message = JSON.stringify(commandPayload);
   client.publish(TOPICS.command, message, { qos: 1, retain: false });
+  client.publish(TOPICS.legacyCommand, message, { qos: 1, retain: false });
 }
 
 function getConnectionStatus() {

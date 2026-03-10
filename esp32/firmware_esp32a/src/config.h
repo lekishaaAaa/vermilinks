@@ -11,10 +11,11 @@ static const int MQTT_PORT = 1883;
 static const char* MQTT_USER = "YOUR_MQTT_USER";
 static const char* MQTT_PASS = "YOUR_MQTT_PASSWORD";
 
-static const char* TOPIC_STATE = "vermilinks/esp32a/state";
-static const char* TOPIC_STATUS = "vermilinks/esp32a/status";
-static const char* TOPIC_COMMAND = "vermilinks/esp32a/command";
-static const char* TOPIC_ACK = "vermilinks/esp32a/ack";
+static const char* TOPIC_STATE = "vermilinks/esp32A/state";
+static const char* TOPIC_STATUS = "vermilinks/esp32A/status";
+static const char* TOPIC_COMMAND = "vermilinks/esp32A/commands";
+static const char* TOPIC_COMMAND_LEGACY = "vermilinks/esp32a/command";
+static const char* TOPIC_ACK = "vermilinks/esp32A/ack";
 
 // Actuator GPIO hard-lock (do not override)
 #if defined(FLOAT_PIN) || defined(PUMP_PIN) || defined(VALVE1_PIN) || defined(VALVE2_PIN) || defined(VALVE3_PIN)

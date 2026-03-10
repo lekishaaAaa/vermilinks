@@ -132,6 +132,7 @@ void loop() {
     currentState.valve1 != lastPublishedState.valve1 ||
     currentState.valve2 != lastPublishedState.valve2 ||
     currentState.valve3 != lastPublishedState.valve3 ||
+    currentState.forcePumpOverride != lastPublishedState.forcePumpOverride ||
     currentState.floatState != lastPublishedState.floatState;
 
   if (stateChanged && mqttConnected()) {

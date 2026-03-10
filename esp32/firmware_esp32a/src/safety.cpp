@@ -15,10 +15,15 @@ bool floatIsLow() {
 
 void enforceFloatSafety(ActuatorState& state) {
   if (floatIsLow()) {
-    state.pump = false;
     state.floatState = "LOW";
-    state.source = "safety_override";
+    if (!state.forcePumpOverride) {
+      state.pump = false;
+      state.source = "safety_override";
+    } else if (state.source != "forced_manual_override") {
+      state.source = "forced_manual_override";
+    }
   } else {
-    state.floatState = "HIGH";
+    state.floatState = "NORMAL";
+    state.forcePumpOverride = false;
   }
 }
