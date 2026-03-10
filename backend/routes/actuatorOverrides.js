@@ -1,4 +1,5 @@
 const express = require('express');
+const { fn, col, where } = require('sequelize');
 const { body, validationResult } = require('express-validator');
 const { auth, adminOnly } = require('../middleware/auth');
 const ActuatorState = require('../models/ActuatorState');
@@ -9,6 +10,19 @@ const logger = require('../utils/logger');
 const { REALTIME_EVENTS, emitRealtime } = require('../utils/realtime');
 
 const router = express.Router();
+
+const normalizeDeviceId = (value) => {
+  const normalized = (value || '').toString().trim().toLowerCase();
+  return normalized || null;
+};
+
+const buildActuatorKeyWhere = (deviceId) => {
+  const normalized = normalizeDeviceId(deviceId);
+  if (!normalized) {
+    return null;
+  }
+  return where(fn('lower', col('actuator_key')), normalized);
+};
 
 const ACTUATOR_KEY_MAP = new Map([
   ['pump', 'pump'],
@@ -56,7 +70,7 @@ router.post('/command', [auth, adminOnly, body('actuator').isString().notEmpty()
     }
 
     const deviceId = (req.body.device_id || req.body.deviceId || 'esp32A').toString().trim() || 'esp32A';
-    const stateRow = await ActuatorState.findOne({ where: { actuatorKey: deviceId }, order: [['reportedAt', 'DESC']] }).catch(() => null);
+    const stateRow = await ActuatorState.findOne({ where: buildActuatorKeyWhere(deviceId), order: [['reportedAt', 'DESC']] }).catch(() => null);
     const current = stateRow && stateRow.state ? stateRow.state : {};
 
     const desiredState = {

@@ -86,6 +86,14 @@ const buildDeviceIdWhere = (deviceId) => {
   return where(fn('lower', col('device_id')), normalized);
 };
 
+const buildActuatorKeyWhere = (deviceId) => {
+  const normalized = normalizeDeviceId(deviceId);
+  if (!normalized) {
+    return null;
+  }
+  return where(fn('lower', col('actuator_key')), normalized);
+};
+
 
 const formatLatestSnapshot = (snapshot) => {
   if (!snapshot) {
@@ -450,7 +458,7 @@ router.get('/latest', async (req, res) => {
     if (deviceId) {
       const [deviceRecord, stateRow, pendingRow] = await Promise.all([
         Device.findOne({ where: buildDeviceIdWhere(deviceId), raw: true }).catch(() => null),
-        ActuatorState.findOne({ where: { actuatorKey: deviceId }, raw: true }).catch(() => null),
+        ActuatorState.findOne({ where: buildActuatorKeyWhere(deviceId), raw: true }).catch(() => null),
         PendingCommand.findOne({
           where: {
             deviceId,

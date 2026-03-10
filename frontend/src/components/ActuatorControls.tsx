@@ -8,14 +8,25 @@ const initialState = {
   valve3: false,
 };
 
-const ACTUATOR_COMMAND_MAP: Record<keyof typeof initialState, string> = {
+type ActuatorKey = keyof typeof initialState;
+type ActuatorViewState = typeof initialState;
+
+type PendingControlState = {
+  requestId: string | null;
+  desiredState: ActuatorViewState;
+  changedKeys: ActuatorKey[];
+  lockUntil: number;
+  expiresAt: number;
+};
+
+const ACTUATOR_COMMAND_MAP: Record<ActuatorKey, string> = {
   pump: 'pump',
   valve1: 'solenoid_1',
   valve2: 'solenoid_2',
   valve3: 'solenoid_3',
 };
 
-const ACTUATOR_LABEL_MAP: Record<keyof typeof initialState, string> = {
+const ACTUATOR_LABEL_MAP: Record<ActuatorKey, string> = {
   pump: 'Pump (Layer 4 Reservoir)',
   valve1: 'Layer 1 Solenoid',
   valve2: 'Layer 2 Solenoid',
@@ -29,6 +40,20 @@ const FAILSAFE_REFRESH_MS = 5000;
 const RAPID_TOGGLE_DEBOUNCE_MS = 400;
 const ACTUATOR_REFRESH_INTERVAL_MS = 2000;
 
+const toActuatorViewState = (payload?: Partial<DeviceStatePayload> | null): ActuatorViewState => ({
+  pump: Boolean(payload?.pump),
+  valve1: Boolean(payload?.valve1),
+  valve2: Boolean(payload?.valve2),
+  valve3: Boolean(payload?.valve3),
+});
+
+const actuatorStatesMatch = (left: ActuatorViewState, right: ActuatorViewState) => {
+  return left.pump === right.pump
+    && left.valve1 === right.valve1
+    && left.valve2 === right.valve2
+    && left.valve3 === right.valve3;
+};
+
 const isDeviceFresh = (timestamp?: string | null) => {
   if (!timestamp) {
     return false;
@@ -39,15 +64,19 @@ const isDeviceFresh = (timestamp?: string | null) => {
 
 const ActuatorControls: React.FC = () => {
   const [deviceState, setDeviceState] = useState<DeviceStatePayload | null>(null);
-  const [optimisticState, setOptimisticState] = useState<typeof initialState | null>(null);
-  const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [backendActuatorState, setBackendActuatorState] = useState<ActuatorViewState>(initialState);
+  const [pendingControl, setPendingControl] = useState<PendingControlState | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [online, setOnline] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [controlMode, setControlMode] = useState<'automatic' | 'manual'>('manual');
   const [forcePumpOverride, setForcePumpOverride] = useState(false);
   const lastCommandAtRef = useRef(0);
+  const pendingControlRef = useRef<PendingControlState | null>(null);
+
+  useEffect(() => {
+    pendingControlRef.current = pendingControl;
+  }, [pendingControl]);
 
   const floatLow = useMemo(() => {
     const value = deviceState?.float_state ?? deviceState?.float ?? null;
@@ -55,16 +84,15 @@ const ActuatorControls: React.FC = () => {
   }, [deviceState?.float, deviceState?.float_state]);
 
   const displayState = useMemo(() => {
-    if (optimisticState) {
-      return optimisticState;
+    if (pendingControl) {
+      return pendingControl.desiredState;
     }
-    return {
-      pump: Boolean(deviceState?.pump),
-      valve1: Boolean(deviceState?.valve1),
-      valve2: Boolean(deviceState?.valve2),
-      valve3: Boolean(deviceState?.valve3),
-    };
-  }, [deviceState?.pump, deviceState?.valve1, deviceState?.valve2, deviceState?.valve3, optimisticState]);
+    return backendActuatorState;
+  }, [backendActuatorState, pendingControl]);
+
+  const pendingRequestId = pendingControl?.requestId ?? null;
+  const commandPending = Boolean(pendingControl);
+  const commandLockActive = Boolean(pendingControl && Date.now() < pendingControl.lockUntil);
 
   const applyOnlineStatus = useCallback((timestamp?: string | null) => {
     setOnline(isDeviceFresh(timestamp));
@@ -78,28 +106,42 @@ const ActuatorControls: React.FC = () => {
       return;
     }
 
-    setDeviceState(payload);
-    setOptimisticState(null);
+    setDeviceState((current) => ({
+      ...(current || {}),
+      ...payload,
+    }));
+
+    const polledActuatorState = toActuatorViewState(payload);
+    setBackendActuatorState(polledActuatorState);
 
     if (payload.ts) {
       setLastUpdated(payload.ts);
     }
 
-    if (payload.requestId && pendingRequestId === payload.requestId) {
-      setPendingRequestId(null);
-      setLoading(false);
-      setErrorMessage(null);
+    if (typeof payload.forcePumpOverride === 'boolean') {
+      setForcePumpOverride(payload.forcePumpOverride);
     }
 
-    if (payload.source === 'safety_override') {
-      setErrorMessage('Safety override applied. Pump disabled by float sensor.');
-    } else if (payload.source) {
-      setErrorMessage(null);
+    const currentPending = pendingControlRef.current;
+    const normalizedSource = (payload.source || '').toString().toLowerCase();
+    const safetyOverrideApplied = normalizedSource === 'safety_override' || normalizedSource === 'safety';
+
+    if (!currentPending) {
+      if (payload.source === 'safety_override') {
+        setErrorMessage('Safety override applied. Pump disabled by float sensor.');
+      } else if (payload.source) {
+        setErrorMessage(null);
+      }
+      return;
     }
-    if (payload.forcePumpOverride === true) {
-      setForcePumpOverride(true);
+
+    const matchesPendingState = actuatorStatesMatch(polledActuatorState, currentPending.desiredState);
+
+    if (matchesPendingState || safetyOverrideApplied) {
+      setPendingControl(null);
+      setErrorMessage(safetyOverrideApplied ? 'Safety override applied. Pump disabled by float sensor.' : null);
     }
-  }, [pendingRequestId]);
+  }, []);
 
   const loadLatest = useCallback(async () => {
     try {
@@ -111,19 +153,10 @@ const ActuatorControls: React.FC = () => {
       if (latest?.deviceState) {
         applyDeviceState(latest.deviceState);
       }
-      if (pendingRequestId && latest?.pendingCommand?.requestId === pendingRequestId) {
-        setPendingRequestId(latest.pendingCommand.requestId);
-        setLoading(true);
-      } else {
-        setPendingRequestId(null);
-        setLoading(false);
-        setOptimisticState(null);
-      }
     } catch (error) {
       setErrorMessage('Unable to load actuator state.');
-      setLoading(false);
     }
-  }, [applyDeviceState, applyOnlineStatus, pendingRequestId]);
+  }, [applyDeviceState, applyOnlineStatus]);
 
   useEffect(() => {
     loadLatest();
@@ -140,36 +173,31 @@ const ActuatorControls: React.FC = () => {
   }, [loadLatest]);
 
   useEffect(() => {
-    if (!pendingRequestId) {
+    if (!pendingControl) {
       return undefined;
     }
 
-    const unlockTimer = window.setTimeout(() => {
-      setLoading(false);
-      setPendingRequestId(null);
-      setOptimisticState(null);
-      loadLatest().catch(() => null);
-    }, COMMAND_PENDING_TIMEOUT_MS);
-
     const failsafeTimer = window.setTimeout(() => {
+      setPendingControl(null);
+      setErrorMessage('Device confirmation timed out. Refreshed last known actuator state.');
       loadLatest().catch(() => null);
-    }, FAILSAFE_REFRESH_MS);
+    }, Math.max(0, pendingControl.expiresAt - Date.now()));
 
     return () => {
-      window.clearTimeout(unlockTimer);
       window.clearTimeout(failsafeTimer);
     };
-  }, [loadLatest, pendingRequestId]);
+  }, [loadLatest, pendingControl]);
 
-  const handleToggle = async (key: keyof typeof initialState) => {
+  const handleToggle = async (key: ActuatorKey) => {
     if (controlMode !== 'manual') {
       return;
     }
+
     const now = Date.now();
     if ((now - lastCommandAtRef.current) < RAPID_TOGGLE_DEBOUNCE_MS) {
       return;
     }
-    if (loading) {
+    if (pendingControlRef.current) {
       return;
     }
     if (key === 'pump' && floatLow && !forcePumpOverride) {
@@ -183,9 +211,13 @@ const ActuatorControls: React.FC = () => {
       [key]: !displayState[key],
     };
 
-    setOptimisticState(nextState);
-
-    setLoading(true);
+    setPendingControl({
+      requestId: null,
+      desiredState: nextState,
+      changedKeys: [key],
+      lockUntil: now + COMMAND_PENDING_TIMEOUT_MS,
+      expiresAt: now + FAILSAFE_REFRESH_MS,
+    });
     setErrorMessage(null);
 
     try {
@@ -196,41 +228,51 @@ const ActuatorControls: React.FC = () => {
         forcePumpOverride: key === 'pump' ? forcePumpOverride : false,
       });
       if (result?.requestId) {
-        setPendingRequestId(result.requestId);
+        setPendingControl((current) => current ? { ...current, requestId: result.requestId } : current);
       } else {
-        setOptimisticState(null);
-        setLoading(false);
+        setPendingControl(null);
         setErrorMessage('Command dispatched but no confirmation ID returned.');
         loadLatest().catch(() => null);
       }
     } catch (error: any) {
-      setOptimisticState(null);
-      setLoading(false);
+      setPendingControl(null);
       setErrorMessage(error?.response?.data?.message || 'Failed to send command.');
       loadLatest().catch(() => null);
     }
   };
 
   const formatStatus = (value: boolean) => (value ? 'On' : 'Off');
-  const getToggleDisabled = (key: keyof typeof initialState) => {
-    return loading || controlMode !== 'manual' || !online;
+
+  const getToggleDisabled = (key: ActuatorKey) => {
+    if (controlMode !== 'manual' || !online) {
+      return true;
+    }
+    if (commandPending) {
+      return true;
+    }
+    if (key === 'pump' && floatLow && !forcePumpOverride) {
+      return true;
+    }
+    return false;
   };
 
-  const getHelperText = (key: keyof typeof initialState) => {
+  const getHelperText = (key: ActuatorKey) => {
     if (controlMode !== 'manual') {
       return 'Disabled in Automatic Mode';
     }
     if (!online) {
       return 'Unavailable while device is offline';
     }
+    if (commandPending) {
+      return pendingControl?.changedKeys.includes(key)
+        ? (commandLockActive ? 'Control locked during the 3 second command window' : 'Awaiting ESP32 state confirmation')
+        : (commandLockActive ? 'Another control is inside its 3 second command window' : 'Another command is awaiting ESP32 confirmation');
+    }
     if (key === 'pump' && floatLow && !forcePumpOverride) {
       return 'Pump locked until force override is enabled';
     }
     if (key === 'pump' && floatLow && forcePumpOverride) {
       return 'Force override armed: pump may run while float is LOW';
-    }
-    if (loading) {
-      return 'Awaiting device confirmation';
     }
     return 'Ready for manual control';
   };
@@ -306,7 +348,7 @@ const ActuatorControls: React.FC = () => {
                 }
                 setForcePumpOverride(nextChecked);
               }}
-              disabled={controlMode !== 'manual' || !online || loading}
+              disabled={controlMode !== 'manual' || !online || commandPending}
               className="h-4 w-4 rounded border-amber-400 text-amber-600 focus:ring-amber-500"
             />
             Enable force pump override
@@ -358,6 +400,9 @@ const ActuatorControls: React.FC = () => {
         <span>Last update: {lastUpdated ? new Date(lastUpdated).toLocaleString() : 'No state yet'}</span>
         {pendingRequestId && (
           <span className="text-amber-600 dark:text-amber-300">Awaiting confirmation: {pendingRequestId}</span>
+        )}
+        {!pendingRequestId && commandPending && (
+          <span className="text-amber-600 dark:text-amber-300">Awaiting command acknowledgement from backend</span>
         )}
       </div>
 
