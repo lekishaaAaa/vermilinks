@@ -40,6 +40,10 @@ function validateControlPayload(payload) {
     }
   }
 
+  if (Object.prototype.hasOwnProperty.call(payload, 'forcePumpOverride') && !isBoolean(payload.forcePumpOverride)) {
+    return { ok: false, message: 'forcePumpOverride must be boolean' };
+  }
+
   return { ok: true };
 }
 
@@ -125,6 +129,7 @@ async function createCommand({ deviceId = 'esp32a', desiredState, actor = null, 
     valve1: desiredState.valve1,
     valve2: desiredState.valve2,
     valve3: desiredState.valve3,
+    forcePumpOverride: desiredState.forcePumpOverride === true,
     requestId,
   };
 

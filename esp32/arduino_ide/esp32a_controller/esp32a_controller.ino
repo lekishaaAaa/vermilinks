@@ -17,10 +17,10 @@
 
 static const char* DEVICE_ID = "esp32A";
 
-static const char* TOPIC_STATE = "vermilinks/esp32a/state";
-static const char* TOPIC_STATUS = "vermilinks/esp32a/status";
-static const char* TOPIC_COMMAND = "vermilinks/esp32a/command";
-static const char* TOPIC_ACK = "vermilinks/esp32a/ack";
+static const char* TOPIC_STATE = "vermilinks/esp32A/state";
+static const char* TOPIC_STATUS = "vermilinks/esp32A/status";
+static const char* TOPIC_COMMAND = "vermilinks/esp32A/commands";
+static const char* TOPIC_ACK = "vermilinks/esp32A/ack";
 static const char* TOPIC_LWT = "vermilinks/device_status/esp32a";
 
 static const int FLOAT_PIN = 14;
@@ -41,6 +41,7 @@ struct ActuatorState {
   bool valve1;
   bool valve2;
   bool valve3;
+  bool forcePumpOverride;
   String floatState;
   String requestId;
   String source;
@@ -76,6 +77,7 @@ ActuatorState getDefaultState() {
   state.valve1 = false;
   state.valve2 = false;
   state.valve3 = false;
+  state.forcePumpOverride = false;
   state.floatState = "UNKNOWN";
   state.requestId = "";
   state.source = "boot";
@@ -111,11 +113,16 @@ bool floatIsLow() {
 
 void enforceFloatSafety(ActuatorState& state) {
   if (floatIsLow()) {
-    state.pump = false;
     state.floatState = "LOW";
-    state.source = "safety_override";
+    if (!state.forcePumpOverride) {
+      state.pump = false;
+      state.source = "safety_override";
+    } else if (state.source != "forced_manual_override") {
+      state.source = "forced_manual_override";
+    }
   } else {
-    state.floatState = "HIGH";
+    state.floatState = "NORMAL";
+    state.forcePumpOverride = false;
   }
 }
 
@@ -157,7 +164,8 @@ void mqttPublishState(const ActuatorState& state, bool retained) {
   doc["valve1"] = state.valve1;
   doc["valve2"] = state.valve2;
   doc["valve3"] = state.valve3;
-  doc["float"] = state.floatState;
+  doc["forcePumpOverride"] = state.forcePumpOverride;
+  doc["float_state"] = state.floatState;
   doc["requestId"] = state.requestId;
   doc["source"] = state.source;
   doc["timestamp"] = unixTs;
@@ -179,6 +187,7 @@ void mqttPublishAck(const ActuatorState& state) {
   doc["valve1"] = state.valve1;
   doc["valve2"] = state.valve2;
   doc["valve3"] = state.valve3;
+  doc["forcePumpOverride"] = state.forcePumpOverride;
   doc["source"] = state.source;
   doc["ts"] = static_cast<long>(time(nullptr));
   publishJson(TOPIC_ACK, doc, false);
@@ -225,8 +234,9 @@ void handleCommandPayload(const char* payload) {
   currentState.valve1 = doc["valve1"].as<bool>();
   currentState.valve2 = doc["valve2"].as<bool>();
   currentState.valve3 = doc["valve3"].as<bool>();
+  currentState.forcePumpOverride = doc["forcePumpOverride"].is<bool>() ? doc["forcePumpOverride"].as<bool>() : false;
   currentState.requestId = String(requestId);
-  currentState.source = "applied";
+  currentState.source = currentState.forcePumpOverride ? "forced_manual_override" : "applied";
 
   enforceFloatSafety(currentState);
   applyActuatorState(currentState);
@@ -257,7 +267,7 @@ void mqttInit() {
 
   if (!mqttClientIdReady) {
     const unsigned long long mac = static_cast<unsigned long long>(ESP.getEfuseMac());
-    snprintf(mqttClientId, sizeof(mqttClientId), "vermilinks-esp32a-%llX", mac);
+    snprintf(mqttClientId, sizeof(mqttClientId), "vermilinks-esp32A-%llX", mac);
     mqttClientIdReady = true;
   }
 }

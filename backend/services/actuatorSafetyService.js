@@ -14,6 +14,14 @@ async function evaluatePumpSafety({ deviceId, desiredState }) {
     return { allowed: true, floatState: null };
   }
 
+  if (desiredState.forcePumpOverride === true) {
+    return {
+      allowed: true,
+      floatState: null,
+      overridden: true,
+    };
+  }
+
   const latest = await getLatestFloatState(deviceId);
   const floatState = normalizeFloatState(latest && latest.value);
 

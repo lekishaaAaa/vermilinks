@@ -243,18 +243,21 @@ async function handleStateMessage(payload, topic) {
   const isReservoirFull = floatState === 'FULL';
   const priorRow = await ActuatorState.findOne({ where: { actuatorKey: deviceId } });
   const priorState = priorRow && priorRow.state ? priorRow.state : null;
+  const overrideRequested = payload.forcePumpOverride === true || (payload.source || '').toString().toLowerCase() === 'forced_manual_override';
   const requestedPumpState = typeof payload.pump === 'boolean'
     ? payload.pump
     : Boolean(priorState && priorState.pump);
-  const enforcedPumpState = (isReservoirLow || isReservoirFull) ? false : requestedPumpState;
+  const enforcedPumpState = (isReservoirLow || isReservoirFull) && !overrideRequested ? false : requestedPumpState;
   const statePayload = {
     pump: enforcedPumpState,
     valve1: typeof payload.valve1 === 'boolean' ? payload.valve1 : Boolean(priorState && priorState.valve1),
     valve2: typeof payload.valve2 === 'boolean' ? payload.valve2 : Boolean(priorState && priorState.valve2),
     valve3: typeof payload.valve3 === 'boolean' ? payload.valve3 : Boolean(priorState && priorState.valve3),
     float: floatState,
+    float_state: floatState,
+    forcePumpOverride: overrideRequested,
     requestId: payload.requestId || null,
-    source: (isReservoirLow || isReservoirFull) && requestedPumpState ? 'safety_override' : (payload.source || 'applied'),
+    source: (isReservoirLow || isReservoirFull) && requestedPumpState && !overrideRequested ? 'safety_override' : (payload.source || 'applied'),
     ts: payload.ts ? new Date(payload.ts * 1000).toISOString() : now.toISOString(),
     online: true,
     lastSeen: now.toISOString(),

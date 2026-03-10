@@ -6,9 +6,11 @@ export interface DeviceStatePayload {
   valve2: boolean;
   valve3: boolean;
   float: string | null;
+  float_state?: string | null;
   requestId: string | null;
   source?: string | null;
   ts?: string | null;
+  forcePumpOverride?: boolean;
 }
 
 export interface LatestPayload {
@@ -22,7 +24,7 @@ export async function fetchLatest() {
   return response?.data?.data as LatestPayload;
 }
 
-export async function sendControl(desired: { pump: boolean; valve1: boolean; valve2: boolean; valve3: boolean }) {
+export async function sendControl(desired: { pump: boolean; valve1: boolean; valve2: boolean; valve3: boolean; forcePumpOverride?: boolean }) {
   const response = await api.post('/control', desired);
   return response?.data?.data;
 }
@@ -32,6 +34,7 @@ export async function sendActuatorCommand(payload: {
   deviceId?: string;
   actuator: string;
   state: 'on' | 'off';
+  forcePumpOverride?: boolean;
 }) {
   try {
     const response = await api.post('/actuators/command', payload);
@@ -53,7 +56,7 @@ export async function sendActuatorCommand(payload: {
       if (!key) {
         throw error;
       }
-      const desired = { pump: false, valve1: false, valve2: false, valve3: false };
+      const desired = { pump: false, valve1: false, valve2: false, valve3: false, forcePumpOverride: payload.forcePumpOverride === true };
       desired[key] = payload.state === 'on';
       return sendControl(desired);
     }

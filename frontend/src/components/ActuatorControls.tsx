@@ -41,8 +41,12 @@ const ActuatorControls: React.FC = () => {
   const [online, setOnline] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [controlMode, setControlMode] = useState<'automatic' | 'manual'>('manual');
+  const [forcePumpOverride, setForcePumpOverride] = useState(false);
 
-  const floatLow = useMemo(() => (deviceState?.float || '').toString().toUpperCase() === 'LOW', [deviceState?.float]);
+  const floatLow = useMemo(() => {
+    const value = deviceState?.float_state ?? deviceState?.float ?? null;
+    return (value || '').toString().toUpperCase() === 'LOW';
+  }, [deviceState?.float, deviceState?.float_state]);
 
   const applyOnlineStatus = useCallback((nextOnline: boolean, timestamp?: string | null) => {
     setOnline(Boolean(nextOnline));
@@ -77,6 +81,11 @@ const ActuatorControls: React.FC = () => {
     if (payload.source === 'safety_override') {
       setErrorMessage('Safety override applied. Pump disabled by float sensor.');
     }
+    if (payload.forcePumpOverride === true) {
+      setForcePumpOverride(true);
+    } else if (!payload.pump) {
+      setForcePumpOverride(false);
+    }
   }, [pendingRequestId]);
 
   const loadLatest = useCallback(async () => {
@@ -106,6 +115,16 @@ const ActuatorControls: React.FC = () => {
 
   useEffect(() => {
     loadLatest();
+  }, [loadLatest]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      loadLatest();
+    }, 5000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
   }, [loadLatest]);
 
   useEffect(() => {
@@ -145,7 +164,7 @@ const ActuatorControls: React.FC = () => {
     if (loading) {
       return;
     }
-    if (key === 'pump' && floatLow) {
+    if (key === 'pump' && floatLow && !forcePumpOverride) {
       return;
     }
 
@@ -162,6 +181,7 @@ const ActuatorControls: React.FC = () => {
         device_id: ACTUATOR_DEVICE_ID,
         actuator: ACTUATOR_COMMAND_MAP[key],
         state: nextState[key] ? 'on' : 'off',
+        forcePumpOverride: key === 'pump' ? forcePumpOverride : false,
       });
       if (result?.requestId) {
         setPendingRequestId(result.requestId);
@@ -177,7 +197,7 @@ const ActuatorControls: React.FC = () => {
 
   const formatStatus = (value: boolean) => (value ? 'On' : 'Off');
   const getToggleDisabled = (key: keyof typeof initialState) => {
-    return loading || controlMode !== 'manual' || (key === 'pump' && floatLow) || !online;
+    return loading || controlMode !== 'manual' || !online;
   };
 
   const getHelperText = (key: keyof typeof initialState) => {
@@ -187,8 +207,11 @@ const ActuatorControls: React.FC = () => {
     if (!online) {
       return 'Unavailable while device is offline';
     }
-    if (key === 'pump' && floatLow) {
-      return 'Pump locked (float LOW)';
+    if (key === 'pump' && floatLow && !forcePumpOverride) {
+      return 'Pump locked until force override is enabled';
+    }
+    if (key === 'pump' && floatLow && forcePumpOverride) {
+      return 'Force override armed: pump may run while float is LOW';
     }
     if (loading) {
       return 'Awaiting device confirmation';
@@ -237,6 +260,41 @@ const ActuatorControls: React.FC = () => {
               Float LOW
             </span>
           )}
+          {forcePumpOverride && (
+            <span className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200">
+              Pump Override Armed
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/80 p-4 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="font-semibold">Pump Override</p>
+            <p className="text-xs md:text-sm">
+              Normal safety keeps the pump OFF while the float is LOW. Enable override only when you intentionally want manual pump control despite a low float reading.
+            </p>
+          </div>
+          <label className="inline-flex items-center gap-3 text-xs font-semibold md:text-sm">
+            <input
+              type="checkbox"
+              checked={forcePumpOverride}
+              onChange={(event) => {
+                const nextChecked = event.target.checked;
+                if (nextChecked) {
+                  const confirmed = window.confirm('Force pump override will allow manual pump control even while the float reads LOW. Continue?');
+                  if (!confirmed) {
+                    return;
+                  }
+                }
+                setForcePumpOverride(nextChecked);
+              }}
+              disabled={controlMode !== 'manual' || !online || loading}
+              className="h-4 w-4 rounded border-amber-400 text-amber-600 focus:ring-amber-500"
+            />
+            Enable force pump override
+          </label>
         </div>
       </div>
 

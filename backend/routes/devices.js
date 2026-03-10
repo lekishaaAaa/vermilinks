@@ -16,11 +16,14 @@ const {
 
 const router = express.Router();
 
-const DEVICE_ONLINE_WINDOW_MS = 15 * 1000;
-
 const DEVICE_STATUS_TIMEOUT_MS = Math.max(
   2000,
   parseInt(process.env.DEVICE_OFFLINE_TIMEOUT_MS || process.env.SENSOR_STALE_THRESHOLD_MS || '60000', 10)
+);
+
+const DEVICE_ONLINE_WINDOW_MS = Math.max(
+  45000,
+  DEVICE_STATUS_TIMEOUT_MS,
 );
 
 const SENSOR_STALE_THRESHOLD_MS = Math.max(
