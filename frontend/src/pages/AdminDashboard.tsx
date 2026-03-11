@@ -1069,7 +1069,43 @@ export default function AdminDashboard(): React.ReactElement {
     return [];
   }, [ctxSensorBuffer]);
 
+  const monitoringDeviceId = useMemo(() => {
+    const raw = realtimeSample?.deviceId ?? latestSensor?.deviceId ?? null;
+    return raw ? raw.toString().trim().toLowerCase() : null;
+  }, [latestSensor?.deviceId, realtimeSample?.deviceId]);
+
+  const monitoringDeviceOnline = useMemo<boolean | null>(() => {
+    if (!monitoringDeviceId) {
+      return null;
+    }
+
+    const statusSnapshot = deviceStatusSnapshots.find((device) => {
+      const candidate = (device?.device_id || '').toString().trim().toLowerCase();
+      return candidate === monitoringDeviceId;
+    });
+    if (statusSnapshot) {
+      return Boolean(statusSnapshot.online);
+    }
+
+    const inventorySnapshot = deviceInventory.find((device) => {
+      const candidate = (device?.deviceId || '').toString().trim().toLowerCase();
+      return candidate === monitoringDeviceId;
+    });
+    if (inventorySnapshot) {
+      return (inventorySnapshot.status || '').toString().toLowerCase() === 'online';
+    }
+
+    return null;
+  }, [deviceInventory, deviceStatusSnapshots, monitoringDeviceId]);
+
   const monitoringTelemetryLive = useMemo(() => {
+    if (monitoringDeviceOnline === true) {
+      return true;
+    }
+    if (monitoringDeviceOnline === false) {
+      return false;
+    }
+
     const timestampSource = realtimeSample?.timestamp ?? realtimeSample?.lastSeen ?? null;
     const timestampMs = timestampSource ? new Date(timestampSource).getTime() : NaN;
     if (!Number.isFinite(timestampMs)) {
@@ -1081,11 +1117,8 @@ export default function AdminDashboard(): React.ReactElement {
     if (realtimeSample?.isStale === true) {
       return false;
     }
-    if (typeof realtimeSample?.deviceOnline === 'boolean' && !realtimeSample.deviceOnline) {
-      return false;
-    }
     return true;
-  }, [realtimeSample]);
+  }, [monitoringDeviceOnline, realtimeSample]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
