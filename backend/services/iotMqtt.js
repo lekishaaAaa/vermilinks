@@ -651,19 +651,6 @@ function buildTelemetryRecord(payload, topic) {
     rawPayload: payload,
   };
 
-  const hasRequiredCoreFields = [
-    reading.temperature,
-    reading.humidity,
-    reading.moisture,
-    reading.soilTemperature,
-    reading.waterLevel,
-    reading.floatSensor,
-  ].every((value) => value !== null && typeof value !== 'undefined');
-
-  if (!hasRequiredCoreFields) {
-    return null;
-  }
-
   const hasSignal = [
     reading.temperature,
     reading.humidity,
