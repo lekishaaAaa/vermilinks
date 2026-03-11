@@ -84,9 +84,8 @@ const RealtimeTelemetryPanel: React.FC<RealtimeTelemetryPanelProps> = ({ latest,
     return date.getTime();
   }, [latestTimestamp]);
   const telemetryFresh = Number.isFinite(latestTimestampMs) && (Date.now() - latestTimestampMs) <= LIVE_TELEMETRY_MAX_AGE_MS;
-  const sampleMarkedOffline = effectiveLatest?.deviceOnline === false || effectiveLatest?.isStale === true;
 
-  const effectiveIsConnected = showPausedNotice ? false : Boolean(isConnected && telemetryFresh && !sampleMarkedOffline);
+  const effectiveIsConnected = showPausedNotice ? false : Boolean(isConnected && telemetryFresh);
   const outOfRangeWarnings = useMemo(() => {
     if (!effectiveLatest) return [] as string[];
     return SENSOR_VALID_RANGES
