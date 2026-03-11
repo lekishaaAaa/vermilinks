@@ -4,6 +4,8 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { SensorData } from '../types';
 import SensorOverview from './SensorOverview';
 
+const LIVE_TELEMETRY_MAX_AGE_MS = 60_000;
+
 const formatTimestamp = (value?: string | Date | null) => {
   if (!value) return '—';
   try {
@@ -74,8 +76,17 @@ const RealtimeTelemetryPanel: React.FC<RealtimeTelemetryPanelProps> = ({ latest,
   const hasTelemetryData = Boolean(effectiveLatest) || mergedHistory.length > 0;
   const showPausedNotice = Boolean(telemetryDisabled) && !hasTelemetryData;
   const latestTimestamp = effectiveLatest?.timestamp || (mergedHistory.length ? mergedHistory[mergedHistory.length - 1].timestamp : null);
+  const latestTimestampMs = useMemo(() => {
+    if (!latestTimestamp) {
+      return NaN;
+    }
+    const date = latestTimestamp instanceof Date ? latestTimestamp : new Date(latestTimestamp);
+    return date.getTime();
+  }, [latestTimestamp]);
+  const telemetryFresh = Number.isFinite(latestTimestampMs) && (Date.now() - latestTimestampMs) <= LIVE_TELEMETRY_MAX_AGE_MS;
+  const sampleMarkedOffline = effectiveLatest?.deviceOnline === false || effectiveLatest?.isStale === true;
 
-  const effectiveIsConnected = showPausedNotice ? false : isConnected;
+  const effectiveIsConnected = showPausedNotice ? false : Boolean(isConnected && telemetryFresh && !sampleMarkedOffline);
   const outOfRangeWarnings = useMemo(() => {
     if (!effectiveLatest) return [] as string[];
     return SENSOR_VALID_RANGES

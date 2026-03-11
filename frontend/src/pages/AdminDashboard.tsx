@@ -1069,6 +1069,24 @@ export default function AdminDashboard(): React.ReactElement {
     return [];
   }, [ctxSensorBuffer]);
 
+  const monitoringTelemetryLive = useMemo(() => {
+    const timestampSource = realtimeSample?.timestamp ?? realtimeSample?.lastSeen ?? null;
+    const timestampMs = timestampSource ? new Date(timestampSource).getTime() : NaN;
+    if (!Number.isFinite(timestampMs)) {
+      return false;
+    }
+    if (Date.now() - timestampMs > SENSOR_STALE_THRESHOLD_MS) {
+      return false;
+    }
+    if (realtimeSample?.isStale === true) {
+      return false;
+    }
+    if (typeof realtimeSample?.deviceOnline === 'boolean' && !realtimeSample.deviceOnline) {
+      return false;
+    }
+    return true;
+  }, [realtimeSample]);
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') {
@@ -1514,7 +1532,7 @@ export default function AdminDashboard(): React.ReactElement {
                 <RealtimeTelemetryPanel
                   latest={realtimeSample}
                   history={telemetryHistory}
-                  isConnected={Boolean(socketsConnected || hasLiveTelemetry)}
+                  isConnected={monitoringTelemetryLive}
                   onRefresh={handleRealtimeRefresh}
                   refreshing={realtimeRefreshing}
                   telemetryDisabled={telemetryDisabled}
