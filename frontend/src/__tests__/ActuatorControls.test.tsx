@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, RenderResult, screen, waitFor } from '@testing-library/react';
 import ActuatorControls from '../components/ActuatorControls';
 import { fetchLatest, sendControl } from '../services/iotControl';
 
@@ -33,13 +33,16 @@ const buildLatestPayload = (overrides?: Partial<Awaited<ReturnType<typeof fetchL
 });
 
 describe('ActuatorControls', () => {
-  const renderComponent = async () => {
+  let currentRender: RenderResult | null = null;
+
+  const renderComponent = async (expectedStatus: 'online' | 'offline' = 'online') => {
     await act(async () => {
-      render(<ActuatorControls />);
+      currentRender = render(<ActuatorControls />);
+      await Promise.resolve();
     });
 
     await waitFor(() => {
-      expect(screen.getByText(/esp32-a online/i)).toBeInTheDocument();
+      expect(screen.getByText(expectedStatus === 'online' ? /esp32-a online/i : /esp32-a offline/i)).toBeInTheDocument();
     });
   };
 
@@ -50,8 +53,14 @@ describe('ActuatorControls', () => {
     mockSendControl.mockReset();
   });
 
-  afterEach(() => {
-    jest.runOnlyPendingTimers();
+  afterEach(async () => {
+    await act(async () => {
+      currentRender?.unmount();
+      currentRender = null;
+      jest.clearAllTimers();
+      await Promise.resolve();
+    });
+    cleanup();
     jest.useRealTimers();
     jest.restoreAllMocks();
   });
@@ -72,7 +81,10 @@ describe('ActuatorControls', () => {
       expect(valve1Switch).toBeEnabled();
     });
 
-    fireEvent.click(valve1Switch);
+      await act(async () => {
+        fireEvent.click(valve1Switch);
+        await Promise.resolve();
+      });
 
     await waitFor(() => {
       expect(mockSendControl).toHaveBeenCalledWith({
@@ -115,7 +127,10 @@ describe('ActuatorControls', () => {
     expect(overrideCheckbox).toBeEnabled();
     expect(pumpSwitch).toBeDisabled();
 
-    fireEvent.click(overrideCheckbox);
+      await act(async () => {
+        fireEvent.click(overrideCheckbox);
+        await Promise.resolve();
+      });
 
     await waitFor(() => {
       expect(mockSendControl).toHaveBeenCalledWith({
@@ -139,7 +154,10 @@ describe('ActuatorControls', () => {
       expect(screen.getByRole('switch', { name: /pump \(layer 4 reservoir\)/i })).toBeEnabled();
     });
 
-    fireEvent.click(screen.getByRole('switch', { name: /pump \(layer 4 reservoir\)/i }));
+      await act(async () => {
+        fireEvent.click(screen.getByRole('switch', { name: /pump \(layer 4 reservoir\)/i }));
+        await Promise.resolve();
+      });
 
     await waitFor(() => {
       expect(mockSendControl).toHaveBeenLastCalledWith({
@@ -186,7 +204,10 @@ describe('ActuatorControls', () => {
     expect(overrideCheckbox).toBeEnabled();
     expect(valve1Switch).toBeEnabled();
 
-    fireEvent.click(valve1Switch);
+      await act(async () => {
+        fireEvent.click(valve1Switch);
+        await Promise.resolve();
+      });
 
     await waitFor(() => {
       expect(mockSendControl).toHaveBeenCalledWith({
@@ -222,14 +243,126 @@ describe('ActuatorControls', () => {
       },
     }));
 
-    await act(async () => {
-      render(<ActuatorControls />);
+    await renderComponent('offline');
+
+    expect(screen.getByRole('checkbox', { name: /enable force pump override/i })).toBeEnabled();
+  });
+
+  test('keeps other valve controls interactive while one valve command is pending and preserves prior desired state', async () => {
+    mockFetchLatest.mockResolvedValue(buildLatestPayload({
+      deviceOnline: true,
+      deviceState: {
+        pump: false,
+        valve1: false,
+        valve2: false,
+        valve3: false,
+        float: 'NORMAL',
+        float_state: 'NORMAL',
+        requestId: null,
+        source: 'applied',
+        ts: new Date().toISOString(),
+        forcePumpOverride: false,
+      },
+    }));
+
+    mockSendControl
+      .mockResolvedValueOnce({ requestId: 'req-valve1' } as any)
+      .mockResolvedValueOnce({ requestId: 'req-valve2' } as any);
+
+    await renderComponent();
+
+    const valve1Switch = screen.getByRole('switch', { name: /layer 1 solenoid/i });
+    const valve2Switch = screen.getByRole('switch', { name: /layer 2 solenoid/i });
+
+      await act(async () => {
+        fireEvent.click(valve1Switch);
+        await Promise.resolve();
+      });
+
+    await waitFor(() => {
+      expect(mockSendControl).toHaveBeenNthCalledWith(1, {
+        pump: false,
+        valve1: true,
+        valve2: false,
+        valve3: false,
+        forcePumpOverride: false,
+      });
     });
 
     await waitFor(() => {
-      expect(screen.getByText(/esp32-a offline/i)).toBeInTheDocument();
+      expect(screen.getByRole('switch', { name: /layer 2 solenoid/i })).toBeEnabled();
     });
 
-    expect(screen.getByRole('checkbox', { name: /enable force pump override/i })).toBeEnabled();
+      await act(async () => {
+        fireEvent.click(screen.getByRole('switch', { name: /layer 2 solenoid/i }));
+        await Promise.resolve();
+      });
+
+    await waitFor(() => {
+      expect(mockSendControl).toHaveBeenNthCalledWith(2, {
+        pump: false,
+        valve1: true,
+        valve2: true,
+        valve3: false,
+        forcePumpOverride: false,
+      });
+    });
+  });
+
+  test('keeps override interactive while an actuator command is pending', async () => {
+    mockFetchLatest.mockResolvedValue(buildLatestPayload({
+      deviceOnline: true,
+      deviceState: {
+        pump: false,
+        valve1: false,
+        valve2: false,
+        valve3: false,
+        float: 'LOW',
+        float_state: 'LOW',
+        requestId: null,
+        source: 'safety_override',
+        ts: new Date().toISOString(),
+        forcePumpOverride: false,
+      },
+    }));
+
+    mockSendControl
+      .mockResolvedValueOnce({ requestId: 'req-valve1-pending' } as any)
+      .mockResolvedValueOnce({ requestId: 'req-override-while-pending' } as any);
+
+    await renderComponent();
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('switch', { name: /layer 1 solenoid/i }));
+        await Promise.resolve();
+      });
+
+    await waitFor(() => {
+      expect(mockSendControl).toHaveBeenNthCalledWith(1, {
+        pump: false,
+        valve1: true,
+        valve2: false,
+        valve3: false,
+        forcePumpOverride: false,
+      });
+    });
+
+    const overrideCheckbox = screen.getByRole('checkbox', { name: /enable force pump override/i });
+    expect(overrideCheckbox).toBeEnabled();
+
+      await act(async () => {
+        fireEvent.click(overrideCheckbox);
+        await Promise.resolve();
+      });
+
+    await waitFor(() => {
+      expect(mockSendControl).toHaveBeenNthCalledWith(2, {
+        pump: false,
+        valve1: true,
+        valve2: false,
+        valve3: false,
+        forcePumpOverride: true,
+      });
+    });
   });
 });

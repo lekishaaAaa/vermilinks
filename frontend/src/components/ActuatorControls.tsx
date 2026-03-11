@@ -39,6 +39,7 @@ const COMMAND_PENDING_TIMEOUT_MS = 3000;
 const FAILSAFE_REFRESH_MS = 5000;
 const RAPID_TOGGLE_DEBOUNCE_MS = 400;
 const ACTUATOR_REFRESH_INTERVAL_MS = 2000;
+const OVERRIDE_CONTROL_KEY = 'override';
 
 const toActuatorViewState = (payload?: Partial<DeviceStatePayload> | null): ActuatorViewState => ({
   pump: Boolean(payload?.pump),
@@ -65,7 +66,7 @@ const ActuatorControls: React.FC = () => {
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [controlMode, setControlMode] = useState<'automatic' | 'manual'>('manual');
   const [forcePumpOverride, setForcePumpOverride] = useState(false);
-  const lastCommandAtRef = useRef(0);
+  const lastCommandAtRef = useRef<Partial<Record<ActuatorKey | typeof OVERRIDE_CONTROL_KEY, number>>>({});
   const pendingActuatorsRef = useRef<PendingActuatorsMap>({});
   const pendingOverrideRef = useRef<PendingOverrideState | null>(null);
 
@@ -118,6 +119,11 @@ const ActuatorControls: React.FC = () => {
   }, [pendingActuators, pendingOverride]);
 
   const commandPending = pendingRequestIds.length > 0 || Object.keys(pendingActuators).length > 0 || Boolean(pendingOverride);
+  const isActuatorPending = useCallback((key: ActuatorKey) => Boolean(pendingActuators[key]), [pendingActuators]);
+  const isActuatorLockActive = useCallback((key: ActuatorKey) => {
+    const entry = pendingActuators[key];
+    return Boolean(entry && Date.now() < entry.lockUntil);
+  }, [pendingActuators]);
 
   const getBaseControlBlockReason = useCallback(() => {
     if (controlMode !== 'manual') {
@@ -126,22 +132,22 @@ const ActuatorControls: React.FC = () => {
     if (!online) {
       return 'Unavailable while device is offline';
     }
-    if (commandPending) {
-      return 'Awaiting command acknowledgement from backend';
-    }
     return null;
-  }, [commandPending, controlMode, online]);
+  }, [controlMode, online]);
 
   const getToggleDisabledReason = useCallback((key: ActuatorKey) => {
     const baseReason = getBaseControlBlockReason();
     if (baseReason) {
       return baseReason;
     }
+    if (isActuatorPending(key)) {
+      return 'Awaiting command acknowledgement from backend';
+    }
     if (key === 'pump' && floatLow && !displayForcePumpOverride) {
       return 'Pump locked until force override is enabled';
     }
     return null;
-  }, [displayForcePumpOverride, floatLow, getBaseControlBlockReason]);
+  }, [displayForcePumpOverride, floatLow, getBaseControlBlockReason, isActuatorPending]);
 
   const applyOnlineStatus = useCallback((timestamp?: string | null) => {
     setOnline(isDeviceFresh(timestamp));
@@ -298,7 +304,7 @@ const ActuatorControls: React.FC = () => {
     }
 
     const now = Date.now();
-    if ((now - lastCommandAtRef.current) < RAPID_TOGGLE_DEBOUNCE_MS) {
+    if ((now - (lastCommandAtRef.current[key] ?? 0)) < RAPID_TOGGLE_DEBOUNCE_MS) {
       return;
     }
     if (pendingActuatorsRef.current[key]) {
@@ -308,7 +314,7 @@ const ActuatorControls: React.FC = () => {
       return;
     }
 
-    lastCommandAtRef.current = now;
+    lastCommandAtRef.current[key] = now;
 
     const nextState = {
       ...displayState,
@@ -389,7 +395,7 @@ const ActuatorControls: React.FC = () => {
     }
 
     const now = Date.now();
-    if ((now - lastCommandAtRef.current) < RAPID_TOGGLE_DEBOUNCE_MS) {
+    if ((now - (lastCommandAtRef.current[OVERRIDE_CONTROL_KEY] ?? 0)) < RAPID_TOGGLE_DEBOUNCE_MS) {
       return;
     }
     if (nextChecked) {
@@ -399,7 +405,7 @@ const ActuatorControls: React.FC = () => {
       }
     }
 
-    lastCommandAtRef.current = now;
+    lastCommandAtRef.current[OVERRIDE_CONTROL_KEY] = now;
     const nextPendingOverride: PendingOverrideState = {
       requestId: null,
       desired: nextChecked,
@@ -433,23 +439,17 @@ const ActuatorControls: React.FC = () => {
 
   const formatStatus = (value: boolean) => (value ? 'On' : 'Off');
 
-  const isActuatorPending = (key: ActuatorKey) => Boolean(pendingActuators[key]);
-  const isActuatorLockActive = (key: ActuatorKey) => {
-    const entry = pendingActuators[key];
-    return Boolean(entry && Date.now() < entry.lockUntil);
-  };
-
   const getToggleDisabled = (key: ActuatorKey) => Boolean(getToggleDisabledReason(key));
 
   const getHelperText = (key: ActuatorKey) => {
-    const disabledReason = getToggleDisabledReason(key);
-    if (disabledReason && !isActuatorPending(key)) {
-      return disabledReason;
-    }
     if (isActuatorPending(key)) {
       return isActuatorLockActive(key)
         ? 'Control locked during the 3 second command window'
         : 'Awaiting ESP32 state confirmation';
+    }
+    const disabledReason = getToggleDisabledReason(key);
+    if (disabledReason) {
+      return disabledReason;
     }
     if (key === 'pump' && floatLow && displayForcePumpOverride) {
       return 'Force override armed: pump may run while float is LOW';
