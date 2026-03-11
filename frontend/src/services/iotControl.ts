@@ -72,20 +72,16 @@ export async function fetchLatest() {
   const payload = response?.data || {};
   const deviceState = payload.deviceState ?? null;
   const actuatorLastSeen = pickFreshestTimestamp(
-    deviceState?.lastSeen ?? null,
-    deviceState?.ts ?? null,
     payload.lastSeen ?? null,
     payload.lastHeartbeat ?? null,
     payload.updated_at ?? null,
     payload.timestamp ?? null,
+    deviceState?.lastSeen ?? null,
+    deviceState?.ts ?? null,
   );
-  const derivedDeviceOnline = Boolean(
-    payload.deviceOnline === true ||
-    deviceState?.online === true ||
-    isFreshTimestamp(deviceState?.lastSeen ?? null) ||
-    isFreshTimestamp(deviceState?.ts ?? null) ||
-    isFreshTimestamp(actuatorLastSeen)
-  );
+  const derivedDeviceOnline = typeof payload.deviceOnline === 'boolean'
+    ? payload.deviceOnline
+    : isFreshTimestamp(actuatorLastSeen);
 
   return {
     telemetry: payload,

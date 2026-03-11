@@ -198,4 +198,38 @@ describe('ActuatorControls', () => {
       });
     });
   });
+
+  test('shows offline when backend deviceOnline is false even if stale nested actuator state says online', async () => {
+    const staleTimestamp = '2026-03-10T20:19:45.152Z';
+
+    mockFetchLatest.mockResolvedValue(buildLatestPayload({
+      deviceOnline: false,
+      lastSeen: staleTimestamp,
+      lastHeartbeat: staleTimestamp,
+      deviceState: {
+        pump: false,
+        valve1: false,
+        valve2: false,
+        valve3: false,
+        float: 'LOW',
+        float_state: 'LOW',
+        requestId: null,
+        source: 'safety_override',
+        ts: '2026-03-08T13:50:12.000Z',
+        lastSeen: '2026-03-08T13:50:15.374Z',
+        online: true,
+        forcePumpOverride: false,
+      },
+    }));
+
+    await act(async () => {
+      render(<ActuatorControls />);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/esp32-a offline/i)).toBeInTheDocument();
+    });
+
+    expect(screen.getByRole('checkbox', { name: /enable force pump override/i })).toBeEnabled();
+  });
 });
