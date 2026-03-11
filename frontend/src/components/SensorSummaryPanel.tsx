@@ -53,7 +53,15 @@ const formatActuatorReading = (value: boolean | number | null): { label: string;
 };
 
 const SensorSummaryPanel: React.FC<SensorSummaryPanelProps> = ({ className = '', deviceId }) => {
-  const { telemetryDisabled, actuatorStates } = useData();
+  const {
+    telemetryDisabled,
+    actuatorStates,
+    latestTelemetry: contextLatestTelemetry,
+    lastFetchAt,
+    isLoading: contextIsLoading,
+    lastFetchError,
+    refreshTelemetry,
+  } = useData();
   const { latest, status, error, refresh, isPolling, lastUpdated } = useSensorsPolling({
     deviceId,
     intervalMs: 5000,
@@ -63,13 +71,45 @@ const SensorSummaryPanel: React.FC<SensorSummaryPanelProps> = ({ className = '',
   });
   const [lastTelemetry, setLastTelemetry] = useState<SensorData | null>(null);
 
-  useEffect(() => {
-    if (latest) {
-      setLastTelemetry(latest);
-      return;
+  const effectiveLatest = contextLatestTelemetry ?? latest;
+
+  const effectiveStatus = contextLatestTelemetry
+    ? 'success'
+    : status;
+
+  const effectiveError = contextLatestTelemetry
+    ? null
+    : (lastFetchError || error);
+
+  const effectiveIsPolling = contextIsLoading || isPolling;
+
+  const effectiveLastUpdated = useMemo(() => {
+    if (lastFetchAt) {
+      const parsed = Date.parse(lastFetchAt);
+      if (!Number.isNaN(parsed)) {
+        return parsed;
+      }
     }
-    setLastTelemetry(null);
-  }, [latest]);
+    const latestTimestamp = effectiveLatest?.timestamp;
+    if (latestTimestamp) {
+      const parsed = Date.parse(latestTimestamp instanceof Date ? latestTimestamp.toISOString() : latestTimestamp);
+      if (!Number.isNaN(parsed)) {
+        return parsed;
+      }
+    }
+    return lastUpdated;
+  }, [effectiveLatest, lastFetchAt, lastUpdated]);
+
+  const handleRefresh = async () => {
+    await refreshTelemetry();
+    await refresh();
+  };
+
+  useEffect(() => {
+    if (effectiveLatest) {
+      setLastTelemetry(effectiveLatest);
+    }
+  }, [effectiveLatest]);
 
   const actuatorItems = useMemo(() => {
     if (!actuatorStates || Object.keys(actuatorStates).length === 0) {
@@ -90,18 +130,18 @@ const SensorSummaryPanel: React.FC<SensorSummaryPanelProps> = ({ className = '',
       });
   }, [actuatorStates]);
 
-  const lastUpdatedText = lastUpdated ? new Date(lastUpdated).toLocaleTimeString() : 'Never';
+  const lastUpdatedText = effectiveLastUpdated ? new Date(effectiveLastUpdated).toLocaleTimeString() : 'Never';
   const statusNotice = telemetryDisabled
     ? {
         className: 'mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200',
         text: 'Telemetry feed is temporarily disabled until physical sensors come online.',
       }
-    : status === 'error'
+    : effectiveStatus === 'error'
       ? {
           className: 'mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600 dark:border-red-700 dark:bg-red-900/30 dark:text-red-200',
-          text: error || 'Telemetry temporarily unavailable.',
+          text: effectiveError || 'Telemetry temporarily unavailable.',
         }
-      : status === 'loading' && !latest && !lastTelemetry
+      : effectiveStatus === 'loading' && !effectiveLatest && !lastTelemetry
         ? {
             className: 'mt-4 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-700 dark:border-blue-700 dark:bg-blue-900/30 dark:text-blue-200',
             text: 'Loading latest telemetry…',
@@ -128,13 +168,13 @@ const SensorSummaryPanel: React.FC<SensorSummaryPanelProps> = ({ className = '',
           <span>Last update: {lastUpdatedText}</span>
           <button
             type="button"
-            onClick={() => refresh()}
+            onClick={() => void handleRefresh()}
             className={`inline-flex items-center gap-1 rounded-full border border-gray-200 px-3 py-1 font-medium transition hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800 ${
-              (isPolling || telemetryDisabled) ? 'opacity-60 cursor-not-allowed' : ''
+              (effectiveIsPolling || telemetryDisabled) ? 'opacity-60 cursor-not-allowed' : ''
             }`}
-            disabled={isPolling || telemetryDisabled}
+            disabled={effectiveIsPolling || telemetryDisabled}
           >
-            <RefreshCw className={`h-4 w-4 ${isPolling ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`h-4 w-4 ${effectiveIsPolling ? 'animate-spin' : ''}`} />
             Refresh
           </button>
         </div>
@@ -146,7 +186,7 @@ const SensorSummaryPanel: React.FC<SensorSummaryPanelProps> = ({ className = '',
         </div>
       )}
 
-      <SensorOverview telemetry={latest} lastTelemetry={lastTelemetry} />
+      <SensorOverview telemetry={effectiveLatest} lastTelemetry={lastTelemetry} />
 
       {actuatorItems.length > 0 && (
         <div className="mt-6 rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4 text-sm text-emerald-900 shadow-sm dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-100">
