@@ -100,15 +100,59 @@ const formatLatestSnapshot = (snapshot) => {
     return null;
   }
   const toNumber = (value) => (value === null || value === undefined ? null : Number(value));
+  const pickNumber = (...values) => {
+    for (const value of values) {
+      const parsed = toNumber(value);
+      if (parsed !== null && !Number.isNaN(parsed)) {
+        return parsed;
+      }
+    }
+    return null;
+  };
+  const pickString = (...values) => {
+    for (const value of values) {
+      if (typeof value === 'string' && value.trim()) {
+        return value.trim();
+      }
+    }
+    return null;
+  };
+
+  const rawPayload = snapshot && typeof snapshot.rawPayload === 'object' && snapshot.rawPayload
+    ? snapshot.rawPayload
+    : (snapshot && typeof snapshot.raw_payload === 'object' && snapshot.raw_payload ? snapshot.raw_payload : null);
+
+  const soilMoistureLayer1 = pickNumber(snapshot.soilMoistureLayer1, snapshot.soil_moisture_layer1, rawPayload?.soil_moisture_layer1, rawPayload?.soilMoistureLayer1);
+  const soilMoistureLayer2 = pickNumber(snapshot.soilMoistureLayer2, snapshot.soil_moisture_layer2, rawPayload?.soil_moisture_layer2, rawPayload?.soilMoistureLayer2);
+  const soilMoistureLayer3 = pickNumber(snapshot.soilMoistureLayer3, snapshot.soil_moisture_layer3, rawPayload?.soil_moisture_layer3, rawPayload?.soilMoistureLayer3);
+  const soilTempLayer1 = pickNumber(snapshot.soilTemperatureLayer1, snapshot.soil_temperature_layer1, rawPayload?.soil_temperature_layer1, rawPayload?.soilTemperatureLayer1);
+  const soilTempLayer2 = pickNumber(snapshot.soilTemperatureLayer2, snapshot.soil_temperature_layer2, rawPayload?.soil_temperature_layer2, rawPayload?.soilTemperatureLayer2);
+  const soilTempLayer3 = pickNumber(snapshot.soilTemperatureLayer3, snapshot.soil_temperature_layer3, rawPayload?.soil_temperature_layer3, rawPayload?.soilTemperatureLayer3);
+  const ambientTemperature = pickNumber(snapshot.ambientTemperature, snapshot.ambient_temperature, rawPayload?.ambient_temperature, rawPayload?.ambientTemperature);
+  const ambientHumidity = pickNumber(snapshot.ambientHumidity, snapshot.ambient_humidity, rawPayload?.ambient_humidity, rawPayload?.ambientHumidity);
+  const binTemperature = pickNumber(snapshot.binTemperature, snapshot.bin_temperature, rawPayload?.bin_temperature, rawPayload?.binTemperature);
+  const binHumidity = pickNumber(snapshot.binHumidity, snapshot.bin_humidity, rawPayload?.bin_humidity, rawPayload?.binHumidity);
+  const floatStatus = pickString(snapshot.floatStatus, snapshot.float_status, rawPayload?.float_status, rawPayload?.floatStatus);
+
   const timestamp = snapshot.timestamp || snapshot.updated_at || snapshot.created_at;
   const normalizedDeviceId = (snapshot.deviceId || snapshot.device_id || '').toString().trim() || null;
   return {
     deviceId: normalizedDeviceId,
     device_id: normalizedDeviceId,
-    temperature: toNumber(snapshot.temperature),
-    humidity: toNumber(snapshot.humidity),
-    soil_moisture: toNumber(snapshot.moisture ?? snapshot.soil_moisture),
-    soil_temperature: toNumber(snapshot.soilTemperature ?? snapshot.soil_temperature ?? snapshot.waterTempC),
+    temperature: pickNumber(snapshot.temperature, ambientTemperature),
+    humidity: pickNumber(snapshot.humidity, ambientHumidity),
+    ambient_temperature: ambientTemperature,
+    ambient_humidity: ambientHumidity,
+    bin_temperature: binTemperature,
+    bin_humidity: binHumidity,
+    soil_moisture_layer1: soilMoistureLayer1,
+    soil_moisture_layer2: soilMoistureLayer2,
+    soil_moisture_layer3: soilMoistureLayer3,
+    soil_temperature_layer1: soilTempLayer1,
+    soil_temperature_layer2: soilTempLayer2,
+    soil_temperature_layer3: soilTempLayer3,
+    soil_moisture: pickNumber(snapshot.moisture, snapshot.soil_moisture, soilMoistureLayer1, soilMoistureLayer2, soilMoistureLayer3),
+    soil_temperature: pickNumber(snapshot.soilTemperature, snapshot.soil_temperature, snapshot.waterTempC, soilTempLayer1, soilTempLayer2, soilTempLayer3),
     ph: toNumber(snapshot.ph),
     ec: toNumber(snapshot.ec),
     nitrogen: toNumber(snapshot.nitrogen),
@@ -118,6 +162,7 @@ const formatLatestSnapshot = (snapshot) => {
     float_state: snapshot.floatSensor !== undefined && snapshot.floatSensor !== null
       ? Number(snapshot.floatSensor)
       : (snapshot.float_state !== undefined && snapshot.float_state !== null ? Number(snapshot.float_state) : null),
+    float_status: floatStatus,
     battery_level: toNumber(snapshot.batteryLevel ?? snapshot.battery_level),
     signal_strength: toNumber(snapshot.signalStrength ?? snapshot.signal_strength),
     timestamp: ensureIsoString(timestamp),
@@ -158,6 +203,36 @@ const hydrateMissingTelemetryFields = async (snapshotPayload) => {
       if (candidate !== null && !Number.isNaN(candidate)) {
         return candidate;
       }
+
+      const rawPayload = row && typeof row.rawPayload === 'object' && row.rawPayload
+        ? row.rawPayload
+        : (row && typeof row.raw_payload === 'object' && row.raw_payload ? row.raw_payload : null);
+      if (rawPayload) {
+        const payloadCandidate = safeNumber(selector(rawPayload));
+        if (payloadCandidate !== null && !Number.isNaN(payloadCandidate)) {
+          return payloadCandidate;
+        }
+      }
+    }
+    return null;
+  };
+
+  const findLatestString = (selector) => {
+    for (const row of fallback) {
+      const candidate = selector(row);
+      if (typeof candidate === 'string' && candidate.trim()) {
+        return candidate.trim();
+      }
+
+      const rawPayload = row && typeof row.rawPayload === 'object' && row.rawPayload
+        ? row.rawPayload
+        : (row && typeof row.raw_payload === 'object' && row.raw_payload ? row.raw_payload : null);
+      if (rawPayload) {
+        const payloadCandidate = selector(rawPayload);
+        if (typeof payloadCandidate === 'string' && payloadCandidate.trim()) {
+          return payloadCandidate.trim();
+        }
+      }
     }
     return null;
   };
@@ -167,10 +242,21 @@ const hydrateMissingTelemetryFields = async (snapshotPayload) => {
     ...snapshotPayload,
     temperature: snapshotPayload.temperature ?? findLatestNumber((row) => row.temperature),
     humidity: snapshotPayload.humidity ?? findLatestNumber((row) => row.humidity),
+    ambient_temperature: snapshotPayload.ambient_temperature ?? findLatestNumber((row) => row.ambientTemperature ?? row.ambient_temperature),
+    ambient_humidity: snapshotPayload.ambient_humidity ?? findLatestNumber((row) => row.ambientHumidity ?? row.ambient_humidity),
+    bin_temperature: snapshotPayload.bin_temperature ?? findLatestNumber((row) => row.binTemperature ?? row.bin_temperature),
+    bin_humidity: snapshotPayload.bin_humidity ?? findLatestNumber((row) => row.binHumidity ?? row.bin_humidity),
+    soil_moisture_layer1: snapshotPayload.soil_moisture_layer1 ?? findLatestNumber((row) => row.soilMoistureLayer1 ?? row.soil_moisture_layer1),
+    soil_moisture_layer2: snapshotPayload.soil_moisture_layer2 ?? findLatestNumber((row) => row.soilMoistureLayer2 ?? row.soil_moisture_layer2),
+    soil_moisture_layer3: snapshotPayload.soil_moisture_layer3 ?? findLatestNumber((row) => row.soilMoistureLayer3 ?? row.soil_moisture_layer3),
+    soil_temperature_layer1: snapshotPayload.soil_temperature_layer1 ?? findLatestNumber((row) => row.soilTemperatureLayer1 ?? row.soil_temperature_layer1),
+    soil_temperature_layer2: snapshotPayload.soil_temperature_layer2 ?? findLatestNumber((row) => row.soilTemperatureLayer2 ?? row.soil_temperature_layer2),
+    soil_temperature_layer3: snapshotPayload.soil_temperature_layer3 ?? findLatestNumber((row) => row.soilTemperatureLayer3 ?? row.soil_temperature_layer3),
     soil_moisture: snapshotPayload.soil_moisture ?? findLatestNumber((row) => row.moisture),
     soil_temperature: snapshotPayload.soil_temperature ?? findLatestNumber((row) => row.soilTemperature),
     water_level: snapshotPayload.water_level ?? findLatestNumber((row) => row.waterLevel),
     float_state: snapshotPayload.float_state ?? findLatestNumber((row) => row.floatSensor),
+    float_status: snapshotPayload.float_status ?? findLatestString((row) => row.floatStatus ?? row.float_status),
     updated_at: snapshotPayload.updated_at || (firstTimestampRow?.timestamp ? ensureIsoString(firstTimestampRow.timestamp) : snapshotPayload.updated_at),
     timestamp: snapshotPayload.timestamp || (firstTimestampRow?.timestamp ? ensureIsoString(firstTimestampRow.timestamp) : snapshotPayload.timestamp),
   };
@@ -192,7 +278,7 @@ router.post('/', [
   body('phosphorus').optional().isNumeric().withMessage('Phosphorus must be a number'),
   body('potassium').optional().isNumeric().withMessage('Potassium must be a number'),
   body('waterLevel').optional().isInt().withMessage('Water level must be an integer'),
-  body('float_sensor').optional().isInt({ min: 0, max: 1 }).withMessage('float_sensor must be 0 or 1'),
+  body('float_sensor').optional().isInt({ min: 0, max: 2 }).withMessage('float_sensor must be 0, 1, or 2'),
   body('timestamp').optional().isISO8601().withMessage('Invalid timestamp format')
 ], async (req, res) => {
   try {
@@ -221,6 +307,28 @@ router.post('/', [
       temperature,
       humidity,
       moisture,
+      ambient_temperature,
+      ambient_humidity,
+      ambientTemperature,
+      ambientHumidity,
+      bin_temperature,
+      bin_humidity,
+      binTemperature,
+      binHumidity,
+      soil_moisture_layer1,
+      soil_moisture_layer2,
+      soil_moisture_layer3,
+      soilMoistureLayer1,
+      soilMoistureLayer2,
+      soilMoistureLayer3,
+      soil_temperature_layer1,
+      soil_temperature_layer2,
+      soil_temperature_layer3,
+      soilTemperatureLayer1,
+      soilTemperatureLayer2,
+      soilTemperatureLayer3,
+      float_status,
+      floatStatus,
       ph,
       ec,
       nitrogen,
@@ -235,12 +343,35 @@ router.post('/', [
 
     const soilMoisture = req.body.soil_moisture !== undefined ? Number(req.body.soil_moisture) : moisture;
     const floatSensor = req.body.float_sensor !== undefined ? Number(req.body.float_sensor) : undefined;
+    const ambientTemperatureValue = ambient_temperature !== undefined ? Number(ambient_temperature) : (ambientTemperature !== undefined ? Number(ambientTemperature) : undefined);
+    const ambientHumidityValue = ambient_humidity !== undefined ? Number(ambient_humidity) : (ambientHumidity !== undefined ? Number(ambientHumidity) : undefined);
+    const binTemperatureValue = bin_temperature !== undefined ? Number(bin_temperature) : (binTemperature !== undefined ? Number(binTemperature) : undefined);
+    const binHumidityValue = bin_humidity !== undefined ? Number(bin_humidity) : (binHumidity !== undefined ? Number(binHumidity) : undefined);
+    const soilMoistureLayer1Value = soil_moisture_layer1 !== undefined ? Number(soil_moisture_layer1) : (soilMoistureLayer1 !== undefined ? Number(soilMoistureLayer1) : undefined);
+    const soilMoistureLayer2Value = soil_moisture_layer2 !== undefined ? Number(soil_moisture_layer2) : (soilMoistureLayer2 !== undefined ? Number(soilMoistureLayer2) : undefined);
+    const soilMoistureLayer3Value = soil_moisture_layer3 !== undefined ? Number(soil_moisture_layer3) : (soilMoistureLayer3 !== undefined ? Number(soilMoistureLayer3) : undefined);
+    const soilTempLayer1Value = soil_temperature_layer1 !== undefined ? Number(soil_temperature_layer1) : (soilTemperatureLayer1 !== undefined ? Number(soilTemperatureLayer1) : undefined);
+    const soilTempLayer2Value = soil_temperature_layer2 !== undefined ? Number(soil_temperature_layer2) : (soilTemperatureLayer2 !== undefined ? Number(soilTemperatureLayer2) : undefined);
+    const soilTempLayer3Value = soil_temperature_layer3 !== undefined ? Number(soil_temperature_layer3) : (soilTemperatureLayer3 !== undefined ? Number(soilTemperatureLayer3) : undefined);
+    const floatStatusValue = typeof float_status === 'string'
+      ? float_status
+      : (typeof floatStatus === 'string' ? floatStatus : undefined);
 
     // Ensure payload contains at least one real sensor reading (production policy)
     const hasRealReading = (temperature !== undefined && temperature !== null) ||
       (humidity !== undefined && humidity !== null) ||
       (soilMoisture !== undefined && soilMoisture !== null) ||
-      (typeof floatSensor === 'number');
+      (typeof floatSensor === 'number') ||
+      (ambientTemperatureValue !== undefined && ambientTemperatureValue !== null) ||
+      (ambientHumidityValue !== undefined && ambientHumidityValue !== null) ||
+      (binTemperatureValue !== undefined && binTemperatureValue !== null) ||
+      (binHumidityValue !== undefined && binHumidityValue !== null) ||
+      (soilMoistureLayer1Value !== undefined && soilMoistureLayer1Value !== null) ||
+      (soilMoistureLayer2Value !== undefined && soilMoistureLayer2Value !== null) ||
+      (soilMoistureLayer3Value !== undefined && soilMoistureLayer3Value !== null) ||
+      (soilTempLayer1Value !== undefined && soilTempLayer1Value !== null) ||
+      (soilTempLayer2Value !== undefined && soilTempLayer2Value !== null) ||
+      (soilTempLayer3Value !== undefined && soilTempLayer3Value !== null);
 
     if (!hasRealReading) {
       // Ignore empty telemetry posts (common from test clients); return 204 No Content
@@ -317,7 +448,20 @@ router.post('/', [
       timestamp: ts,
     });
 
-    const sensorPayload = toPlainObject(sensorData);
+    const sensorPayload = {
+      ...toPlainObject(sensorData),
+      ambientTemperature: ambientTemperatureValue ?? null,
+      ambientHumidity: ambientHumidityValue ?? null,
+      binTemperature: binTemperatureValue ?? null,
+      binHumidity: binHumidityValue ?? null,
+      soilMoistureLayer1: soilMoistureLayer1Value ?? null,
+      soilMoistureLayer2: soilMoistureLayer2Value ?? null,
+      soilMoistureLayer3: soilMoistureLayer3Value ?? null,
+      soilTemperatureLayer1: soilTempLayer1Value ?? null,
+      soilTemperatureLayer2: soilTempLayer2Value ?? null,
+      soilTemperatureLayer3: soilTempLayer3Value ?? null,
+      floatStatus: floatStatusValue ?? null,
+    };
 
     await sensorLogService.recordSensorLogs({
       deviceId: normalizedDeviceId,
@@ -326,6 +470,16 @@ router.post('/', [
         humidity: sensorPayload.humidity ?? null,
         moisture: sensorPayload.moisture ?? null,
         soilTemperature: sensorPayload.soilTemperature ?? null,
+        ambientTemperature: sensorPayload.ambientTemperature ?? null,
+        ambientHumidity: sensorPayload.ambientHumidity ?? null,
+        binTemperature: sensorPayload.binTemperature ?? null,
+        binHumidity: sensorPayload.binHumidity ?? null,
+        soilMoistureLayer1: sensorPayload.soilMoistureLayer1 ?? null,
+        soilMoistureLayer2: sensorPayload.soilMoistureLayer2 ?? null,
+        soilMoistureLayer3: sensorPayload.soilMoistureLayer3 ?? null,
+        soilTemperatureLayer1: sensorPayload.soilTemperatureLayer1 ?? null,
+        soilTemperatureLayer2: sensorPayload.soilTemperatureLayer2 ?? null,
+        soilTemperatureLayer3: sensorPayload.soilTemperatureLayer3 ?? null,
         ph: sensorPayload.ph ?? null,
         ec: sensorPayload.ec ?? null,
         batteryLevel: sensorPayload.batteryLevel ?? null,
@@ -430,6 +584,18 @@ router.get('/latest', async (req, res) => {
           soilTemperature: latest.soilTemperature,
           waterLevel: latest.waterLevel,
           floatSensor: latest.floatSensor,
+          rawPayload: latest.rawPayload ?? latest.raw_payload,
+          ambientTemperature: latest.ambientTemperature,
+          ambientHumidity: latest.ambientHumidity,
+          binTemperature: latest.binTemperature,
+          binHumidity: latest.binHumidity,
+          soilMoistureLayer1: latest.soilMoistureLayer1,
+          soilMoistureLayer2: latest.soilMoistureLayer2,
+          soilMoistureLayer3: latest.soilMoistureLayer3,
+          soilTemperatureLayer1: latest.soilTemperatureLayer1,
+          soilTemperatureLayer2: latest.soilTemperatureLayer2,
+          soilTemperatureLayer3: latest.soilTemperatureLayer3,
+          floatStatus: latest.floatStatus,
           timestamp: latest.timestamp,
         });
         if (isLiveTelemetryPayload(candidate)) {
@@ -510,10 +676,21 @@ router.get('/latest', async (req, res) => {
       device_id: deviceId,
       temperature: null,
       humidity: null,
+      ambient_temperature: null,
+      ambient_humidity: null,
+      bin_temperature: null,
+      bin_humidity: null,
+      soil_moisture_layer1: null,
+      soil_moisture_layer2: null,
+      soil_moisture_layer3: null,
+      soil_temperature_layer1: null,
+      soil_temperature_layer2: null,
+      soil_temperature_layer3: null,
       soil_moisture: null,
       soil_temperature: null,
       water_level: null,
       float_state: deviceState?.float_state === 'LOW' ? 0 : deviceState?.float_state === 'FULL' ? 2 : deviceState?.float_state === 'NORMAL' ? 1 : null,
+      float_status: typeof deviceState?.float_state === 'string' ? deviceState.float_state : null,
       signal_strength: null,
       timestamp: lastSeenIso,
       updated_at: lastSeenIso,

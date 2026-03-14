@@ -607,6 +607,25 @@ function buildTelemetryRecord(payload, topic) {
     return null;
   }
 
+  const pickNumber = (...values) => {
+    for (const value of values) {
+      const parsed = toNullableNumber(value);
+      if (parsed !== null) {
+        return parsed;
+      }
+    }
+    return null;
+  };
+
+  const pickString = (...values) => {
+    for (const value of values) {
+      if (typeof value === 'string' && value.trim()) {
+        return value.trim();
+      }
+    }
+    return null;
+  };
+
   const deviceIdFromTopic = resolveDeviceIdFromTopic(topic);
   const normalizedPayload = {
     ...payload,
@@ -637,14 +656,59 @@ function buildTelemetryRecord(payload, topic) {
   const rawFloatState = normalizedPayload.float_state ?? normalizedPayload.floatSensor ?? normalizedPayload.floatState;
   const parsedWaterLevel = toNullableNumber(rawWaterLevel);
   const parsedFloatSensor = toNullableNumber(rawFloatState);
+  const layer1Moisture = pickNumber(normalizedPayload.soil_moisture_layer1, normalizedPayload.soilMoistureLayer1);
+  const layer2Moisture = pickNumber(normalizedPayload.soil_moisture_layer2, normalizedPayload.soilMoistureLayer2);
+  const layer3Moisture = pickNumber(normalizedPayload.soil_moisture_layer3, normalizedPayload.soilMoistureLayer3);
+  const layer1Temp = pickNumber(normalizedPayload.soil_temperature_layer1, normalizedPayload.soilTemperatureLayer1);
+  const layer2Temp = pickNumber(normalizedPayload.soil_temperature_layer2, normalizedPayload.soilTemperatureLayer2);
+  const layer3Temp = pickNumber(normalizedPayload.soil_temperature_layer3, normalizedPayload.soilTemperatureLayer3);
+  const ambientTemperature = pickNumber(normalizedPayload.ambient_temperature, normalizedPayload.ambientTemperature);
+  const ambientHumidity = pickNumber(normalizedPayload.ambient_humidity, normalizedPayload.ambientHumidity);
+  const binTemperature = pickNumber(normalizedPayload.bin_temperature, normalizedPayload.binTemperature);
+  const binHumidity = pickNumber(normalizedPayload.bin_humidity, normalizedPayload.binHumidity);
+  const floatStatus = pickString(normalizedPayload.float_status, normalizedPayload.floatStatus);
+
+  const aggregateMoisture = pickNumber(
+    normalizedPayload.soil_moisture,
+    normalizedPayload.soilMoisture,
+    normalizedPayload.moisture,
+    layer1Moisture,
+    layer2Moisture,
+    layer3Moisture,
+  );
+
+  const aggregateSoilTemp = pickNumber(
+    normalizedPayload.soil_temperature,
+    normalizedPayload.soilTemp,
+    normalizedPayload.soilTemperature,
+    normalizedPayload.waterTempC,
+    layer1Temp,
+    layer2Temp,
+    layer3Temp,
+  );
+
+  const aggregateTemperature = pickNumber(normalizedPayload.temperature, normalizedPayload.tempC, normalizedPayload.temp, ambientTemperature);
+  const aggregateHumidity = pickNumber(normalizedPayload.humidity, ambientHumidity);
+
   const reading = {
     deviceId: resolvedDeviceId,
-    temperature: toNullableNumber(normalizedPayload.temperature ?? normalizedPayload.tempC ?? normalizedPayload.temp),
-    humidity: toNullableNumber(normalizedPayload.humidity),
-    moisture: toNullableNumber(normalizedPayload.soil_moisture),
-    soilTemperature: toNullableNumber(normalizedPayload.soil_temperature),
+    temperature: aggregateTemperature,
+    humidity: aggregateHumidity,
+    moisture: aggregateMoisture,
+    soilTemperature: aggregateSoilTemp,
+    ambientTemperature,
+    ambientHumidity,
+    binTemperature,
+    binHumidity,
+    soilTemperatureLayer1: layer1Temp,
+    soilTemperatureLayer2: layer2Temp,
+    soilTemperatureLayer3: layer3Temp,
+    soilMoistureLayer1: layer1Moisture,
+    soilMoistureLayer2: layer2Moisture,
+    soilMoistureLayer3: layer3Moisture,
     waterLevel: parsedWaterLevel ?? parsedFloatSensor ?? normalizedFloat,
     floatSensor: parsedFloatSensor ?? parsedWaterLevel ?? normalizedFloat,
+    floatStatus,
     signalStrength: toNullableNumber(normalizedPayload.signalStrength ?? normalizedPayload.rssi),
     timestamp,
     source: 'mqtt',
@@ -656,6 +720,16 @@ function buildTelemetryRecord(payload, topic) {
     reading.humidity,
     reading.moisture,
     reading.soilTemperature,
+    reading.ambientTemperature,
+    reading.ambientHumidity,
+    reading.binTemperature,
+    reading.binHumidity,
+    reading.soilTemperatureLayer1,
+    reading.soilTemperatureLayer2,
+    reading.soilTemperatureLayer3,
+    reading.soilMoistureLayer1,
+    reading.soilMoistureLayer2,
+    reading.soilMoistureLayer3,
     reading.waterLevel,
     reading.floatSensor,
   ].some((value) => value !== null && typeof value !== 'undefined');

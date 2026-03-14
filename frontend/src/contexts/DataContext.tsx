@@ -270,14 +270,31 @@ const normalizeSensorSample = (sample: any, fallbackDeviceId?: string): SensorDa
   );
   const timestampIso = toIsoString(sample.timestamp || sample.updated_at || sample.createdAt || sample.receivedAt) || new Date().toISOString();
   const sensorSummary = Array.isArray(sample.sensorSummary) ? sample.sensorSummary : undefined;
+  const floatStatus = (() => {
+    const candidate = sample.floatStatus ?? sample.float_status ?? null;
+    if (typeof candidate === 'string' && candidate.trim()) {
+      return candidate.trim().toUpperCase();
+    }
+    return null;
+  })();
 
   const normalized: SensorData = {
     ...(sample as SensorData),
     deviceId,
     temperature: toNumber(sample.temperature ?? sample.temp ?? sample.temperatureC),
     humidity: toNumber(sample.humidity ?? sample.relativeHumidity),
+    ambientTemperature: toNumber(sample.ambientTemperature ?? sample.ambient_temperature),
+    ambientHumidity: toNumber(sample.ambientHumidity ?? sample.ambient_humidity),
+    binTemperature: toNumber(sample.binTemperature ?? sample.bin_temperature),
+    binHumidity: toNumber(sample.binHumidity ?? sample.bin_humidity),
     moisture: toNumber(sample.moisture ?? sample.soil_moisture ?? sample.soilMoisture),
+    soilMoistureLayer1: toNumber(sample.soilMoistureLayer1 ?? sample.soil_moisture_layer1),
+    soilMoistureLayer2: toNumber(sample.soilMoistureLayer2 ?? sample.soil_moisture_layer2),
+    soilMoistureLayer3: toNumber(sample.soilMoistureLayer3 ?? sample.soil_moisture_layer3),
     soilTemperature: toNumber(sample.soilTemperature ?? sample.soil_temperature ?? sample.waterTempC ?? sample.soilTemp),
+    soilTemperatureLayer1: toNumber(sample.soilTemperatureLayer1 ?? sample.soil_temperature_layer1),
+    soilTemperatureLayer2: toNumber(sample.soilTemperatureLayer2 ?? sample.soil_temperature_layer2),
+    soilTemperatureLayer3: toNumber(sample.soilTemperatureLayer3 ?? sample.soil_temperature_layer3),
     ph: toNumber(sample.ph),
     ec: toNumber(sample.ec ?? sample.electricalConductivity),
     nitrogen: toNumber(sample.nitrogen),
@@ -285,6 +302,7 @@ const normalizeSensorSample = (sample: any, fallbackDeviceId?: string): SensorDa
     potassium: toNumber(sample.potassium),
     waterLevel: toNumber(sample.waterLevel ?? sample.water_level ?? sample.waterlevel) ?? (typeof floatSensorValue === 'number' ? floatSensorValue : undefined),
     floatSensor: floatSensorValue,
+    floatStatus,
     floatSensorTimestamp: toIsoString(sample.floatSensorTimestamp ?? sample.float_sensor_timestamp ?? sample.floatTimestamp ?? sample.float_timestamp),
     batteryLevel: toNumber(sample.batteryLevel ?? sample.battery_level ?? sample.battery ?? sample.batt),
     signalStrength: toNumber(sample.signalStrength ?? sample.signal_strength ?? sample.rssi),
@@ -313,8 +331,18 @@ const mergeSensorReadings = (existing: SensorData | null, incoming: SensorData |
     ...incoming,
     temperature: decide('temperature') as any,
     humidity: decide('humidity') as any,
+    ambientTemperature: decide('ambientTemperature') as any,
+    ambientHumidity: decide('ambientHumidity') as any,
+    binTemperature: decide('binTemperature') as any,
+    binHumidity: decide('binHumidity') as any,
     moisture: decide('moisture') as any,
+    soilMoistureLayer1: decide('soilMoistureLayer1') as any,
+    soilMoistureLayer2: decide('soilMoistureLayer2') as any,
+    soilMoistureLayer3: decide('soilMoistureLayer3') as any,
     soilTemperature: decide('soilTemperature') as any,
+    soilTemperatureLayer1: decide('soilTemperatureLayer1') as any,
+    soilTemperatureLayer2: decide('soilTemperatureLayer2') as any,
+    soilTemperatureLayer3: decide('soilTemperatureLayer3') as any,
     ph: decide('ph') as any,
     ec: decide('ec') as any,
     nitrogen: decide('nitrogen') as any,
@@ -322,6 +350,7 @@ const mergeSensorReadings = (existing: SensorData | null, incoming: SensorData |
     potassium: decide('potassium') as any,
     waterLevel: decide('waterLevel') as any,
     floatSensor: decide('floatSensor') as any,
+    floatStatus: incoming.floatStatus ?? existing.floatStatus ?? null,
     batteryLevel: decide('batteryLevel') as any,
     signalStrength: decide('signalStrength') as any,
     actuatorStates: incoming.actuatorStates ?? existing.actuatorStates ?? null,

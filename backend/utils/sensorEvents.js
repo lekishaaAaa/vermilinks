@@ -394,6 +394,23 @@ const checkThresholds = async (sensorData, ioInstance) => {
     validateRange('moisture', 'Soil Moisture', plainSensor.moisture, 300, 800, '');
     validateRange('soilTemperature', 'Soil Temperature', plainSensor.soilTemperature, 18, 32, '°C');
 
+    const layerRangeChecks = [
+      { key: 'soilMoistureLayer1', label: 'Soil Moisture L1', min: 300, max: 800, unit: '%' },
+      { key: 'soilMoistureLayer2', label: 'Soil Moisture L2', min: 300, max: 800, unit: '%' },
+      { key: 'soilMoistureLayer3', label: 'Soil Moisture L3', min: 300, max: 800, unit: '%' },
+      { key: 'soilTemperatureLayer1', label: 'Soil Temperature L1', min: 18, max: 32, unit: '°C' },
+      { key: 'soilTemperatureLayer2', label: 'Soil Temperature L2', min: 18, max: 32, unit: '°C' },
+      { key: 'soilTemperatureLayer3', label: 'Soil Temperature L3', min: 18, max: 32, unit: '°C' },
+      { key: 'ambientTemperature', label: 'Ambient Temperature', min: 15, max: 35, unit: '°C' },
+      { key: 'ambientHumidity', label: 'Ambient Humidity', min: 50, max: 90, unit: '%' },
+      { key: 'binTemperature', label: 'Bin Temperature', min: 15, max: 40, unit: '°C' },
+      { key: 'binHumidity', label: 'Bin Humidity', min: 45, max: 95, unit: '%' },
+    ];
+
+    layerRangeChecks.forEach((entry) => {
+      validateRange(entry.key, entry.label, plainSensor[entry.key], entry.min, entry.max, entry.unit);
+    });
+
     if (outOfRangeIssues.length > 0) {
       const summary = outOfRangeIssues
         .map((issue) => `${issue.label}=${issue.value}${issue.unit}`)
@@ -664,6 +681,27 @@ const checkThresholds = async (sensorData, ioInstance) => {
           threshold: { value: critical, operator: '==' },
         });
       }
+    }
+
+    const floatStatus = String(
+      plainSensor.floatStatus
+      ?? plainSensor.float_status
+      ?? ''
+    ).trim().toUpperCase();
+    if (floatStatus === 'LOW') {
+      pushAlert({
+        type: 'float_status_low',
+        severity: 'critical',
+        message: 'Float sensor status LOW - refill water reservoir',
+        threshold: { value: 'LOW', operator: '==' },
+      });
+    } else if (floatStatus === 'HIGH') {
+      pushAlert({
+        type: 'float_status_high',
+        severity: 'high',
+        message: 'Float sensor status HIGH - inspect overflow/drain',
+        threshold: { value: 'HIGH', operator: '==' },
+      });
     }
 
     processFloatLockout(sanitizedSensor, thresholds.floatSensor, pushAlert, ioInstance);

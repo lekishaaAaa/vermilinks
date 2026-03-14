@@ -23,8 +23,18 @@ export interface SensorData {
   deviceId: string;
   temperature?: number;
   humidity?: number;
+  ambientTemperature?: number | null;
+  ambientHumidity?: number | null;
+  binTemperature?: number | null;
+  binHumidity?: number | null;
   moisture?: number;
+  soilMoistureLayer1?: number | null;
+  soilMoistureLayer2?: number | null;
+  soilMoistureLayer3?: number | null;
   soilTemperature?: number;
+  soilTemperatureLayer1?: number | null;
+  soilTemperatureLayer2?: number | null;
+  soilTemperatureLayer3?: number | null;
   ph?: number;
   ec?: number;
   nitrogen?: number;
@@ -32,6 +42,7 @@ export interface SensorData {
   potassium?: number;
   waterLevel?: number;
   floatSensor?: number | null;
+  floatStatus?: string | null;
   floatSensorTimestamp?: string | null;
   timestamp?: string | Date;
   status?: 'normal' | 'warning' | 'critical' | string;
@@ -78,6 +89,16 @@ export interface SensorSummaryItem {
 export interface LatestSnapshot {
   temperature: number | null;
   humidity: number | null;
+  ambient_temperature?: number | null;
+  ambient_humidity?: number | null;
+  bin_temperature?: number | null;
+  bin_humidity?: number | null;
+  soil_moisture_layer1?: number | null;
+  soil_moisture_layer2?: number | null;
+  soil_moisture_layer3?: number | null;
+  soil_temperature_layer1?: number | null;
+  soil_temperature_layer2?: number | null;
+  soil_temperature_layer3?: number | null;
   soil_moisture: number | null;
   soil_temperature?: number | null;
   ph?: number | null;
@@ -87,6 +108,7 @@ export interface LatestSnapshot {
   potassium?: number | null;
   water_level?: number | null;
   float_state: number | null;
+  float_status?: string | null;
   battery_level?: number | null;
   signal_strength?: number | null;
   actuator_states?: Record<string, boolean | number | null> | null;

@@ -20,6 +20,8 @@ static const char* DEVICE_ID = "esp32A";
 static const char* TOPIC_STATE = "vermilinks/esp32A/state";
 static const char* TOPIC_STATUS = "vermilinks/esp32A/status";
 static const char* TOPIC_COMMAND = "vermilinks/esp32A/commands";
+static const char* TOPIC_COMMAND_COMPAT = "vermilinks/esp32a/commands";
+static const char* TOPIC_COMMAND_LEGACY = "vermilinks/esp32a/command";
 static const char* TOPIC_ACK = "vermilinks/esp32A/ack";
 static const char* TOPIC_LWT = "vermilinks/device_status/esp32a";
 
@@ -66,7 +68,7 @@ void printBootDiagnostics() {
   Serial.println("[ESP32-A] VermiLinks controller boot");
   Serial.printf("[ESP32-A] Device ID: %s\n", DEVICE_ID);
   Serial.printf("[ESP32-A] MQTT broker: %s:%u\n", MQTT_HOST, MQTT_PORT);
-  Serial.printf("[ESP32-A] Topics: command=%s state=%s ack=%s status=%s\n", TOPIC_COMMAND, TOPIC_STATE, TOPIC_ACK, TOPIC_STATUS);
+  Serial.printf("[ESP32-A] Topics: command=%s compat=%s legacy=%s state=%s ack=%s status=%s\n", TOPIC_COMMAND, TOPIC_COMMAND_COMPAT, TOPIC_COMMAND_LEGACY, TOPIC_STATE, TOPIC_ACK, TOPIC_STATUS);
   Serial.printf("[ESP32-A] Pins: float=%d pump=%d valve1=%d valve2=%d valve3=%d led=%d\n", FLOAT_PIN, PUMP_PIN, VALVE1_PIN, VALVE2_PIN, VALVE3_PIN, STATUS_LED_PIN);
   Serial.printf("[ESP32-A] Initial float raw=%d\n", digitalRead(FLOAT_PIN));
 }
@@ -130,6 +132,33 @@ bool mqttConnected() {
   return mqttClient.connected();
 }
 
+const char* mqttStateLabel(int state) {
+  switch (state) {
+    case -4:
+      return "MQTT_CONNECTION_TIMEOUT";
+    case -3:
+      return "MQTT_CONNECTION_LOST";
+    case -2:
+      return "MQTT_CONNECT_FAILED";
+    case -1:
+      return "MQTT_DISCONNECTED";
+    case 0:
+      return "MQTT_CONNECTED";
+    case 1:
+      return "MQTT_BAD_PROTOCOL";
+    case 2:
+      return "MQTT_BAD_CLIENT_ID";
+    case 3:
+      return "MQTT_UNAVAILABLE";
+    case 4:
+      return "MQTT_BAD_CREDENTIALS";
+    case 5:
+      return "MQTT_UNAUTHORIZED";
+    default:
+      return "MQTT_UNKNOWN";
+  }
+}
+
 void ensureTimeSync() {
   static bool synced = false;
   if (synced || WiFi.status() != WL_CONNECTED) {
@@ -142,8 +171,12 @@ void ensureTimeSync() {
 void publishJson(const char* topic, JsonDocument& doc, bool retained) {
   char buffer[512];
   const size_t written = serializeJson(doc, buffer, sizeof(buffer));
+  Serial.printf("[ESP32-A] MQTT publish attempt topic=%s bytes=%u\n", topic, static_cast<unsigned int>(written));
   if (written > 0) {
-    mqttClient.publish(topic, buffer, retained);
+    const bool published = mqttClient.publish(topic, buffer, retained);
+    if (!published) {
+      Serial.printf("[ESP32-A] MQTT publish failed topic=%s state=%d (%s) connected=%d bytes=%u\n", topic, mqttClient.state(), mqttStateLabel(mqttClient.state()), mqttClient.connected() ? 1 : 0, static_cast<unsigned int>(written));
+    }
   }
 }
 
@@ -152,14 +185,10 @@ void mqttPublishState(const ActuatorState& state, bool retained) {
     return;
   }
 
-  StaticJsonDocument<384> doc;
+  StaticJsonDocument<256> doc;
   const long unixTs = static_cast<long>(time(nullptr));
   doc["deviceId"] = DEVICE_ID;
   doc["device_id"] = DEVICE_ID;
-  doc["temperature"] = nullptr;
-  doc["humidity"] = nullptr;
-  doc["soil_moisture"] = nullptr;
-  doc["soil_temperature"] = nullptr;
   doc["pump"] = state.pump;
   doc["valve1"] = state.valve1;
   doc["valve2"] = state.valve2;
@@ -246,7 +275,8 @@ void handleCommandPayload(const char* payload) {
 }
 
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
-  if (String(topic) != TOPIC_COMMAND) {
+  const String topicValue(topic);
+  if (topicValue != TOPIC_COMMAND && topicValue != TOPIC_COMMAND_COMPAT && topicValue != TOPIC_COMMAND_LEGACY) {
     return;
   }
 
@@ -262,6 +292,7 @@ void mqttInit() {
   secureClient.setInsecure();
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
   mqttClient.setCallback(mqttCallback);
+  mqttClient.setBufferSize(1024);
   pinMode(STATUS_LED_PIN, OUTPUT);
   digitalWrite(STATUS_LED_PIN, LOW);
 
@@ -283,6 +314,8 @@ void mqttEnsureConnected() {
   }
   lastMqttAttemptMs = now;
 
+  Serial.printf("[ESP32-A] Attempting MQTT connection to %s:%u as %s\n", MQTT_HOST, MQTT_PORT, mqttClientId);
+
   const bool connected = mqttClient.connect(
     mqttClientId,
     MQTT_USER,
@@ -294,13 +327,20 @@ void mqttEnsureConnected() {
   );
 
   if (!connected) {
+    Serial.printf("[ESP32-A] MQTT connect failed state=%d (%s) wifi=%d\n", mqttClient.state(), mqttStateLabel(mqttClient.state()), WiFi.status());
     digitalWrite(STATUS_LED_PIN, LOW);
     return;
   }
 
+  Serial.println("[ESP32-A] MQTT connected");
   digitalWrite(STATUS_LED_PIN, HIGH);
-  mqttClient.publish(TOPIC_LWT, "online", true);
-  mqttClient.subscribe(TOPIC_COMMAND);
+  if (!mqttClient.publish(TOPIC_LWT, "online", true)) {
+    Serial.printf("[ESP32-A] MQTT LWT online publish failed state=%d (%s)\n", mqttClient.state(), mqttStateLabel(mqttClient.state()));
+  }
+  const bool subscribedCurrent = mqttClient.subscribe(TOPIC_COMMAND);
+  const bool subscribedCompat = mqttClient.subscribe(TOPIC_COMMAND_COMPAT);
+  const bool subscribedLegacy = mqttClient.subscribe(TOPIC_COMMAND_LEGACY);
+  Serial.printf("[ESP32-A] MQTT subscribe current=%d compat=%d legacy=%d\n", subscribedCurrent ? 1 : 0, subscribedCompat ? 1 : 0, subscribedLegacy ? 1 : 0);
   mqttPublishState(currentState, true);
 }
 
@@ -316,7 +356,7 @@ void mqttLoop() {
 void ensureWifi() {
   if (WiFi.status() == WL_CONNECTED) {
     if (wifiReconnectLogged) {
-      Serial.println("WiFi reconnected");
+      Serial.printf("WiFi reconnected, IP=%s RSSI=%d\n", WiFi.localIP().toString().c_str(), WiFi.RSSI());
       wifiReconnectLogged = false;
     }
     return;
