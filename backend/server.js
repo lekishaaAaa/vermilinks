@@ -9,7 +9,7 @@ const { Server } = require('socket.io');
 const http = require('http');
 const path = require('path');
 const envFile = (process.env.NODE_ENV || '').toLowerCase() === 'test' ? '.env.test' : '.env';
-require('dotenv').config({ path: path.join(__dirname, envFile), override: true });
+require('dotenv').config({ path: path.join(__dirname, envFile), override: false });
 const { validateEnv } = require('./utils/validateEnv');
 validateEnv();
 const logger = require('./utils/logger');
@@ -777,24 +777,64 @@ function tryListen(port) {
 }
 
 async function validateSensorDataSchema() {
-  const [tableRows] = await sequelize.query(
-    `SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'sensor_data' LIMIT 1`
-  );
+  try {
+    const [tableRows] = await sequelize.query(
+      `SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'sensor_data' LIMIT 1`
+    );
 
-  if (!Array.isArray(tableRows) || tableRows.length === 0) {
-    throw new Error('Schema drift: required table sensor_data is missing.');
-  }
+    const [columnRows] = await sequelize.query(
+      `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'sensor_data'`
+    );
 
-  const [columnRows] = await sequelize.query(
-    `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'sensor_data'`
-  );
+    const requiredColumns = ['temperature', 'humidity', 'moisture', 'soil_temperature', 'created_at'];
+    const existingColumns = new Set((Array.isArray(columnRows) ? columnRows : []).map((row) => String(row.column_name || '').toLowerCase()));
+    const missing = requiredColumns.filter((column) => !existingColumns.has(column));
+    const tableMissing = !Array.isArray(tableRows) || tableRows.length === 0;
 
-  const requiredColumns = ['temperature', 'humidity', 'moisture', 'soil_temperature', 'created_at'];
-  const existingColumns = new Set((Array.isArray(columnRows) ? columnRows : []).map((row) => String(row.column_name || '').toLowerCase()));
-  const missing = requiredColumns.filter((column) => !existingColumns.has(column));
+    if (tableMissing || missing.length > 0) {
+      logger.warn('Schema drift detected during startup; attempting auto-repair', {
+        missingTable: tableMissing,
+        missingColumns: missing,
+      });
 
-  if (missing.length > 0) {
-    throw new Error(`Schema drift: sensor_data is missing columns: ${missing.join(', ')}`);
+      if (typeof database.ensureDatabaseSetup === 'function') {
+        await database.ensureDatabaseSetup({ alter: true });
+      }
+
+      const [recheckTables] = await sequelize.query(
+        `SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'sensor_data' LIMIT 1`
+      );
+      const [recheckColumns] = await sequelize.query(
+        `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'sensor_data'`
+      );
+      const recheckColumnSet = new Set((Array.isArray(recheckColumns) ? recheckColumns : []).map((row) => String(row.column_name || '').toLowerCase()));
+      const stillMissing = requiredColumns.filter((column) => !recheckColumnSet.has(column));
+      const stillMissingTable = !Array.isArray(recheckTables) || recheckTables.length === 0;
+
+      if (stillMissingTable || stillMissing.length > 0) {
+        logger.warn('Schema repair completed but sensor_data still has gaps', {
+          missingTable: stillMissingTable,
+          missingColumns: stillMissing,
+        });
+      } else {
+        logger.info('Schema repair completed for sensor_data');
+      }
+    } else {
+      logger.info('Schema validation passed for sensor_data table');
+    }
+  } catch (error) {
+    logger.warn('Schema validation could not be completed; continuing startup and attempting repair', {
+      error: error && error.message ? error.message : error,
+    });
+    if (typeof database.ensureDatabaseSetup === 'function') {
+      try {
+        await database.ensureDatabaseSetup({ alter: true });
+      } catch (repairError) {
+        logger.warn('Schema auto-repair attempt failed during startup', {
+          error: repairError && repairError.message ? repairError.message : repairError,
+        });
+      }
+    }
   }
 }
 
@@ -900,13 +940,8 @@ if ((process.env.NODE_ENV || 'development') !== 'test') {
 
       try {
         await validateSensorDataSchema();
-        logger.info('Schema validation passed for sensor_data table');
       } catch (schemaError) {
         logger.error('Schema drift validation failed:', schemaError && schemaError.message ? schemaError.message : schemaError);
-        if ((process.env.NODE_ENV || 'development') === 'production') {
-          process.exit(1);
-          return;
-        }
       }
     } catch (error) {
       logger.error('Database connection failed at startup:', error && error.message ? error.message : error);

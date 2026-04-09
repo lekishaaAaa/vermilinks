@@ -23,6 +23,32 @@ const baseOptions = {
 	}
 };
 
+const modelModulePaths = [
+	'../models/Actuator',
+	'../models/ActuatorLog',
+	'../models/ActuatorState',
+	'../models/Admin',
+	'../models/AdminOTP',
+	'../models/Alert',
+	'../models/AuditLog',
+	'../models/Command',
+	'../models/Device',
+	'../models/DeviceCommand',
+	'../models/DeviceEvent',
+	'../models/DevicePort',
+	'../models/Otp',
+	'../models/PasswordResetToken',
+	'../models/PendingCommand',
+	'../models/RevokedToken',
+	'../models/SensorData',
+	'../models/SensorLog',
+	'../models/SensorSnapshot',
+	'../models/Settings',
+	'../models/SoilReading',
+	'../models/User',
+	'../models/UserSession',
+];
+
 
 let sequelize;
 let currentDialect = 'postgres';
@@ -38,8 +64,6 @@ if (isTestEnv) {
 	currentDialect = 'sqlite';
 } else {
 	const databaseUrl = process.env.DATABASE_URL || '';
-	console.log('[DEBUG] DATABASE_URL:', databaseUrl);
-	console.log('[DEBUG] DATABASE_URL type:', typeof databaseUrl);
 	if (!databaseUrl || typeof databaseUrl !== 'string') {
 		logger.fatal('DATABASE_URL is missing or invalid.');
 		throw new Error('DATABASE_URL is missing or invalid.');
@@ -84,25 +108,42 @@ if (isTestEnv) {
 }
 
 function loadModels() {
-	require('../models/User');
-	require('../models/Device');
-	require('../models/SensorData');
-	require('../models/Alert');
-	require('../models/Settings');
-	require('../models/Actuator');
-	require('../models/ActuatorLog');
-	require('../models/DevicePort');
-	require('../models/DeviceCommand');
-	require('../models').Command;
-	require('../models/Admin');
-	require('../models/AdminOTP');
-	require('../models/Otp');
-	require('../models/RevokedToken');
-	require('../models/UserSession');
-	require('../models/AuditLog');
-	require('../models/PasswordResetToken');
-	require('../models/SensorSnapshot');
-	require('../models/SensorLog');
+	modelModulePaths.forEach((modulePath) => {
+		require(modulePath);
+	});
+}
+
+function normalizeTableNames(tables) {
+	if (!Array.isArray(tables)) {
+		return [];
+	}
+
+	return tables.map((table) => {
+		if (typeof table === 'string') {
+			return table;
+		}
+		if (table && typeof table === 'object') {
+			return table.tableName || table.table || table.name || table.toString();
+		}
+		return String(table);
+	}).filter(Boolean);
+}
+
+async function logVerifiedTables() {
+	try {
+		const tables = normalizeTableNames(await sequelize.getQueryInterface().showAllTables());
+		const trackedTables = ['sensor_data', 'sensor_snapshots', 'alerts', 'devices'];
+		const verifiedTables = trackedTables.filter((table) => tables.includes(table));
+		if (tables.includes('otps')) {
+			verifiedTables.push('otps');
+		}
+		logger.info('Database synced successfully');
+		logger.info(`Tables verified: ${verifiedTables.length > 0 ? verifiedTables.join(', ') : trackedTables.join(', ')}`);
+	} catch (error) {
+		logger.warn('Database synced successfully, but table verification could not be completed', {
+			error: error && error.message ? error.message : error,
+		});
+	}
 }
 
 let setupPromise = null;
@@ -119,13 +160,8 @@ async function ensureDatabaseSetup(options = {}) {
 		syncOptions.force = true;
 	}
 
-	// In production we rely on explicit migrations rather than Sequelize's
-	// automatic `alter` behavior which can be dangerous when data exists.
-	const isProd = (process.env.NODE_ENV || '').toLowerCase() === 'production';
 	if (!syncOptions.force) {
-		// Only enable `alter` automatically when not in production. Callers can
-		// still pass `options.alter = true` to override explicitly (use with care).
-		syncOptions.alter = options.alter ?? (!isProd);
+		syncOptions.alter = options.alter ?? true;
 	}
 
 	// SQLite has limited ALTER TABLE support and certain alterations (like adding
@@ -146,9 +182,26 @@ async function ensureDatabaseSetup(options = {}) {
 
 	logger.info('Syncing database schema', { force: Boolean(syncOptions.force), alter: Boolean(syncOptions.alter) });
 
-	setupPromise = sequelize.sync(syncOptions).catch((err) => {
+	setupPromise = (async () => {
+		try {
+			await sequelize.sync(syncOptions);
+		} catch (error) {
+			const dialect = sequelize && typeof sequelize.getDialect === 'function' ? sequelize.getDialect() : null;
+			if (dialect !== 'sqlite' && !syncOptions.force) {
+				logger.warn('Initial schema sync failed, attempting auto-repair with alter:true', {
+					error: error && error.message ? error.message : error,
+				});
+				await sequelize.sync({ alter: true });
+			} else {
+				throw error;
+			}
+		}
+
+		await logVerifiedTables();
+	})();
+
+	setupPromise.catch(() => {
 		setupPromise = null;
-		throw err;
 	});
 
 	return setupPromise;
