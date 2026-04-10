@@ -18,8 +18,18 @@ const baseOptions = {
 	pool: {
 		max: Number(process.env.DB_POOL_MAX || 5),
 		min: Number(process.env.DB_POOL_MIN || 0),
-		acquire: Number(process.env.DB_POOL_ACQUIRE || 30000),
+		acquire: Number(process.env.DB_POOL_ACQUIRE || 10000),
 		idle: Number(process.env.DB_POOL_IDLE || 10000)
+	},
+	retry: {
+		max: Number(process.env.DB_QUERY_RETRY_MAX || 2),
+		match: [
+			/SequelizeConnectionError/i,
+			/SequelizeConnectionAcquireTimeoutError/i,
+			/Connection terminated unexpectedly/i,
+			/ECONNRESET/i,
+			/ETIMEDOUT/i,
+		],
 	}
 };
 
@@ -92,8 +102,17 @@ if (isTestEnv) {
 	usesSsl = isProduction;
 
 	const dialectOptions = isProduction
-		? { ssl: { require: true, rejectUnauthorized: false } }
-		: {};
+		? {
+			ssl: { require: true, rejectUnauthorized: false },
+			keepAlive: true,
+			keepAliveInitialDelayMillis: Number(process.env.DB_KEEPALIVE_INITIAL_DELAY_MS || 10000),
+			connectionTimeoutMillis: Number(process.env.DB_CONNECT_TIMEOUT_MS || 10000),
+		}
+		: {
+			keepAlive: true,
+			keepAliveInitialDelayMillis: Number(process.env.DB_KEEPALIVE_INITIAL_DELAY_MS || 10000),
+			connectionTimeoutMillis: Number(process.env.DB_CONNECT_TIMEOUT_MS || 10000),
+		};
 
 	try {
 		sequelize = new Sequelize(databaseUrl, {
@@ -209,7 +228,7 @@ async function ensureDatabaseSetup(options = {}) {
 
 const connectDB = async () => {
 	// Attempt connection with retries and exponential backoff to tolerate transient network issues
-	const maxAttempts = Number(process.env.DB_CONNECT_RETRIES || 3);
+	const maxAttempts = Number(process.env.DB_CONNECT_RETRIES || 5);
 	let attempt = 0;
 	let lastErr = null;
 	while (attempt < maxAttempts) {

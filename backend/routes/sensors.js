@@ -37,6 +37,7 @@ const COMMAND_PENDING_UI_TIMEOUT_MS = 5000;
 
 const router = express.Router();
 const sensorCache = new NodeCache({ stdTTL: 5, checkperiod: 2 });
+let latestRouteDbErrorStreak = 0;
 
 const normalizeDeviceId = (value) => {
   const normalized = (value || '').toString().trim().toLowerCase();
@@ -516,9 +517,9 @@ router.post('/', [
 // @desc    Get latest sensor reading (device-specific actuator reads bypass cache)
 // @access  Public
 router.get('/latest', async (req, res) => {
+  const deviceId = normalizeDeviceId(req.query.device_id || req.query.deviceId);
+  const cacheKey = deviceId ? `latest:${deviceId}` : 'latest:all';
   try {
-    const deviceId = normalizeDeviceId(req.query.device_id || req.query.deviceId);
-    const cacheKey = deviceId ? `latest:${deviceId}` : 'latest:all';
     const shouldUseCache = !deviceId;
     if (shouldUseCache) {
       const cached = sensorCache.get(cacheKey);
@@ -545,8 +546,7 @@ router.get('/latest', async (req, res) => {
         if (!snapshot) {
           return null;
         }
-        const candidate = formatLatestSnapshot(snapshot);
-        return isLiveTelemetryPayload(candidate) ? candidate : null;
+        return formatLatestSnapshot(snapshot);
       }
 
       const snapshots = await SensorSnapshot.findAll({
@@ -556,7 +556,7 @@ router.get('/latest', async (req, res) => {
       });
       for (const snapshot of snapshots) {
         const candidate = formatLatestSnapshot(snapshot);
-        if (isLiveTelemetryPayload(candidate)) {
+        if (candidate) {
           return candidate;
         }
       }
@@ -598,7 +598,7 @@ router.get('/latest', async (req, res) => {
           floatStatus: latest.floatStatus,
           timestamp: latest.timestamp,
         });
-        if (isLiveTelemetryPayload(candidate)) {
+        if (candidate) {
           return candidate;
         }
       }
@@ -614,9 +614,15 @@ router.get('/latest', async (req, res) => {
 
     if (formatted) {
       formatted = await hydrateMissingTelemetryFields(formatted);
-      if (!isLiveTelemetryPayload(formatted)) {
-        formatted = null;
-      }
+    }
+
+    const telemetryFresh = isLiveTelemetryPayload(formatted);
+    if (formatted) {
+      formatted = {
+        ...formatted,
+        deviceOnline: telemetryFresh,
+        isOfflineData: !telemetryFresh,
+      };
     }
 
     let deviceState = null;
@@ -713,9 +719,33 @@ router.get('/latest', async (req, res) => {
       return res.status(204).send();
     }
 
+    latestRouteDbErrorStreak = 0;
+
     return res.json(enrichedPayload);
   } catch (error) {
-    console.error('GET /api/sensors/latest err', error);
+    const message = (error && error.message ? error.message : String(error)).toLowerCase();
+    const isDbConnectionError = message.includes('connection terminated unexpectedly') ||
+      message.includes('sequelizeconnectionerror') ||
+      message.includes('connection acquire timeout');
+
+    if (isDbConnectionError) {
+      latestRouteDbErrorStreak += 1;
+      const shouldLog = latestRouteDbErrorStreak <= 3 || (latestRouteDbErrorStreak % 10 === 0);
+      if (shouldLog) {
+        console.warn('GET /api/sensors/latest transient DB error', error && error.message ? error.message : error);
+      }
+
+      const fallback = sensorCache.get(cacheKey);
+      if (fallback !== undefined) {
+        if (fallback === null) {
+          return res.status(204).send();
+        }
+        return res.json({ ...fallback, source: 'cache_fallback' });
+      }
+    } else {
+      console.error('GET /api/sensors/latest err', error);
+    }
+
     return res.status(500).json({ error: 'server_error' });
   }
 });

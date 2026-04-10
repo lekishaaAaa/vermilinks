@@ -111,6 +111,37 @@ function respondWithLockout(res, err, fallbackMessage) {
   });
 }
 
+function isTransientDatabaseError(error) {
+  if (!error) {
+    return false;
+  }
+
+  const name = (error.name || '').toString();
+  const parentCode = error.parent && error.parent.code ? String(error.parent.code) : '';
+  const message = [
+    error.message,
+    error.parent && error.parent.message,
+    error.original && error.original.message,
+  ]
+    .filter(Boolean)
+    .join(' | ')
+    .toLowerCase();
+
+  if (name.includes('SequelizeConnection')) {
+    return true;
+  }
+
+  if (['ECONNRESET', 'ETIMEDOUT', 'EPIPE'].includes(parentCode)) {
+    return true;
+  }
+
+  return (
+    message.includes('connection terminated unexpectedly') ||
+    message.includes('connection acquire timeout') ||
+    message.includes('failed to connect')
+  );
+}
+
 async function recordAudit(eventType, actor, data) {
   try {
     if (!AuditLog) return;
@@ -516,6 +547,9 @@ exports.login = async (req, res) => {
     return res.json(responsePayload);
   } catch (err) {
     try { await recordAudit('login.attempt', normalizeEmail(email), { success: false, error: err && err.message ? err.message : String(err), ip: requesterIp }); } catch (e) {}
+    if (isTransientDatabaseError(err)) {
+      return res.status(503).json({ success: false, message: 'Database temporarily unavailable. Please retry in a few seconds.' });
+    }
     console.error('adminAuthController.login error', err && err.message ? err.message : err);
     return res.status(500).json({ success: false, message: 'Unable to initiate login' });
   }
@@ -638,6 +672,9 @@ exports.verifyOtp = async (req, res) => {
     });
   } catch (err) {
     try { await recordAudit('otp.verified', normalizedEmail, { success: false, error: err && err.message ? err.message : String(err) }); } catch (e) {}
+    if (isTransientDatabaseError(err)) {
+      return res.status(503).json({ success: false, message: 'Database temporarily unavailable. Please retry in a few seconds.' });
+    }
     console.error('adminAuthController.verifyOtp error', err && err.message ? err.message : err);
     return res.status(500).json({ success: false, message: 'Unable to verify code' });
   }
@@ -849,6 +886,9 @@ exports.resendOtp = async (req, res) => {
 
     return res.json(responsePayload);
   } catch (err) {
+    if (isTransientDatabaseError(err)) {
+      return res.status(503).json({ success: false, message: 'Database temporarily unavailable. Please retry in a few seconds.' });
+    }
     console.error('adminAuthController.resendOtp error', err && err.message ? err.message : err);
     return res.status(500).json({ success: false, message: 'Unable to resend verification code' });
   }

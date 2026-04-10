@@ -19,6 +19,8 @@ const PRESENCE_SWEEP_INTERVAL_MS = Math.max(
   parseInt(process.env.PRESENCE_SWEEP_INTERVAL_MS || '10000', 10),
 );
 let presenceSweepStarted = false;
+let presenceFailureStreak = 0;
+let presencePausedUntil = 0;
 
 function normalizeDeviceId(value) {
   const normalized = (value || '').toString().trim().toLowerCase();
@@ -108,14 +110,40 @@ function startPresenceReconciliation() {
   }
   presenceSweepStarted = true;
 
-  reconcilePresenceFromDatabase().catch((e) => {
-    console.error('Presence reconciliation failed:', e && e.message ? e.message : e);
-  });
+  reconcilePresenceFromDatabase()
+    .then(() => {
+      presenceFailureStreak = 0;
+      presencePausedUntil = 0;
+    })
+    .catch((e) => {
+      presenceFailureStreak += 1;
+      const shouldLog = presenceFailureStreak <= 3 || (presenceFailureStreak % 10 === 0);
+      if (shouldLog) {
+        console.error('Presence reconciliation failed:', e && e.message ? e.message : e);
+      }
+      const backoffMs = Math.min(60000, 1000 * Math.pow(2, Math.min(presenceFailureStreak, 6)));
+      presencePausedUntil = Date.now() + backoffMs;
+    });
 
   const timer = setInterval(() => {
-    reconcilePresenceFromDatabase().catch((e) => {
-      console.error('Presence reconciliation failed:', e && e.message ? e.message : e);
-    });
+    if (Date.now() < presencePausedUntil) {
+      return;
+    }
+
+    reconcilePresenceFromDatabase()
+      .then(() => {
+        presenceFailureStreak = 0;
+        presencePausedUntil = 0;
+      })
+      .catch((e) => {
+        presenceFailureStreak += 1;
+        const shouldLog = presenceFailureStreak <= 3 || (presenceFailureStreak % 10 === 0);
+        if (shouldLog) {
+          console.error('Presence reconciliation failed:', e && e.message ? e.message : e);
+        }
+        const backoffMs = Math.min(60000, 1000 * Math.pow(2, Math.min(presenceFailureStreak, 6)));
+        presencePausedUntil = Date.now() + backoffMs;
+      });
   }, PRESENCE_SWEEP_INTERVAL_MS);
 
   if (typeof timer.unref === 'function') {
@@ -133,7 +161,7 @@ async function markDeviceOffline(deviceId) {
   device.status = 'offline';
   device.online = false;
   device.updatedAt = now;
-  device.lastHeartbeat = now;
+  // Preserve the last successful heartbeat so freshness checks remain accurate.
   await device.save();
   // resolve alerts related to this device
   try {

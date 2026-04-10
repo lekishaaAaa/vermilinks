@@ -248,29 +248,70 @@ global.wsConnections = new Set();
 // Optional mapping from deviceId -> ws connection (when ESP32 registers itself)
 global.deviceSockets = new Map();
 
-// Start device command retry loop only when not running tests to avoid open handles
-if ((process.env.NODE_ENV || 'development') !== 'test') {
-  deviceCommandQueue.startCommandRetryLoop();
-} else {
-  logger.info('Skipping deviceCommandQueue retry loop in test mode');
+let backgroundServicesStarted = false;
+let dbRecoveryTimer = null;
+
+function startBackgroundServices() {
+  if (backgroundServicesStarted || (process.env.NODE_ENV || 'development') === 'test') {
+    return;
+  }
+
+  backgroundServicesStarted = true;
+  logger.info('Starting background services after database availability check');
+
+  try {
+    deviceCommandQueue.startCommandRetryLoop();
+  } catch (e) {
+    logger.warn('Failed to start command retry loop', e && e.message ? e.message : e);
+  }
+
+  logger.info('Single MQTT client mode enabled: mqttIngest broker connection startup is disabled (iotMqtt is the only MQTT client)');
+
+  try {
+    startPresenceReconciliation();
+  } catch (e) {
+    logger.warn('Failed to start presence reconciliation', e && e.message ? e.message : e);
+  }
+
+  try {
+    if (process.env.DISABLE_IOT_MQTT !== 'true') {
+      const iotMqtt = require('./services/iotMqtt');
+      iotMqtt.startIotMqtt();
+    } else {
+      logger.info('DISABLE_IOT_MQTT set; skipping IoT MQTT startup');
+    }
+  } catch (e) {
+    logger.warn('Failed to initialize IoT MQTT service', e && e.message ? e.message : e);
+  }
 }
 
-logger.info('Single MQTT client mode enabled: mqttIngest broker connection startup is disabled (iotMqtt is the only MQTT client)');
-
-// Start IoT MQTT service for ESP32 commands/telemetry
-try {
-  if (process.env.NODE_ENV !== 'test') {
-    startPresenceReconciliation();
+function scheduleDatabaseRecoveryLoop() {
+  if (dbRecoveryTimer || (process.env.NODE_ENV || 'development') === 'test') {
+    return;
   }
 
-  if (process.env.NODE_ENV !== 'test' && process.env.DISABLE_IOT_MQTT !== 'true') {
-    const iotMqtt = require('./services/iotMqtt');
-    iotMqtt.startIotMqtt();
-  } else {
-    logger.info('DISABLE_IOT_MQTT set or running in test mode; skipping IoT MQTT startup');
+  const intervalMs = Math.max(5000, Number(process.env.DB_RECOVERY_INTERVAL_MS || 15000));
+  dbRecoveryTimer = setInterval(async () => {
+    try {
+      await connectDB();
+      logger.info('Database recovery loop: connection restored');
+
+      if (dbRecoveryTimer) {
+        clearInterval(dbRecoveryTimer);
+        dbRecoveryTimer = null;
+      }
+
+      startBackgroundServices();
+    } catch (error) {
+      logger.warn('Database recovery attempt failed', error && error.message ? error.message : error);
+    }
+  }, intervalMs);
+
+  if (typeof dbRecoveryTimer.unref === 'function') {
+    dbRecoveryTimer.unref();
   }
-} catch (e) {
-  logger.warn('Failed to initialize IoT MQTT service', e && e.message ? e.message : e);
+
+  logger.warn('Database recovery loop scheduled', { intervalMs });
 }
 
 wss.on('connection', (ws, request) => {
@@ -1036,6 +1077,7 @@ if ((process.env.NODE_ENV || 'development') !== 'test') {
     try {
       await connectDB();
       logger.info('Database connection verified during startup');
+      startBackgroundServices();
 
       try {
         await validateSensorDataSchema();
@@ -1045,6 +1087,7 @@ if ((process.env.NODE_ENV || 'development') !== 'test') {
     } catch (error) {
       logger.error('Database connection failed at startup:', error && error.message ? error.message : error);
       logger.warn('Continuing to start server without database connectivity; routes that require the database may fail until it reconnects.');
+      scheduleDatabaseRecoveryLoop();
     }
   })();
 } else {
