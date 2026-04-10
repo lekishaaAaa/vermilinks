@@ -65,6 +65,8 @@ function isCommandsTopic(topic) {
 
 let client = null;
 let lastConnectionState = 'disconnected';
+const latestTelemetryByDevice = new Map();
+let latestTelemetryGlobal = null;
 
 function safeJsonParse(payload) {
   if (!payload) return null;
@@ -465,10 +467,10 @@ async function handleStatusMessage(payload) {
   }
 
   const rawDeviceId = payload.deviceId || payload.device_id;
-  if (typeof rawDeviceId !== 'string' || rawDeviceId.trim().length === 0) {
+  const deviceId = canonicalDeviceId(rawDeviceId);
+  if (!deviceId) {
     return;
   }
-  const deviceId = rawDeviceId.trim();
 
   const now = new Date();
   if (payload.online !== false) {
@@ -560,46 +562,73 @@ async function handleTelemetryMessage(payload, topic) {
   }
 
   const { deviceId, timestamp } = telemetry;
+  latestTelemetryByDevice.set(deviceId, { ...telemetry, timestamp: new Date(timestamp) });
+  latestTelemetryGlobal = { ...telemetry, timestamp: new Date(timestamp) };
   console.log('MQTT telemetry accepted', { topic, deviceId, timestamp: timestamp.toISOString() });
 
-  await SensorData.create(telemetry);
-  console.log('SensorData row inserted', { deviceId, timestamp: timestamp.toISOString() });
-  const existingSnapshot = await SensorSnapshot.findByPk(deviceId, { raw: true }).catch(() => null);
-  await SensorSnapshot.upsert({
-    deviceId,
-    temperature: telemetry.temperature ?? existingSnapshot?.temperature ?? null,
-    humidity: telemetry.humidity ?? existingSnapshot?.humidity ?? null,
-    moisture: telemetry.moisture ?? existingSnapshot?.moisture ?? null,
-    soilTemperature: telemetry.soilTemperature ?? existingSnapshot?.soilTemperature ?? null,
-    waterLevel: telemetry.waterLevel ?? existingSnapshot?.waterLevel ?? null,
-    floatSensor: telemetry.floatSensor ?? existingSnapshot?.floatSensor ?? null,
-    signalStrength: telemetry.signalStrength ?? existingSnapshot?.signalStrength ?? null,
-    timestamp,
-  });
-  console.log('Snapshot updated', { deviceId, timestamp: timestamp.toISOString() });
+  try {
+    await SensorData.create(telemetry);
+    console.log('SensorData row inserted', { deviceId, timestamp: timestamp.toISOString() });
+    const existingSnapshot = await SensorSnapshot.findByPk(deviceId, { raw: true }).catch(() => null);
+    await SensorSnapshot.upsert({
+      deviceId,
+      temperature: telemetry.temperature ?? existingSnapshot?.temperature ?? null,
+      humidity: telemetry.humidity ?? existingSnapshot?.humidity ?? null,
+      moisture: telemetry.moisture ?? existingSnapshot?.moisture ?? null,
+      soilTemperature: telemetry.soilTemperature ?? existingSnapshot?.soilTemperature ?? null,
+      waterLevel: telemetry.waterLevel ?? existingSnapshot?.waterLevel ?? null,
+      floatSensor: telemetry.floatSensor ?? existingSnapshot?.floatSensor ?? null,
+      signalStrength: telemetry.signalStrength ?? existingSnapshot?.signalStrength ?? null,
+      timestamp,
+    });
+    console.log('Snapshot updated', { deviceId, timestamp: timestamp.toISOString() });
 
-  await markDeviceOnline(deviceId, { via: 'mqtt', lastTelemetryAt: timestamp.toISOString() });
+    await markDeviceOnline(deviceId, { via: 'mqtt', lastTelemetryAt: timestamp.toISOString() });
+  } catch (dbErr) {
+    logger.warn('iotMqtt: telemetry persistence failed; continuing with in-memory fallback', dbErr && dbErr.message ? dbErr.message : dbErr);
+  }
 
   const io = global.io;
-  await checkThresholds(telemetry, io);
-  broadcastSensorData(telemetry, io);
+  try {
+    await checkThresholds(telemetry, io);
+  } catch (thresholdErr) {
+    logger.warn('iotMqtt: threshold check failed', thresholdErr && thresholdErr.message ? thresholdErr.message : thresholdErr);
+  }
 
-  await sensorLogService.recordSensorLogs({
-    deviceId,
-    metrics: {
-      temperature: telemetry.temperature,
-      humidity: telemetry.humidity,
-      moisture: telemetry.moisture,
-      soilTemperature: telemetry.soilTemperature,
-      waterLevel: telemetry.waterLevel,
-      floatSensor: telemetry.floatSensor,
-      signalStrength: telemetry.signalStrength,
-    },
-    origin: 'mqtt',
-    recordedAt: timestamp,
-    rawPayload: payload,
-    mqttTopic: (topic || TOPICS.telemetry),
-  });
+  try {
+    broadcastSensorData(telemetry, io);
+  } catch (broadcastErr) {
+    logger.warn('iotMqtt: telemetry broadcast failed', broadcastErr && broadcastErr.message ? broadcastErr.message : broadcastErr);
+  }
+
+  try {
+    await sensorLogService.recordSensorLogs({
+      deviceId,
+      metrics: {
+        temperature: telemetry.temperature,
+        humidity: telemetry.humidity,
+        moisture: telemetry.moisture,
+        soilTemperature: telemetry.soilTemperature,
+        waterLevel: telemetry.waterLevel,
+        floatSensor: telemetry.floatSensor,
+        signalStrength: telemetry.signalStrength,
+      },
+      origin: 'mqtt',
+      recordedAt: timestamp,
+      rawPayload: payload,
+      mqttTopic: (topic || TOPICS.telemetry),
+    });
+  } catch (logErr) {
+    logger.warn('iotMqtt: sensor log persistence failed', logErr && logErr.message ? logErr.message : logErr);
+  }
+}
+
+function getLatestTelemetryFallback(deviceId) {
+  const normalized = canonicalDeviceId(deviceId);
+  if (normalized) {
+    return latestTelemetryByDevice.get(normalized) || null;
+  }
+  return latestTelemetryGlobal || null;
 }
 
 function buildTelemetryRecord(payload, topic) {
@@ -906,6 +935,7 @@ module.exports = {
   startIotMqtt,
   publishCommand,
   getConnectionStatus,
+  getLatestTelemetryFallback,
   __testHooks: {
     buildTelemetryRecord,
     handleTelemetryMessage,

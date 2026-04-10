@@ -138,6 +138,7 @@ function isTransientDatabaseError(error) {
   return (
     message.includes('connection terminated unexpectedly') ||
     message.includes('connection acquire timeout') ||
+    message.includes('timeout expired') ||
     message.includes('failed to connect')
   );
 }

@@ -18,7 +18,7 @@ const baseOptions = {
 	pool: {
 		max: Number(process.env.DB_POOL_MAX || 5),
 		min: Number(process.env.DB_POOL_MIN || 0),
-		acquire: Number(process.env.DB_POOL_ACQUIRE || 10000),
+		acquire: Number(process.env.DB_POOL_ACQUIRE || 20000),
 		idle: Number(process.env.DB_POOL_IDLE || 10000)
 	},
 	retry: {
@@ -27,6 +27,7 @@ const baseOptions = {
 			/SequelizeConnectionError/i,
 			/SequelizeConnectionAcquireTimeoutError/i,
 			/Connection terminated unexpectedly/i,
+				/timeout expired/i,
 			/ECONNRESET/i,
 			/ETIMEDOUT/i,
 		],
@@ -58,6 +59,14 @@ const modelModulePaths = [
 	'../models/User',
 	'../models/UserSession',
 ];
+
+function deriveRenderInternalHost(hostname) {
+	if (!hostname || typeof hostname !== 'string') {
+		return null;
+	}
+	const match = hostname.match(/^([a-z0-9-]+)\.[a-z0-9-]+-postgres\.render\.com$/i);
+	return match ? match[1] : null;
+}
 
 
 let sequelize;
@@ -92,11 +101,30 @@ if (isTestEnv) {
 		}
 	}
 	let parsedUrl;
+	let effectiveDatabaseUrl = databaseUrl;
 	try {
 		parsedUrl = new URL(databaseUrl);
 	} catch (err) {
 		console.error('[SAFE URL PARSE ERROR] Database URL:', databaseUrl, err.message);
 		throw err;
+	}
+
+	const preferRenderInternal = (process.env.PREFER_RENDER_INTERNAL_DB || 'true').toLowerCase() !== 'false';
+	const isRenderRuntime = String(process.env.RENDER || '').toLowerCase() === 'true' || Boolean(process.env.RENDER_SERVICE_ID);
+	if (preferRenderInternal && isRenderRuntime) {
+		const derivedInternalHost = deriveRenderInternalHost(parsedUrl.hostname);
+		const configuredInternalHost = (process.env.DATABASE_HOST_INTERNAL || '').trim();
+		const internalHost = configuredInternalHost || derivedInternalHost;
+
+		if (internalHost && internalHost !== parsedUrl.hostname) {
+			const originalHost = parsedUrl.hostname;
+			parsedUrl.hostname = internalHost;
+			effectiveDatabaseUrl = parsedUrl.toString();
+			logger.info('Using Render internal database host for connection stability', {
+				externalHost: originalHost,
+				internalHost,
+			});
+		}
 	}
 	const isProduction = process.env.NODE_ENV === 'production';
 	usesSsl = isProduction;
@@ -106,16 +134,16 @@ if (isTestEnv) {
 			ssl: { require: true, rejectUnauthorized: false },
 			keepAlive: true,
 			keepAliveInitialDelayMillis: Number(process.env.DB_KEEPALIVE_INITIAL_DELAY_MS || 10000),
-			connectionTimeoutMillis: Number(process.env.DB_CONNECT_TIMEOUT_MS || 10000),
+			connectionTimeoutMillis: Number(process.env.DB_CONNECT_TIMEOUT_MS || 20000),
 		}
 		: {
 			keepAlive: true,
 			keepAliveInitialDelayMillis: Number(process.env.DB_KEEPALIVE_INITIAL_DELAY_MS || 10000),
-			connectionTimeoutMillis: Number(process.env.DB_CONNECT_TIMEOUT_MS || 10000),
+			connectionTimeoutMillis: Number(process.env.DB_CONNECT_TIMEOUT_MS || 20000),
 		};
 
 	try {
-		sequelize = new Sequelize(databaseUrl, {
+		sequelize = new Sequelize(effectiveDatabaseUrl, {
 			...baseOptions,
 			dialect: 'postgres',
 			dialectOptions,

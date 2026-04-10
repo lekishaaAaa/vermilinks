@@ -268,6 +268,27 @@ global.deviceSockets = new Map();
 
 let backgroundServicesStarted = false;
 let dbRecoveryTimer = null;
+let mqttServiceStarted = false;
+
+function startMqttServiceOnce() {
+  if (mqttServiceStarted || (process.env.NODE_ENV || 'development') === 'test') {
+    return;
+  }
+
+  mqttServiceStarted = true;
+  logger.info('Single MQTT client mode enabled: mqttIngest broker connection startup is disabled (iotMqtt is the only MQTT client)');
+
+  try {
+    if (process.env.DISABLE_IOT_MQTT !== 'true') {
+      const iotMqtt = require('./services/iotMqtt');
+      iotMqtt.startIotMqtt();
+    } else {
+      logger.info('DISABLE_IOT_MQTT set; skipping IoT MQTT startup');
+    }
+  } catch (e) {
+    logger.warn('Failed to initialize IoT MQTT service', e && e.message ? e.message : e);
+  }
+}
 
 function startBackgroundServices() {
   if (backgroundServicesStarted || (process.env.NODE_ENV || 'development') === 'test') {
@@ -289,17 +310,6 @@ function startBackgroundServices() {
     startPresenceReconciliation();
   } catch (e) {
     logger.warn('Failed to start presence reconciliation', e && e.message ? e.message : e);
-  }
-
-  try {
-    if (process.env.DISABLE_IOT_MQTT !== 'true') {
-      const iotMqtt = require('./services/iotMqtt');
-      iotMqtt.startIotMqtt();
-    } else {
-      logger.info('DISABLE_IOT_MQTT set; skipping IoT MQTT startup');
-    }
-  } catch (e) {
-    logger.warn('Failed to initialize IoT MQTT service', e && e.message ? e.message : e);
   }
 }
 
@@ -1091,6 +1101,7 @@ module.exports.schemaReady = schemaReadyPromise;
 if ((process.env.NODE_ENV || 'development') !== 'test') {
   (async () => {
     tryListen(configuredPort);
+    startMqttServiceOnce();
 
     try {
       await connectDB();

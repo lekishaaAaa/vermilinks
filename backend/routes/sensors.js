@@ -726,7 +726,8 @@ router.get('/latest', async (req, res) => {
     const message = (error && error.message ? error.message : String(error)).toLowerCase();
     const isDbConnectionError = message.includes('connection terminated unexpectedly') ||
       message.includes('sequelizeconnectionerror') ||
-      message.includes('connection acquire timeout');
+      message.includes('connection acquire timeout') ||
+      message.includes('timeout expired');
 
     if (isDbConnectionError) {
       latestRouteDbErrorStreak += 1;
@@ -741,6 +742,32 @@ router.get('/latest', async (req, res) => {
           return res.status(204).send();
         }
         return res.json({ ...fallback, source: 'cache_fallback' });
+      }
+
+      try {
+        const iotMqtt = require('../services/iotMqtt');
+        const liveTelemetry = typeof iotMqtt.getLatestTelemetryFallback === 'function'
+          ? iotMqtt.getLatestTelemetryFallback(deviceId)
+          : null;
+
+        if (liveTelemetry) {
+          const formattedLive = formatLatestSnapshot({
+            ...liveTelemetry,
+            deviceId: liveTelemetry.deviceId || deviceId,
+            timestamp: liveTelemetry.timestamp,
+          });
+
+          if (formattedLive) {
+            return res.json({
+              ...formattedLive,
+              deviceOnline: true,
+              isOfflineData: false,
+              source: 'mqtt_memory_fallback',
+            });
+          }
+        }
+      } catch (fallbackErr) {
+        // Ignore fallback resolver failures and return generic server error below.
       }
     } else {
       console.error('GET /api/sensors/latest err', error);
