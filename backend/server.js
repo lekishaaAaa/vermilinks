@@ -31,6 +31,7 @@ const { ensureDatabaseSetup } = database;
 const isTestMode = (process.env.NODE_ENV || 'development') === 'test';
 const isProductionMode = (process.env.NODE_ENV || 'development') === 'production';
 const EXIT_ON_FATAL_RUNTIME_ERROR = (process.env.EXIT_ON_FATAL_RUNTIME_ERROR || '').toLowerCase() === 'true';
+const SCHEMA_READY_WAIT_MS = Math.max(0, Number(process.env.SCHEMA_READY_WAIT_MS || 1500));
 const schemaReady = ensureDatabaseSetup({
   force: isTestMode,
   // Prevent long ALTER sync from delaying Render health checks during boot.
@@ -464,11 +465,14 @@ app.use((err, req, res, next) => {
 
 if (schemaReady && typeof schemaReady.then === 'function') {
   app.use(async (req, res, next) => {
-    if (req.path === '/health' || req.path === '/api/health') {
+    if (req.path === '/' || req.path === '/health' || req.path === '/api/health') {
       return next();
     }
     try {
-      await schemaReady;
+      await Promise.race([
+        schemaReady,
+        new Promise((resolve) => setTimeout(resolve, SCHEMA_READY_WAIT_MS)),
+      ]);
       next();
     } catch (err) {
       logger.warn('Schema bootstrap not ready; continuing request handling without blocking', err && err.message ? err.message : err);
@@ -782,6 +786,10 @@ try {
 
 // 404 handler for unknown routes
 app.use('*', (req, res) => {
+  // Some platforms default health checks to '/'. Keep it fast and successful.
+  if (req.originalUrl === '/' || req.originalUrl === '/favicon.ico') {
+    return res.status(200).json({ ok: true, status: 'ok' });
+  }
   res.status(404).json({
     success: false,
     message: `Route ${req.originalUrl} not found`
