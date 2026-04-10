@@ -35,6 +35,7 @@ const METRICS_WILDCARD_TOPIC = 'vermilinks/+/metrics';
 const STATE_WILDCARD_TOPIC = 'vermilinks/+/state';
 const STATUS_WILDCARD_TOPIC = 'vermilinks/+/status';
 const COMMANDS_WILDCARD_TOPIC = 'vermilinks/+/commands';
+const VERMILINKS_WILDCARD_TOPIC = 'vermilinks/#';
 
 const STATE_TOPICS = new Set(['vermilinks/esp32a/state']);
 const ACK_TOPICS = new Set(['vermilinks/esp32a/ack']);
@@ -213,6 +214,38 @@ function resolveDeviceIdFromTopic(topic) {
   if (parts.length < 3) return null;
   const candidate = parts[1];
   return canonicalDeviceId(candidate);
+}
+
+function looksLikeTelemetryPayload(payload) {
+  if (!payload || typeof payload !== 'object') {
+    return false;
+  }
+
+  const keys = Object.keys(payload);
+  if (!Array.isArray(keys) || keys.length === 0) {
+    return false;
+  }
+
+  const candidates = [
+    'temperature',
+    'humidity',
+    'soil_moisture',
+    'soilMoisture',
+    'soil_temperature',
+    'soilTemperature',
+    'soil_moisture_layer1',
+    'soilMoistureLayer1',
+    'ambient_temperature',
+    'ambientTemperature',
+    'bin_temperature',
+    'binTemperature',
+    'float_state',
+    'floatSensor',
+    'water_level',
+    'waterLevel',
+  ];
+
+  return candidates.some((field) => Object.prototype.hasOwnProperty.call(payload, field));
 }
 
 async function upsertActuatorState(deviceId, state) {
@@ -636,6 +669,11 @@ function buildTelemetryRecord(payload, topic) {
     return null;
   }
 
+  const payloadData = payload && payload.data && typeof payload.data === 'object' ? payload.data : null;
+  const candidatePayload = payloadData && !looksLikeTelemetryPayload(payload) && looksLikeTelemetryPayload(payloadData)
+    ? payloadData
+    : payload;
+
   const pickNumber = (...values) => {
     for (const value of values) {
       const parsed = toNullableNumber(value);
@@ -657,11 +695,11 @@ function buildTelemetryRecord(payload, topic) {
 
   const deviceIdFromTopic = resolveDeviceIdFromTopic(topic);
   const normalizedPayload = {
-    ...payload,
-    device_id: payload.device_id ?? payload.deviceId ?? deviceIdFromTopic,
-    timestamp: payload.timestamp ?? payload.ts ?? payload.time,
-    soil_moisture: payload.soil_moisture ?? payload.soilMoisture ?? payload.moisture ?? payload.soil,
-    soil_temperature: payload.soil_temperature ?? payload.soilTemp ?? payload.soilTemperature ?? payload.waterTempC,
+    ...candidatePayload,
+    device_id: candidatePayload.device_id ?? candidatePayload.deviceId ?? payload.device_id ?? payload.deviceId ?? deviceIdFromTopic,
+    timestamp: candidatePayload.timestamp ?? candidatePayload.ts ?? candidatePayload.time,
+    soil_moisture: candidatePayload.soil_moisture ?? candidatePayload.soilMoisture ?? candidatePayload.moisture ?? candidatePayload.soil,
+    soil_temperature: candidatePayload.soil_temperature ?? candidatePayload.soilTemp ?? candidatePayload.soilTemperature ?? candidatePayload.waterTempC,
   };
 
   const resolvedDeviceId = canonicalDeviceId(normalizedPayload.device_id);
@@ -800,6 +838,7 @@ function startIotMqtt() {
     STATUS_WILDCARD_TOPIC,
     COMMANDS_WILDCARD_TOPIC,
     `${TOPICS.deviceStatusPrefix}#`,
+    VERMILINKS_WILDCARD_TOPIC,
   ];
 
   const connectionOptions = {
@@ -848,6 +887,10 @@ function startIotMqtt() {
 
     const payload = safeJsonParse(message);
     if (!payload) {
+      const normalizedTopicForParse = (topic || '').toString().trim().toLowerCase();
+      if (normalizedTopicForParse.startsWith('vermilinks/')) {
+        logger.warn('iotMqtt: message payload is not valid JSON', { topic: normalizedTopicForParse });
+      }
       return;
     }
 
@@ -883,6 +926,13 @@ function startIotMqtt() {
     if (isTelemetryTopic(normalizedTopic)) {
       handleTelemetryMessage(payload, normalizedTopic).catch((error) => {
         logger.warn('iotMqtt telemetry handler failed', error && error.message ? error.message : error);
+      });
+      return;
+    }
+
+    if (looksLikeTelemetryPayload(payload)) {
+      handleTelemetryMessage(payload, normalizedTopic).catch((error) => {
+        logger.warn('iotMqtt telemetry heuristic handler failed', error && error.message ? error.message : error);
       });
       return;
     }
