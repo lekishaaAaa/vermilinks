@@ -26,6 +26,9 @@ const OTP_RETENTION_HOURS = parseInt(process.env.ADMIN_OTP_RETENTION_HOURS || '2
 const OTP_RETENTION_BUFFER_MS = Math.max(OTP_RETENTION_HOURS, 1) * 60 * 60 * 1000;
 const OTP_CLEANUP_CRON = process.env.ADMIN_OTP_CLEANUP_CRON || '0 3 * * *';
 const OTP_CLEANUP_TZ = process.env.ADMIN_OTP_CLEANUP_TZ || undefined;
+const OTP_EMAIL_TIMEOUT_MS = Math.max(3000, Number(process.env.ADMIN_OTP_EMAIL_TIMEOUT_MS || 8000));
+const REQUIRE_OTP_EMAIL_DELIVERY = (process.env.ADMIN_OTP_REQUIRE_EMAIL_DELIVERY || '').toString().toLowerCase() === 'true';
+const OTP_HASH_ROUNDS = Math.min(12, Math.max(6, Number(process.env.ADMIN_OTP_HASH_ROUNDS || 8)));
 
 const resolveJwtSecret = (res) => {
   try {
@@ -127,13 +130,13 @@ async function blacklistToken(token, reason) {
   }
 }
 
-async function persistOtpLog(email, otp, expiresAt) {
+async function persistOtpLog(email, otp, expiresAt, precomputedHash) {
   if (!email || !otp) {
     return;
   }
 
   try {
-    const codeHash = await bcrypt.hash(otp, 10);
+    const codeHash = precomputedHash || await bcrypt.hash(otp, OTP_HASH_ROUNDS);
     await Otp.create({ email, codeHash, expiresAt });
   } catch (err) {
     console.warn('adminAuthController.persistOtpLog warning', err && err.message ? err.message : err);
@@ -222,13 +225,49 @@ async function sendOtpEmailToAdmin({ to, otp, expiresAt }) {
   });
 }
 
+async function sendOtpEmailWithTimeout({ to, otp, expiresAt, timeoutMs = OTP_EMAIL_TIMEOUT_MS }) {
+  const timeoutError = new Error(`OTP email delivery timed out after ${timeoutMs}ms`);
+  const timeoutPromise = new Promise((_, reject) => {
+    const timer = setTimeout(() => reject(timeoutError), timeoutMs);
+    if (typeof timer.unref === 'function') {
+      timer.unref();
+    }
+  });
+
+  return Promise.race([
+    sendOtpEmailToAdmin({ to, otp, expiresAt }),
+    timeoutPromise,
+  ]);
+}
+
+function dispatchOtpEmailInBackground({ email, otp, expiresAt, requesterIp, reason }) {
+  sendOtpEmailWithTimeout({ to: email, otp, expiresAt })
+    .then(() => recordAudit('otp.delivery_success', email, {
+      ip: requesterIp,
+      reason,
+      expiresAt: expiresAt.toISOString(),
+    }))
+    .catch((emailErr) => {
+      console.error('adminAuthController: background OTP delivery failed', emailErr && emailErr.message ? emailErr.message : emailErr);
+      return recordAudit('otp.delivery_failed', email, {
+        ip: requesterIp,
+        reason,
+        error: emailErr && emailErr.message ? emailErr.message : String(emailErr),
+      });
+    })
+    .catch((auditErr) => {
+      console.warn('adminAuthController: failed to audit background OTP delivery', auditErr && auditErr.message ? auditErr.message : auditErr);
+    });
+}
+
 async function assignOtpToAdmin(admin, otp, expiresAt) {
   if (!admin) {
     throw new Error('Administrator record is required to assign OTP');
   }
 
-  const hashedOtp = await bcrypt.hash(otp, 10);
+  const hashedOtp = await bcrypt.hash(otp, OTP_HASH_ROUNDS);
   await admin.update({ otpHash: hashedOtp, otpExpiresAt: expiresAt });
+  return hashedOtp;
 }
 
 async function clearAdminOtp(admin) {
@@ -432,27 +471,35 @@ exports.login = async (req, res) => {
     const otp = generateOtpCode();
     const expiresAt = getOtpExpiryDate();
 
-    await assignOtpToAdmin(admin, otp, expiresAt);
-    await persistOtpLog(admin.email, otp, expiresAt);
-    try { await recordAudit('login.otp_issued', admin.email, { ip: requesterIp, expiresAt: expiresAt.toISOString() }); } catch (e) {}
-    // Audit: OTP issued
-    try {
-      await recordAudit('otp.issued', admin.email, { expiresAt: expiresAt.toISOString(), ip: requesterIp });
-    } catch (e) {}
+    const hashedOtp = await assignOtpToAdmin(admin, otp, expiresAt);
+    // Persist OTP history and audit logs in the background to keep login response fast.
+    persistOtpLog(admin.email, otp, expiresAt, hashedOtp);
+    recordAudit('login.otp_issued', admin.email, { ip: requesterIp, expiresAt: expiresAt.toISOString() });
+    recordAudit('otp.issued', admin.email, { expiresAt: expiresAt.toISOString(), ip: requesterIp });
 
-    try {
-      await sendOtpEmailToAdmin({ to: admin.email, otp, expiresAt });
-      try { await recordAudit('otp.delivery_success', admin.email, { ip: requesterIp, expiresAt: expiresAt.toISOString() }); } catch (auditErr) {
-        console.warn('audit log failed for otp delivery success', auditErr && auditErr.message ? auditErr.message : auditErr);
+    if (REQUIRE_OTP_EMAIL_DELIVERY) {
+      try {
+        await sendOtpEmailWithTimeout({ to: admin.email, otp, expiresAt });
+        try { await recordAudit('otp.delivery_success', admin.email, { ip: requesterIp, expiresAt: expiresAt.toISOString() }); } catch (auditErr) {
+          console.warn('audit log failed for otp delivery success', auditErr && auditErr.message ? auditErr.message : auditErr);
+        }
+      } catch (emailErr) {
+        console.error('adminAuthController: failed to send OTP email', emailErr && emailErr.message ? emailErr.message : emailErr);
+        try { await recordAudit('otp.delivery_failed', admin.email, { ip: requesterIp, error: emailErr && emailErr.message ? emailErr.message : String(emailErr) }); } catch (auditErr) {
+          console.warn('audit log failed for otp delivery failure', auditErr && auditErr.message ? auditErr.message : auditErr);
+        }
+        return res.status(502).json({
+          success: false,
+          message: 'Unable to deliver OTP email right now. Please retry in a moment.',
+        });
       }
-    } catch (emailErr) {
-      console.error('adminAuthController: failed to send OTP email', emailErr && emailErr.message ? emailErr.message : emailErr);
-      try { await recordAudit('otp.delivery_failed', admin.email, { ip: requesterIp, error: emailErr && emailErr.message ? emailErr.message : String(emailErr) }); } catch (auditErr) {
-        console.warn('audit log failed for otp delivery failure', auditErr && auditErr.message ? auditErr.message : auditErr);
-      }
-      return res.status(502).json({
-        success: false,
-        message: 'Unable to deliver OTP email right now. Please retry in a moment.',
+    } else {
+      dispatchOtpEmailInBackground({
+        email: admin.email,
+        otp,
+        expiresAt,
+        requesterIp,
+        reason: 'login',
       });
     }
 
@@ -462,7 +509,7 @@ exports.login = async (req, res) => {
       data: {
         requires2FA: true,
         expiresAt: expiresAt.toISOString(),
-        delivery: 'email_sent',
+        delivery: REQUIRE_OTP_EMAIL_DELIVERY ? 'email_sent' : 'email_queued',
       },
     };
 
@@ -742,23 +789,33 @@ exports.resendOtp = async (req, res) => {
     const otp = generateOtpCode();
     const expiresAt = getOtpExpiryDate();
 
-    await assignOtpToAdmin(admin, otp, expiresAt);
-    await persistOtpLog(admin.email, otp, expiresAt);
-    try { await recordAudit('otp.resend', admin.email, { expiresAt: expiresAt.toISOString(), ip: requesterIp }); } catch (e) {}
+    const hashedOtp = await assignOtpToAdmin(admin, otp, expiresAt);
+    persistOtpLog(admin.email, otp, expiresAt, hashedOtp);
+    recordAudit('otp.resend', admin.email, { expiresAt: expiresAt.toISOString(), ip: requesterIp });
 
-    try {
-      await sendOtpEmailToAdmin({ to: admin.email, otp, expiresAt });
-      try { await recordAudit('otp.delivery_success', admin.email, { ip: requesterIp, reason: 'resend', expiresAt: expiresAt.toISOString() }); } catch (auditErr) {
-        console.warn('audit log failed for resend success', auditErr && auditErr.message ? auditErr.message : auditErr);
+    if (REQUIRE_OTP_EMAIL_DELIVERY) {
+      try {
+        await sendOtpEmailWithTimeout({ to: admin.email, otp, expiresAt });
+        try { await recordAudit('otp.delivery_success', admin.email, { ip: requesterIp, reason: 'resend', expiresAt: expiresAt.toISOString() }); } catch (auditErr) {
+          console.warn('audit log failed for resend success', auditErr && auditErr.message ? auditErr.message : auditErr);
+        }
+      } catch (emailErr) {
+        console.error('adminAuthController: failed to resend OTP email', emailErr && emailErr.message ? emailErr.message : emailErr);
+        try { await recordAudit('otp.delivery_failed', admin.email, { ip: requesterIp, reason: 'resend', error: emailErr && emailErr.message ? emailErr.message : String(emailErr) }); } catch (auditErr) {
+          console.warn('audit log failed for resend', auditErr && auditErr.message ? auditErr.message : auditErr);
+        }
+        return res.status(502).json({
+          success: false,
+          message: 'Unable to deliver OTP email right now. Please retry in a moment.',
+        });
       }
-    } catch (emailErr) {
-      console.error('adminAuthController: failed to resend OTP email', emailErr && emailErr.message ? emailErr.message : emailErr);
-      try { await recordAudit('otp.delivery_failed', admin.email, { ip: requesterIp, reason: 'resend', error: emailErr && emailErr.message ? emailErr.message : String(emailErr) }); } catch (auditErr) {
-        console.warn('audit log failed for resend', auditErr && auditErr.message ? auditErr.message : auditErr);
-      }
-      return res.status(502).json({
-        success: false,
-        message: 'Unable to deliver OTP email right now. Please retry in a moment.',
+    } else {
+      dispatchOtpEmailInBackground({
+        email: admin.email,
+        otp,
+        expiresAt,
+        requesterIp,
+        reason: 'resend',
       });
     }
 
@@ -767,7 +824,7 @@ exports.resendOtp = async (req, res) => {
       message: 'A new verification code has been generated.',
       data: {
         expiresAt: expiresAt.toISOString(),
-        delivery: 'email_sent',
+        delivery: REQUIRE_OTP_EMAIL_DELIVERY ? 'email_sent' : 'email_queued',
       },
     };
 

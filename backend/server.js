@@ -31,7 +31,7 @@ const { ensureDatabaseSetup } = database;
 const isTestMode = (process.env.NODE_ENV || 'development') === 'test';
 const isProductionMode = (process.env.NODE_ENV || 'development') === 'production';
 const EXIT_ON_FATAL_RUNTIME_ERROR = (process.env.EXIT_ON_FATAL_RUNTIME_ERROR || '').toLowerCase() === 'true';
-const SCHEMA_READY_WAIT_MS = Math.max(0, Number(process.env.SCHEMA_READY_WAIT_MS || 1500));
+const SCHEMA_READY_WAIT_MS = Math.max(0, Number(process.env.SCHEMA_READY_WAIT_MS || 0));
 const schemaReady = ensureDatabaseSetup({
   force: isTestMode,
   // Prevent long ALTER sync from delaying Render health checks during boot.
@@ -465,7 +465,12 @@ app.use((err, req, res, next) => {
 
 if (schemaReady && typeof schemaReady.then === 'function') {
   app.use(async (req, res, next) => {
-    if (req.path === '/' || req.path === '/health' || req.path === '/api/health') {
+    if (
+      req.path === '/' ||
+      req.path === '/health' ||
+      req.path === '/api/health' ||
+      req.path.startsWith('/api/admin/')
+    ) {
       return next();
     }
     try {
