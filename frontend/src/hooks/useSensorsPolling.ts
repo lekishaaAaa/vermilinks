@@ -143,10 +143,12 @@ export const useSensorsPolling = (options: SensorsPollingOptions = {}): SensorsP
             moisture: snapshot.soil_moisture === null ? undefined : snapshot.soil_moisture,
             soilTemperature: snapshot.soil_temperature === null ? undefined : snapshot.soil_temperature,
             floatSensor: snapshot.float_state === null ? null : snapshot.float_state,
-            timestamp: snapshot.updated_at,
+            timestamp: snapshot.updated_at ?? (snapshot as any).timestamp,
             sensorSummary: undefined,
-            isOfflineData: false,
-            deviceOnline: true,
+            isOfflineData: Boolean(snapshotRecord?.isOfflineData),
+            deviceOnline: typeof snapshotRecord?.deviceOnline === 'boolean'
+              ? snapshotRecord.deviceOnline
+              : !Boolean(snapshotRecord?.isOfflineData),
           }
         : null;
 

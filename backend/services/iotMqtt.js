@@ -190,7 +190,9 @@ function toNullableNumber(value) {
 
 function resolveTelemetryTimestamp(payload, fallbackNow) {
   if (!payload || typeof payload !== 'object') {
-    return null;
+    return fallbackNow instanceof Date && !Number.isNaN(fallbackNow.getTime())
+      ? new Date(fallbackNow.getTime())
+      : null;
   }
 
   const tsRaw = payload.ts ?? payload.timestamp ?? payload.time;
@@ -217,7 +219,30 @@ function resolveTelemetryTimestamp(payload, fallbackNow) {
     }
   }
 
-  return null;
+  return fallbackNow instanceof Date && !Number.isNaN(fallbackNow.getTime())
+    ? new Date(fallbackNow.getTime())
+    : null;
+}
+
+function resolveStateTimestamp(payload, fallbackNow) {
+  const parsed = resolveTelemetryTimestamp(
+    {
+      ts: payload && payload.ts,
+      timestamp: payload && payload.timestamp,
+      time: payload && payload.time,
+    },
+    null,
+  );
+  if (!parsed) {
+    return fallbackNow;
+  }
+
+  const ageMs = Date.now() - parsed.getTime();
+  if (ageMs > 7 * 24 * 60 * 60 * 1000 || ageMs < -5 * 60 * 1000) {
+    return fallbackNow;
+  }
+
+  return parsed;
 }
 
 function canonicalDeviceId(value) {
@@ -298,6 +323,7 @@ async function handleStateMessage(payload, topic) {
   }
 
   const now = new Date();
+  const stateTs = resolveStateTimestamp(payload, now);
   const floatState = normalizeFloatState(
     payload.float
       ?? payload.floatState
@@ -324,7 +350,7 @@ async function handleStateMessage(payload, topic) {
     forcePumpOverride: overrideRequested,
     requestId: payload.requestId || null,
     source: (isReservoirLow || isReservoirFull) && requestedPumpState && !overrideRequested ? 'safety_override' : (payload.source || 'applied'),
-    ts: payload.ts ? new Date(payload.ts * 1000).toISOString() : now.toISOString(),
+    ts: stateTs.toISOString(),
     online: true,
     lastSeen: now.toISOString(),
   };

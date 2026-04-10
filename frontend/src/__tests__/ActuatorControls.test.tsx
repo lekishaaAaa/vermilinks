@@ -170,7 +170,7 @@ describe('ActuatorControls', () => {
     });
   });
 
-  test('keeps actuator controls online when top-level telemetry is stale but deviceState is fresh', async () => {
+  test('shows offline when heartbeat metadata is stale even if nested deviceState appears fresh', async () => {
     const staleTimestamp = '2026-03-10T17:51:30.867Z';
     const freshTimestamp = new Date().toISOString();
 
@@ -195,14 +195,14 @@ describe('ActuatorControls', () => {
     }));
     mockSendControl.mockResolvedValue({ requestId: 'req-valve-fresh' } as any);
 
-    await renderComponent();
+    await renderComponent('offline');
 
-    expect(screen.getByText(/esp32-a online/i)).toBeInTheDocument();
+    expect(screen.getByText(/esp32-a offline/i)).toBeInTheDocument();
     const overrideCheckbox = screen.getByRole('checkbox', { name: /enable force pump override/i });
     const valve1Switch = screen.getByRole('switch', { name: /layer 1 solenoid/i });
 
     expect(overrideCheckbox).toBeEnabled();
-    expect(valve1Switch).toBeEnabled();
+    expect(valve1Switch).toBeDisabled();
 
       await act(async () => {
         fireEvent.click(valve1Switch);
@@ -210,13 +210,7 @@ describe('ActuatorControls', () => {
       });
 
     await waitFor(() => {
-      expect(mockSendControl).toHaveBeenCalledWith({
-        pump: false,
-        valve1: true,
-        valve2: false,
-        valve3: false,
-        forcePumpOverride: false,
-      });
+      expect(mockSendControl).not.toHaveBeenCalled();
     });
   });
 

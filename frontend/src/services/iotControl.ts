@@ -76,8 +76,6 @@ export async function fetchLatest() {
     payload.lastHeartbeat ?? null,
     payload.updated_at ?? null,
     payload.timestamp ?? null,
-    deviceState?.lastSeen ?? null,
-    deviceState?.ts ?? null,
   );
   const derivedDeviceOnline = typeof payload.deviceOnline === 'boolean'
     ? payload.deviceOnline

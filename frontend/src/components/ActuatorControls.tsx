@@ -149,13 +149,6 @@ const ActuatorControls: React.FC = () => {
     return null;
   }, [displayForcePumpOverride, floatLow, getBaseControlBlockReason, isActuatorPending]);
 
-  const applyOnlineStatus = useCallback((timestamp?: string | null) => {
-    setOnline(isDeviceFresh(timestamp));
-    if (timestamp) {
-      setLastUpdated(timestamp);
-    }
-  }, []);
-
   const applyDeviceState = useCallback((payload: DeviceStatePayload | null) => {
     if (!payload) {
       return;
@@ -168,10 +161,6 @@ const ActuatorControls: React.FC = () => {
 
     const polledActuatorState = toActuatorViewState(payload);
     setBackendActuatorState(polledActuatorState);
-
-    if (payload.ts) {
-      setLastUpdated(payload.ts);
-    }
 
     if (typeof payload.forcePumpOverride === 'boolean') {
       setForcePumpOverride(payload.forcePumpOverride);
@@ -218,14 +207,12 @@ const ActuatorControls: React.FC = () => {
     try {
       const latest = await fetchLatest();
 
-      const derivedTimestamp = latest?.lastSeen ?? latest?.lastHeartbeat ?? latest?.deviceState?.lastSeen ?? latest?.deviceState?.ts ?? latest?.telemetry?.updated_at ?? latest?.telemetry?.timestamp ?? null;
-      if (latest?.deviceOnline === true) {
-        setOnline(true);
-        if (derivedTimestamp) {
-          setLastUpdated(derivedTimestamp);
-        }
-      } else {
-        applyOnlineStatus(derivedTimestamp);
+      const derivedTimestamp = latest?.lastHeartbeat ?? latest?.lastSeen ?? latest?.telemetry?.updated_at ?? latest?.telemetry?.timestamp ?? null;
+      const onlineByBackend = latest?.deviceOnline === true;
+      const onlineByFreshness = isDeviceFresh(derivedTimestamp);
+      setOnline(Boolean(onlineByBackend && onlineByFreshness));
+      if (derivedTimestamp) {
+        setLastUpdated(derivedTimestamp);
       }
 
       if (latest?.deviceState) {
@@ -234,7 +221,7 @@ const ActuatorControls: React.FC = () => {
     } catch (error) {
       setErrorMessage('Unable to load actuator state.');
     }
-  }, [applyDeviceState, applyOnlineStatus]);
+  }, [applyDeviceState]);
 
   useEffect(() => {
     loadLatest();

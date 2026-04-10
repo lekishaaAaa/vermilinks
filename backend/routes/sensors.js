@@ -545,16 +545,21 @@ router.get('/latest', async (req, res) => {
         });
 
         if (formattedLive) {
-          console.log('GET /api/sensors/latest using mqtt_memory_live fallback', {
-            deviceId: formattedLive.device_id || formattedLive.deviceId || deviceId || null,
-            timestamp: formattedLive.timestamp || null,
-          });
-          return res.json({
-            ...formattedLive,
-            deviceOnline: true,
-            isOfflineData: false,
-            source: 'mqtt_memory_live',
-          });
+          const telemetryFresh = isLiveTelemetryPayload(formattedLive);
+          if (!telemetryFresh) {
+            // Continue to DB lookup when in-memory telemetry is stale.
+          } else {
+            console.log('GET /api/sensors/latest using mqtt_memory_live fallback', {
+              deviceId: formattedLive.device_id || formattedLive.deviceId || deviceId || null,
+              timestamp: formattedLive.timestamp || null,
+            });
+            return res.json({
+              ...formattedLive,
+              deviceOnline: telemetryFresh,
+              isOfflineData: !telemetryFresh,
+              source: 'mqtt_memory_live',
+            });
+          }
         }
       }
     } catch (fallbackLookupErr) {
@@ -687,10 +692,8 @@ router.get('/latest', async (req, res) => {
       const lastSeenCandidates = [
         deviceRecord?.lastHeartbeat,
         deviceRecord?.lastSeen,
-        stateRow?.reportedAt,
-        deviceState?.ts,
-        formatted?.updated_at,
-        formatted?.timestamp,
+        (telemetryFresh ? formatted?.updated_at : null),
+        (telemetryFresh ? formatted?.timestamp : null),
       ]
         .map((value) => value ? new Date(value).getTime() : NaN)
         .filter((value) => Number.isFinite(value));
@@ -788,11 +791,12 @@ router.get('/latest', async (req, res) => {
           });
 
           if (formattedLive) {
+            const telemetryFresh = isLiveTelemetryPayload(formattedLive);
             return res.json({
               ...formattedLive,
-              deviceOnline: true,
-              isOfflineData: false,
-              source: 'mqtt_memory_fallback',
+              deviceOnline: telemetryFresh,
+              isOfflineData: !telemetryFresh,
+              source: telemetryFresh ? 'mqtt_memory_fallback' : 'mqtt_memory_fallback_stale',
             });
           }
         }
