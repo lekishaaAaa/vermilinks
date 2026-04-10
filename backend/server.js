@@ -574,7 +574,7 @@ const buildHealthPayload = () => ({
 const DEVICE_ONLINE_WINDOW_MS = Math.max(
   30000,
   parseInt(
-    process.env.DEVICE_ONLINE_WINDOW_MS || process.env.DEVICE_OFFLINE_TIMEOUT_MS || process.env.SENSOR_STALE_THRESHOLD_MS || '90000',
+    process.env.DEVICE_ONLINE_WINDOW_MS || process.env.DEVICE_OFFLINE_TIMEOUT_MS || process.env.SENSOR_STALE_THRESHOLD_MS || '180000',
     10,
   ) || 90000,
 );
@@ -692,7 +692,7 @@ app.get('/api/system/validation', async (req, res) => {
 
 app.get('/api/system/info', auth, adminOnly, async (req, res) => {
   try {
-    console.log('SYSTEM INFO ROUTE HIT - AUTH VERIFIED');
+    logger.debug('System info route hit (auth verified)');
     const appVersion = require('./package.json').version || '0.0.0';
     const iotMqtt = require('./services/iotMqtt');
     const mqttStatus = typeof iotMqtt.getConnectionStatus === 'function'
