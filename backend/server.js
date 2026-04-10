@@ -31,12 +31,30 @@ const { ensureDatabaseSetup } = database;
 const isTestMode = (process.env.NODE_ENV || 'development') === 'test';
 const isProductionMode = (process.env.NODE_ENV || 'development') === 'production';
 const EXIT_ON_FATAL_RUNTIME_ERROR = (process.env.EXIT_ON_FATAL_RUNTIME_ERROR || '').toLowerCase() === 'true';
+const ENABLE_SCHEMA_GATE = (process.env.ENABLE_SCHEMA_GATE || '').toLowerCase() === 'true';
 const SCHEMA_READY_WAIT_MS = Math.max(0, Number(process.env.SCHEMA_READY_WAIT_MS || 0));
-const schemaReady = ensureDatabaseSetup({
-  force: isTestMode,
-  // Prevent long ALTER sync from delaying Render health checks during boot.
-  alter: isProductionMode ? false : undefined,
-});
+const RUN_SCHEMA_VALIDATION_ON_BOOT = (process.env.RUN_SCHEMA_VALIDATION_ON_BOOT || '').toLowerCase() === 'true';
+let schemaReadyPromise = Promise.resolve();
+let schemaSetupRunning = false;
+
+function kickoffSchemaSetup() {
+  if (schemaSetupRunning) {
+    return schemaReadyPromise;
+  }
+
+  schemaSetupRunning = true;
+  schemaReadyPromise = ensureDatabaseSetup({
+    force: isTestMode,
+    alter: isProductionMode ? false : undefined,
+  }).catch((error) => {
+    logger.warn('Schema setup attempt failed', error && error.message ? error.message : error);
+    return null;
+  }).finally(() => {
+    schemaSetupRunning = false;
+  });
+
+  return schemaReadyPromise;
+}
 connectMongo().catch((error) => {
   logger.warn('MongoDB connection failed during startup', error && error.message ? error.message : error);
 });
@@ -301,6 +319,7 @@ function scheduleDatabaseRecoveryLoop() {
         dbRecoveryTimer = null;
       }
 
+      kickoffSchemaSetup();
       startBackgroundServices();
     } catch (error) {
       logger.warn('Database recovery attempt failed', error && error.message ? error.message : error);
@@ -504,7 +523,7 @@ app.use((err, req, res, next) => {
   next(err);
 });
 
-if (schemaReady && typeof schemaReady.then === 'function') {
+if (ENABLE_SCHEMA_GATE) {
   app.use(async (req, res, next) => {
     if (
       req.path === '/' ||
@@ -516,12 +535,11 @@ if (schemaReady && typeof schemaReady.then === 'function') {
     }
     try {
       await Promise.race([
-        schemaReady,
+        schemaReadyPromise,
         new Promise((resolve) => setTimeout(resolve, SCHEMA_READY_WAIT_MS)),
       ]);
       next();
     } catch (err) {
-      logger.warn('Schema bootstrap not ready; continuing request handling without blocking', err && err.message ? err.message : err);
       next();
     }
   });
@@ -1067,7 +1085,7 @@ if ((process.env.NODE_ENV || 'development') === 'development' && (process.env.RU
 module.exports = app;
 // Export the http server as a property to allow tests to close it gracefully
 module.exports.server = server;
-module.exports.schemaReady = schemaReady;
+module.exports.schemaReady = schemaReadyPromise;
 
 // Simple server startup for development
 if ((process.env.NODE_ENV || 'development') !== 'test') {
@@ -1077,12 +1095,15 @@ if ((process.env.NODE_ENV || 'development') !== 'test') {
     try {
       await connectDB();
       logger.info('Database connection verified during startup');
+      kickoffSchemaSetup();
       startBackgroundServices();
 
-      try {
-        await validateSensorDataSchema();
-      } catch (schemaError) {
-        logger.error('Schema drift validation failed:', schemaError && schemaError.message ? schemaError.message : schemaError);
+      if (RUN_SCHEMA_VALIDATION_ON_BOOT || !isProductionMode) {
+        try {
+          await validateSensorDataSchema();
+        } catch (schemaError) {
+          logger.error('Schema drift validation failed:', schemaError && schemaError.message ? schemaError.message : schemaError);
+        }
       }
     } catch (error) {
       logger.error('Database connection failed at startup:', error && error.message ? error.message : error);

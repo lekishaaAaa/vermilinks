@@ -1,16 +1,7 @@
 // deviceManager: tracks device heartbeats and exposes helpers to mark online/offline
 const Device = require('../models/Device');
 const Alert = require('../models/Alert');
-const { ensureDatabaseSetup } = require('../services/database_pg');
 const { REALTIME_EVENTS, emitRealtime } = require('../utils/realtime');
-
-const schemaReady = ensureDatabaseSetup({ force: (process.env.NODE_ENV || 'development') === 'test' });
-
-async function ensureReady() {
-  if (schemaReady && typeof schemaReady.then === 'function') {
-    await schemaReady;
-  }
-}
 
 // Default offline timeout (ms) — devices must heartbeat at least every 10 seconds
 const OFFLINE_TIMEOUT_MS = parseInt(process.env.DEVICE_OFFLINE_TIMEOUT_MS || process.env.SENSOR_STALE_THRESHOLD_MS || '60000', 10);
@@ -30,7 +21,6 @@ function normalizeDeviceId(value) {
 async function markDeviceOnline(deviceId, metadata = {}) {
   deviceId = normalizeDeviceId(deviceId);
   if (!deviceId) return null;
-  await ensureReady();
   const now = new Date();
   const [device] = await Device.findOrCreate({ where: { deviceId }, defaults: { deviceId, status: 'online', lastHeartbeat: now, metadata } });
   if (device.lastHeartbeat == null || new Date(device.lastHeartbeat) < now) {
@@ -80,7 +70,6 @@ function isHeartbeatStale(device, now = Date.now()) {
 }
 
 async function reconcilePresenceFromDatabase() {
-  await ensureReady();
   const now = Date.now();
   const devices = await Device.findAll();
 
@@ -154,7 +143,6 @@ function startPresenceReconciliation() {
 async function markDeviceOffline(deviceId) {
   deviceId = normalizeDeviceId(deviceId);
   if (!deviceId) return null;
-  await ensureReady();
   const device = await Device.findOne({ where: { deviceId } });
   if (!device) return null;
   const now = new Date();
