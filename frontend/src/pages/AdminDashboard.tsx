@@ -309,11 +309,8 @@ export default function AdminDashboard(): React.ReactElement {
 
   const refreshDeviceInventory = React.useCallback(async () => {
     try {
-      const res = await fetch('/api/devices');
-      if (!res.ok) {
-        throw new Error(`Request failed with status ${res.status}`);
-      }
-      const body = await res.json().catch(() => ({}));
+      const response = await deviceService.list();
+      const body = response?.data ?? {};
       const rawList = Array.isArray(body?.data) ? body.data : (Array.isArray(body) ? body : []);
       const uniqueDevices = new Map<string, DeviceSummary>();
       (rawList || []).forEach((device: any) => {
@@ -326,10 +323,25 @@ export default function AdminDashboard(): React.ReactElement {
       updateDeviceStats(normalized);
       setDeviceError(null);
     } catch (e: any) {
-      console.warn('AdminDashboard::refreshDeviceInventory', e?.message || e);
-      setDeviceInventory([]);
-      updateDeviceStats([]);
-      setDeviceError('Unable to load device inventory');
+      try {
+        const statusResponse = await deviceService.getStatus();
+        const statusList = Array.isArray(statusResponse?.data?.devices) ? statusResponse.data.devices : [];
+        const normalizedFromStatus = statusList.map((item: any) => normalizeDeviceEntry({
+          deviceId: item.device_id || item.deviceId,
+          status: item.online ? 'online' : 'offline',
+          lastHeartbeat: item.last_seen || null,
+          signalStrength: item.signalStrength ?? null,
+        }));
+
+        setDeviceInventory(normalizedFromStatus);
+        updateDeviceStats(normalizedFromStatus);
+        setDeviceError(null);
+      } catch (statusError: any) {
+        console.warn('AdminDashboard::refreshDeviceInventory', statusError?.message || e?.message || statusError || e);
+        setDeviceInventory([]);
+        updateDeviceStats([]);
+        setDeviceError('Unable to load device inventory');
+      }
     }
   }, [normalizeDeviceEntry, updateDeviceStats]);
 
