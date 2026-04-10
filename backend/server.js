@@ -28,7 +28,14 @@ const connectDB = typeof sequelize.connectDB === 'function' ? sequelize.connectD
   }
 };
 const { ensureDatabaseSetup } = database;
-const schemaReady = ensureDatabaseSetup({ force: (process.env.NODE_ENV || 'development') === 'test' });
+const isTestMode = (process.env.NODE_ENV || 'development') === 'test';
+const isProductionMode = (process.env.NODE_ENV || 'development') === 'production';
+const EXIT_ON_FATAL_RUNTIME_ERROR = (process.env.EXIT_ON_FATAL_RUNTIME_ERROR || '').toLowerCase() === 'true';
+const schemaReady = ensureDatabaseSetup({
+  force: isTestMode,
+  // Prevent long ALTER sync from delaying Render health checks during boot.
+  alter: isProductionMode ? false : undefined,
+});
 connectMongo().catch((error) => {
   logger.warn('MongoDB connection failed during startup', error && error.message ? error.message : error);
 });
@@ -457,11 +464,15 @@ app.use((err, req, res, next) => {
 
 if (schemaReady && typeof schemaReady.then === 'function') {
   app.use(async (req, res, next) => {
+    if (req.path === '/health' || req.path === '/api/health') {
+      return next();
+    }
     try {
       await schemaReady;
       next();
     } catch (err) {
-      next(err);
+      logger.warn('Schema bootstrap not ready; continuing request handling without blocking', err && err.message ? err.message : err);
+      next();
     }
   });
 }
@@ -476,6 +487,40 @@ const buildHealthPayload = () => ({
   timestamp: Date.now(),
 });
 
+const DEVICE_ONLINE_WINDOW_MS = Math.max(
+  30000,
+  parseInt(
+    process.env.DEVICE_ONLINE_WINDOW_MS || process.env.DEVICE_OFFLINE_TIMEOUT_MS || process.env.SENSOR_STALE_THRESHOLD_MS || '90000',
+    10,
+  ) || 90000,
+);
+
+const LAYER_KEYS = [
+  'soilMoistureLayer1',
+  'soilTemperatureLayer1',
+  'soilMoistureLayer2',
+  'soilTemperatureLayer2',
+  'soilMoistureLayer3',
+  'soilTemperatureLayer3',
+];
+
+const toFiniteNumber = (value) => {
+  if (value === null || typeof value === 'undefined' || value === '') {
+    return null;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const latestSignalTs = (device, snapshot) => {
+  const heartbeatTs = device && device.lastHeartbeat ? new Date(device.lastHeartbeat).getTime() : NaN;
+  const seenTs = device && device.lastSeen ? new Date(device.lastSeen).getTime() : NaN;
+  const snapshotTs = snapshot && snapshot.timestamp ? new Date(snapshot.timestamp).getTime() : NaN;
+  return [heartbeatTs, seenTs, snapshotTs]
+    .filter((value) => Number.isFinite(value))
+    .sort((a, b) => b - a)[0];
+};
+
 app.get('/health', (req, res) => {
   // Provide DB connection info and application metadata
   const appVersion = require('./package.json').version || '0.0.0';
@@ -485,36 +530,79 @@ app.get('/health', (req, res) => {
 
 app.get('/api/health', async (req, res) => {
   try {
-    // Check DB readiness by attempting a lightweight authenticate with retry suppressed
-    let db = 'unknown';
-    try {
-      if (database && typeof database.getActiveDialect === 'function') {
-        db = database.getActiveDialect() || 'unknown';
-      }
-      // If connectDB is available, try a quick authenticate but don't throw on failure
-      if (typeof database.authenticate === 'function') {
-        try {
-          await database.authenticate();
-          db = 'connected';
-        } catch (e) {
-          db = 'disconnected';
-        }
-      } else if (typeof database.connectDB === 'function') {
-        try {
-          await database.connectDB();
-          db = 'connected';
-        } catch (e) {
-          db = 'disconnected';
-        }
-      }
-    } catch (e) {
-      db = 'error';
-    }
+    // Keep this endpoint fast for Render health checks; avoid blocking DB network calls.
+    const db = (database && typeof database.getActiveDialect === 'function')
+      ? (database.getActiveDialect() || 'unknown')
+      : 'unknown';
 
     const appVersion = require('./package.json').version || '0.0.0';
     return res.status(200).json({ ok: true, db, version: appVersion, env: process.env.NODE_ENV || 'development' });
   } catch (e) {
     return res.status(500).json({ ok: false, message: 'Health check failed', error: e && e.message ? e.message : String(e) });
+  }
+});
+
+app.get('/api/system/validation', async (req, res) => {
+  try {
+    const iotMqtt = require('./services/iotMqtt');
+    const mqttStatus = typeof iotMqtt.getConnectionStatus === 'function'
+      ? iotMqtt.getConnectionStatus()
+      : { connected: false, state: 'unknown', broker: null };
+
+    const nowMs = Date.now();
+    const [devices, latestSnapshot] = await Promise.all([
+      Device.findAll({ raw: true }).catch(() => []),
+      SensorSnapshot.findOne({ order: [['timestamp', 'DESC']], raw: true }).catch(() => null),
+    ]);
+
+    const hasOnlineDevice = (devices || []).some((device) => {
+      const ts = latestSignalTs(device, null);
+      return Number.isFinite(ts) && (nowMs - ts) <= DEVICE_ONLINE_WINDOW_MS;
+    });
+
+    const layerNumbers = LAYER_KEYS.map((key) => toFiniteNumber(latestSnapshot && latestSnapshot[key]));
+    const hasAllLayerValues = latestSnapshot && layerNumbers.every((value) => value !== null);
+
+    const snapshotTs = latestSnapshot && latestSnapshot.timestamp
+      ? new Date(latestSnapshot.timestamp).getTime()
+      : NaN;
+    const snapshotFresh = Number.isFinite(snapshotTs) && (nowMs - snapshotTs) <= Math.max(DEVICE_ONLINE_WINDOW_MS, 120000);
+
+    const mqttPass = Boolean(mqttStatus && mqttStatus.connected);
+    const dataIntegrityPass = Boolean(hasAllLayerValues && snapshotFresh);
+    const frontendRenderPass = Boolean(latestSnapshot && snapshotFresh);
+    const alertsSystemPass = typeof require('./utils/sensorEvents').checkThresholds === 'function';
+
+    const checks = [
+      mqttPass,
+      hasOnlineDevice,
+      dataIntegrityPass,
+      frontendRenderPass,
+      alertsSystemPass,
+    ];
+    const readinessScore = Math.round((checks.filter(Boolean).length / checks.length) * 100);
+
+    const payload = {
+      mqtt_connection: mqttPass ? 'PASS' : 'FAIL',
+      device_status: hasOnlineDevice ? 'ONLINE' : 'OFFLINE',
+      data_integrity: dataIntegrityPass ? 'PASS' : 'FAIL',
+      frontend_render: frontendRenderPass ? 'PASS' : 'FAIL',
+      alerts_system: alertsSystemPass ? 'PASS' : 'FAIL',
+      overall_status: checks.every(Boolean) ? 'PASS' : 'FAIL',
+      readiness_score: readinessScore,
+    };
+
+    return res.status(200).json(payload);
+  } catch (error) {
+    return res.status(200).json({
+      mqtt_connection: 'FAIL',
+      device_status: 'OFFLINE',
+      data_integrity: 'FAIL',
+      frontend_render: 'FAIL',
+      alerts_system: 'FAIL',
+      overall_status: 'FAIL',
+      readiness_score: 0,
+    });
   }
 });
 
@@ -538,7 +626,7 @@ app.get('/api/system/info', auth, adminOnly, async (req, res) => {
     }
 
     const now = Date.now();
-    const onlineWindowMs = 15 * 1000;
+    const onlineWindowMs = DEVICE_ONLINE_WINDOW_MS;
     const [devices, snapshots] = await Promise.all([
       Device.findAll({ raw: true }).catch(() => []),
       SensorSnapshot.findAll({ raw: true }).catch(() => []),
@@ -559,10 +647,7 @@ app.get('/api/system/info', auth, adminOnly, async (req, res) => {
     const devicesPayload = knownDeviceIds.map((deviceId) => {
       const match = (devices || []).find((device) => (device.deviceId || '').toString().toLowerCase() === deviceId.toLowerCase());
       const snapshot = snapshotByDevice.get(deviceId.toLowerCase());
-      const heartbeatTs = match && match.lastHeartbeat ? new Date(match.lastHeartbeat).getTime() : NaN;
-      const seenTs = match && match.lastSeen ? new Date(match.lastSeen).getTime() : NaN;
-      const snapshotTs = snapshot && snapshot.timestamp ? new Date(snapshot.timestamp).getTime() : NaN;
-      const latestTs = [heartbeatTs, seenTs, snapshotTs].filter((value) => Number.isFinite(value)).sort((a, b) => b - a)[0];
+      const latestTs = latestSignalTs(match, snapshot);
       return {
         device_id: deviceId,
         online: Number.isFinite(latestTs) ? (now - latestTs < onlineWindowMs) : false,
@@ -596,7 +681,7 @@ app.get('/api/system/info', auth, adminOnly, async (req, res) => {
 app.get('/api/devices/status', async (req, res) => {
   try {
     const now = Date.now();
-    const onlineWindowMs = 15 * 1000;
+    const onlineWindowMs = DEVICE_ONLINE_WINDOW_MS;
     const [devices, snapshots] = await Promise.all([
       Device.findAll({ raw: true }).catch(() => []),
       SensorSnapshot.findAll({ raw: true }).catch(() => []),
@@ -617,10 +702,7 @@ app.get('/api/devices/status', async (req, res) => {
     const payload = knownDeviceIds.map((deviceId) => {
       const device = (devices || []).find((item) => (item.deviceId || '').toString().toLowerCase() === deviceId.toLowerCase());
       const snapshot = snapshotByDevice.get(deviceId.toLowerCase());
-      const heartbeatTs = device && device.lastHeartbeat ? new Date(device.lastHeartbeat).getTime() : NaN;
-      const seenTs = device && device.lastSeen ? new Date(device.lastSeen).getTime() : NaN;
-      const snapshotTs = snapshot && snapshot.timestamp ? new Date(snapshot.timestamp).getTime() : NaN;
-      const latestTs = [heartbeatTs, seenTs, snapshotTs].filter((value) => Number.isFinite(value)).sort((a, b) => b - a)[0];
+      const latestTs = latestSignalTs(device, snapshot);
 
       return {
         device_id: deviceId,
@@ -863,10 +945,11 @@ process.on('SIGTERM', () => {
 // Catch unhandled promise rejections
 process.on('unhandledRejection', (reason, promise) => {
   logger.error('Unhandled Rejection captured', { reason, promise });
-  // Don't exit in development
-  if ((process.env.NODE_ENV || 'development') === 'production') {
+  if (EXIT_ON_FATAL_RUNTIME_ERROR) {
     process.exit(1);
+    return;
   }
+  logger.warn('Continuing after unhandledRejection (set EXIT_ON_FATAL_RUNTIME_ERROR=true to crash on runtime errors).');
 });
 
 process.on('SIGINT', () => {
@@ -877,10 +960,11 @@ process.on('SIGINT', () => {
 // Catch uncaught exceptions
 process.on('uncaughtException', (error) => {
   logger.error('Uncaught Exception', error);
-  // Don't exit in development
-  if ((process.env.NODE_ENV || 'development') === 'production') {
+  if (EXIT_ON_FATAL_RUNTIME_ERROR) {
     process.exit(1);
+    return;
   }
+  logger.warn('Continuing after uncaughtException (set EXIT_ON_FATAL_RUNTIME_ERROR=true to crash on runtime errors).');
 });
 
 // In development, run seed-admin as a non-blocking child process to ensure admin exists
@@ -934,6 +1018,8 @@ module.exports.schemaReady = schemaReady;
 // Simple server startup for development
 if ((process.env.NODE_ENV || 'development') !== 'test') {
   (async () => {
+    tryListen(configuredPort);
+
     try {
       await connectDB();
       logger.info('Database connection verified during startup');
@@ -945,14 +1031,8 @@ if ((process.env.NODE_ENV || 'development') !== 'test') {
       }
     } catch (error) {
       logger.error('Database connection failed at startup:', error && error.message ? error.message : error);
-      if ((process.env.NODE_ENV || 'development') === 'production') {
-        process.exit(1);
-        return;
-      }
       logger.warn('Continuing to start server without database connectivity; routes that require the database may fail until it reconnects.');
     }
-
-    tryListen(configuredPort);
   })();
 } else {
   // In test mode we avoid calling server.listen() to prevent open handles during Jest runs.

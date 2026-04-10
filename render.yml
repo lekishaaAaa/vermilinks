@@ -14,7 +14,7 @@ services:
     rootDir: backend
     buildCommand: npm install --force
     startCommand: npm run start
-    healthCheckPath: /api/health
+    healthCheckPath: /health
     autoDeploy: true
     envVars:
       - key: DATABASE_URL
