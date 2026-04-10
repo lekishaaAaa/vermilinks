@@ -102,7 +102,27 @@ router.post('/heartbeat', [
 router.get('/', optionalAuth, async (req, res) => {
   try {
     const devices = await Device.findAll({ order: [['lastHeartbeat','DESC']] });
-    const normalizedDevices = devices.map(toPlainDevice).filter(Boolean);
+    const now = Date.now();
+    const normalizedDevices = devices
+      .map(toPlainDevice)
+      .filter(Boolean)
+      .map((device) => {
+        const heartbeatTs = toTimestampMs(device.lastHeartbeat ?? device.last_seen ?? device.lastSeen);
+        const lastSeenTs = toTimestampMs(device.lastSeen ?? device.last_seen);
+        const freshestTs = [heartbeatTs, lastSeenTs]
+          .filter((value) => Number.isFinite(value))
+          .sort((a, b) => b - a)[0] ?? null;
+
+        const onlineByHeartbeat = Number.isFinite(freshestTs)
+          ? (now - freshestTs) < DEVICE_STATUS_TIMEOUT_MS
+          : false;
+
+        return {
+          ...device,
+          status: onlineByHeartbeat ? 'online' : 'offline',
+          online: onlineByHeartbeat,
+        };
+      });
 
     // Devices are reported directly by ESP32 nodes.
 

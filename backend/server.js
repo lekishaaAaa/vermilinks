@@ -574,7 +574,7 @@ const buildHealthPayload = () => ({
 const DEVICE_ONLINE_WINDOW_MS = Math.max(
   30000,
   parseInt(
-    process.env.DEVICE_ONLINE_WINDOW_MS || process.env.DEVICE_OFFLINE_TIMEOUT_MS || process.env.SENSOR_STALE_THRESHOLD_MS || '180000',
+    process.env.DEVICE_ONLINE_WINDOW_MS || process.env.DEVICE_OFFLINE_TIMEOUT_MS || process.env.SENSOR_STALE_THRESHOLD_MS || '60000',
     10,
   ) || 90000,
 );

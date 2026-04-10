@@ -35,7 +35,14 @@ const METRICS_WILDCARD_TOPIC = 'vermilinks/+/metrics';
 const STATE_WILDCARD_TOPIC = 'vermilinks/+/state';
 const STATUS_WILDCARD_TOPIC = 'vermilinks/+/status';
 const COMMANDS_WILDCARD_TOPIC = 'vermilinks/+/commands';
-const VERMILINKS_WILDCARD_TOPIC = 'vermilinks/#';
+const MQTT_MESSAGE_DEDUPE_MS = Math.max(
+  200,
+  parseInt(process.env.MQTT_MESSAGE_DEDUPE_MS || '1500', 10) || 1500,
+);
+const MQTT_RETAINED_STATUS_MAX_AGE_MS = Math.max(
+  5000,
+  parseInt(process.env.MQTT_RETAINED_STATUS_MAX_AGE_MS || '45000', 10) || 45000,
+);
 
 const STATE_TOPICS = new Set(['vermilinks/esp32a/state']);
 const ACK_TOPICS = new Set(['vermilinks/esp32a/ack']);
@@ -68,6 +75,27 @@ let client = null;
 let lastConnectionState = 'disconnected';
 const latestTelemetryByDevice = new Map();
 let latestTelemetryGlobal = null;
+const recentMqttSignatures = new Map();
+
+function shouldSkipDuplicateMqttMessage(topic, message, packet) {
+  const now = Date.now();
+  const raw = Buffer.isBuffer(message) ? message.toString('utf8') : String(message || '');
+  const compact = raw.length > 256 ? raw.slice(0, 256) : raw;
+  const signature = `${(topic || '').toString().toLowerCase()}|${packet && packet.retain ? '1' : '0'}|${raw.length}|${compact}`;
+  const previous = recentMqttSignatures.get(signature);
+  recentMqttSignatures.set(signature, now);
+
+  if (recentMqttSignatures.size > 600) {
+    const cutoff = now - Math.max(5000, MQTT_MESSAGE_DEDUPE_MS * 6);
+    for (const [key, ts] of recentMqttSignatures.entries()) {
+      if (!Number.isFinite(ts) || ts < cutoff) {
+        recentMqttSignatures.delete(key);
+      }
+    }
+  }
+
+  return Number.isFinite(previous) && (now - previous) <= MQTT_MESSAGE_DEDUPE_MS;
+}
 
 function safeJsonParse(payload) {
   if (!payload) return null;
@@ -441,7 +469,8 @@ async function handleStateMessage(payload, topic) {
     }
   }
 
-  await markDeviceOnline(deviceId, { via: 'mqtt', lastStateAt: now.toISOString() });
+  // Presence should not be inferred from actuator/state snapshots because retained
+  // state messages can replay during broker reconnect and falsely mark devices online.
 }
 
 async function handleAckMessage(payload) {
@@ -494,7 +523,7 @@ async function handleAckMessage(payload) {
   });
 }
 
-async function handleStatusMessage(payload) {
+async function handleStatusMessage(payload, options = {}) {
   if (!payload || typeof payload !== 'object') {
     return;
   }
@@ -506,14 +535,28 @@ async function handleStatusMessage(payload) {
   }
 
   const now = new Date();
-  if (payload.online !== false) {
+  const retained = options && options.retained === true;
+  let computedOnline = payload.online !== false;
+  if (computedOnline && retained) {
+    const statusTs = resolveTelemetryTimestamp(payload, null);
+    const statusTsMs = statusTs ? statusTs.getTime() : NaN;
+    const freshEnough = Number.isFinite(statusTsMs) && (Date.now() - statusTsMs) <= MQTT_RETAINED_STATUS_MAX_AGE_MS;
+    if (!freshEnough) {
+      computedOnline = false;
+      logger.info('iotMqtt: retained status ignored for online presence (stale/no timestamp)', {
+        deviceId,
+      });
+    }
+  }
+
+  if (computedOnline) {
     await markDeviceOnline(deviceId, { via: 'mqtt', lastStatusAt: now.toISOString() });
   }
 
   emitRealtime(REALTIME_EVENTS.DEVICE_STATUS, {
     deviceId,
-    online: payload.online !== false,
-    status: payload.online !== false ? 'online' : 'offline',
+    online: computedOnline,
+    status: computedOnline ? 'online' : 'offline',
     lastHeartbeat: now.toISOString(),
     updatedAt: now.toISOString(),
   });
@@ -838,7 +881,6 @@ function startIotMqtt() {
     STATUS_WILDCARD_TOPIC,
     COMMANDS_WILDCARD_TOPIC,
     `${TOPICS.deviceStatusPrefix}#`,
-    VERMILINKS_WILDCARD_TOPIC,
   ];
 
   const connectionOptions = {
@@ -875,7 +917,10 @@ function startIotMqtt() {
     });
   });
 
-  client.on('message', (topic, message) => {
+  client.on('message', (topic, message, packet) => {
+    if (shouldSkipDuplicateMqttMessage(topic, message, packet)) {
+      return;
+    }
     console.log('MQTT message received', topic);
     const lwtPayload = parseLwtPayload(topic, message);
     if (lwtPayload) {
@@ -911,7 +956,7 @@ function startIotMqtt() {
     }
 
     if (isStatusTopic(normalizedTopic)) {
-      handleStatusMessage(payload).catch((error) => {
+      handleStatusMessage(payload, { retained: Boolean(packet && packet.retain) }).catch((error) => {
         logger.warn('iotMqtt status handler failed', error && error.message ? error.message : error);
       });
       return;

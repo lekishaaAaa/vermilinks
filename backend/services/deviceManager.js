@@ -4,7 +4,7 @@ const Alert = require('../models/Alert');
 const { REALTIME_EVENTS, emitRealtime } = require('../utils/realtime');
 
 // Default offline timeout (ms) — devices must heartbeat at least every 10 seconds
-const OFFLINE_TIMEOUT_MS = parseInt(process.env.DEVICE_OFFLINE_TIMEOUT_MS || process.env.SENSOR_STALE_THRESHOLD_MS || '180000', 10);
+const OFFLINE_TIMEOUT_MS = parseInt(process.env.DEVICE_OFFLINE_TIMEOUT_MS || process.env.SENSOR_STALE_THRESHOLD_MS || '60000', 10);
 const PRESENCE_SWEEP_INTERVAL_MS = Math.max(
   5000,
   parseInt(process.env.PRESENCE_SWEEP_INTERVAL_MS || '10000', 10),
