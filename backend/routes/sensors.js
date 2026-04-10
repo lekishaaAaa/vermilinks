@@ -531,6 +531,32 @@ router.get('/latest', async (req, res) => {
       }
     }
 
+    try {
+      const iotMqtt = require('../services/iotMqtt');
+      const liveTelemetry = typeof iotMqtt.getLatestTelemetryFallback === 'function'
+        ? iotMqtt.getLatestTelemetryFallback(deviceId)
+        : null;
+
+      if (liveTelemetry) {
+        const formattedLive = formatLatestSnapshot({
+          ...liveTelemetry,
+          deviceId: liveTelemetry.deviceId || deviceId,
+          timestamp: liveTelemetry.timestamp,
+        });
+
+        if (formattedLive) {
+          return res.json({
+            ...formattedLive,
+            deviceOnline: true,
+            isOfflineData: false,
+            source: 'mqtt_memory_live',
+          });
+        }
+      }
+    } catch (fallbackLookupErr) {
+      // Continue to DB lookup path when in-memory fallback is unavailable.
+    }
+
     let formatted = null;
 
     const findLatestLiveSnapshot = async (queryDeviceId) => {

@@ -18,7 +18,7 @@ const baseOptions = {
 	pool: {
 		max: Number(process.env.DB_POOL_MAX || 5),
 		min: Number(process.env.DB_POOL_MIN || 0),
-		acquire: Number(process.env.DB_POOL_ACQUIRE || 20000),
+		acquire: Number(process.env.DB_POOL_ACQUIRE || 8000),
 		idle: Number(process.env.DB_POOL_IDLE || 10000)
 	},
 	retry: {
@@ -134,12 +134,12 @@ if (isTestEnv) {
 			ssl: { require: true, rejectUnauthorized: false },
 			keepAlive: true,
 			keepAliveInitialDelayMillis: Number(process.env.DB_KEEPALIVE_INITIAL_DELAY_MS || 10000),
-			connectionTimeoutMillis: Number(process.env.DB_CONNECT_TIMEOUT_MS || 20000),
+			connectionTimeoutMillis: Number(process.env.DB_CONNECT_TIMEOUT_MS || 8000),
 		}
 		: {
 			keepAlive: true,
 			keepAliveInitialDelayMillis: Number(process.env.DB_KEEPALIVE_INITIAL_DELAY_MS || 10000),
-			connectionTimeoutMillis: Number(process.env.DB_CONNECT_TIMEOUT_MS || 20000),
+			connectionTimeoutMillis: Number(process.env.DB_CONNECT_TIMEOUT_MS || 8000),
 		};
 
 	try {
