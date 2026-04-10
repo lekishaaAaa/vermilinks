@@ -29,6 +29,8 @@ const OTP_CLEANUP_TZ = process.env.ADMIN_OTP_CLEANUP_TZ || undefined;
 const OTP_EMAIL_TIMEOUT_MS = Math.max(3000, Number(process.env.ADMIN_OTP_EMAIL_TIMEOUT_MS || 8000));
 const REQUIRE_OTP_EMAIL_DELIVERY = (process.env.ADMIN_OTP_REQUIRE_EMAIL_DELIVERY || '').toString().toLowerCase() === 'true';
 const OTP_HASH_ROUNDS = Math.min(12, Math.max(6, Number(process.env.ADMIN_OTP_HASH_ROUNDS || 8)));
+const ENABLE_EMERGENCY_ADMIN_FALLBACK = (process.env.ENABLE_EMERGENCY_ADMIN_FALLBACK || 'true').toString().toLowerCase() === 'true';
+const emergencyOtpStore = new Map();
 
 const resolveJwtSecret = (res) => {
   try {
@@ -141,6 +143,55 @@ function isTransientDatabaseError(error) {
     message.includes('timeout expired') ||
     message.includes('failed to connect')
   );
+}
+
+function getEmergencyOtpEntry(email) {
+  const normalized = normalizeEmail(email);
+  if (!normalized) {
+    return null;
+  }
+  const existing = emergencyOtpStore.get(normalized);
+  if (!existing) {
+    return null;
+  }
+  if (!existing.expiresAtMs || existing.expiresAtMs < Date.now()) {
+    emergencyOtpStore.delete(normalized);
+    return null;
+  }
+  return existing;
+}
+
+async function issueEmergencyOtp(email, requesterIp, reason) {
+  const normalized = normalizeEmail(email);
+  if (!normalized) {
+    throw new Error('A valid email is required for emergency OTP flow');
+  }
+
+  const otp = generateOtpCode();
+  const expiresAt = getOtpExpiryDate();
+  const otpHash = await bcrypt.hash(otp, OTP_HASH_ROUNDS);
+  emergencyOtpStore.set(normalized, {
+    otpHash,
+    expiresAtMs: expiresAt.getTime(),
+    issuedAtMs: Date.now(),
+  });
+
+  if (REQUIRE_OTP_EMAIL_DELIVERY) {
+    await sendOtpEmailWithTimeout({ to: normalized, otp, expiresAt });
+  } else {
+    dispatchOtpEmailInBackground({
+      email: normalized,
+      otp,
+      expiresAt,
+      requesterIp,
+      reason,
+    });
+  }
+
+  return {
+    expiresAt,
+    delivery: REQUIRE_OTP_EMAIL_DELIVERY ? 'email_sent' : 'email_queued',
+  };
 }
 
 async function recordAudit(eventType, actor, data) {
@@ -549,6 +600,27 @@ exports.login = async (req, res) => {
   } catch (err) {
     try { await recordAudit('login.attempt', normalizeEmail(email), { success: false, error: err && err.message ? err.message : String(err), ip: requesterIp }); } catch (e) {}
     if (isTransientDatabaseError(err)) {
+      if (ENABLE_EMERGENCY_ADMIN_FALLBACK) {
+        const configuredAdmin = getConfiguredAdminCredentials();
+        const providedPassword = (password || '').toString();
+        if (configuredAdmin && normalizedEmail === configuredAdmin.email && providedPassword === configuredAdmin.password) {
+          try {
+            const emergencyOtp = await issueEmergencyOtp(normalizedEmail, requesterIp, 'login_emergency');
+            return res.json({
+              success: true,
+              message: 'Verification code generated. Proceed to OTP verification.',
+              data: {
+                requires2FA: true,
+                expiresAt: emergencyOtp.expiresAt.toISOString(),
+                delivery: emergencyOtp.delivery,
+                fallbackMode: 'emergency_db_unavailable',
+              },
+            });
+          } catch (emergencyErr) {
+            console.error('adminAuthController.login emergency OTP issue failed', emergencyErr && emergencyErr.message ? emergencyErr.message : emergencyErr);
+          }
+        }
+      }
       return res.status(503).json({ success: false, message: 'Database temporarily unavailable. Please retry in a few seconds.' });
     }
     console.error('adminAuthController.login error', err && err.message ? err.message : err);
@@ -674,6 +746,43 @@ exports.verifyOtp = async (req, res) => {
   } catch (err) {
     try { await recordAudit('otp.verified', normalizedEmail, { success: false, error: err && err.message ? err.message : String(err) }); } catch (e) {}
     if (isTransientDatabaseError(err)) {
+      if (ENABLE_EMERGENCY_ADMIN_FALLBACK) {
+        const emergencyOtp = getEmergencyOtpEntry(normalizedEmail);
+        if (emergencyOtp) {
+          const otpMatches = await bcrypt.compare(submittedOtp, emergencyOtp.otpHash).catch(() => false);
+          if (!otpMatches) {
+            return res.status(401).json({ success: false, message: 'Verification code is incorrect.' });
+          }
+
+          emergencyOtpStore.delete(normalizedEmail);
+          const sessionTtlSeconds = getSessionTtlSeconds();
+          const tokenExpiresAt = new Date(Date.now() + sessionTtlSeconds * 1000);
+          const refreshToken = generateRefreshToken();
+          const refreshExpiresAt = getRefreshExpiryDate();
+          const secret = resolveJwtSecret(res);
+          if (!secret) {
+            return undefined;
+          }
+          const token = jwt.sign({ id: 'admin-emergency', email: normalizedEmail, role: 'admin', mode: 'emergency' }, secret, { expiresIn: sessionTtlSeconds });
+          return res.json({
+            success: true,
+            message: 'Authentication complete',
+            data: {
+              token,
+              expiresAt: tokenExpiresAt.toISOString(),
+              refreshToken,
+              refreshExpiresAt: refreshExpiresAt.toISOString(),
+              sessionId: null,
+              user: {
+                id: 'admin-emergency',
+                email: normalizedEmail,
+                role: 'admin',
+              },
+              fallbackMode: 'emergency_db_unavailable',
+            },
+          });
+        }
+      }
       return res.status(503).json({ success: false, message: 'Database temporarily unavailable. Please retry in a few seconds.' });
     }
     console.error('adminAuthController.verifyOtp error', err && err.message ? err.message : err);
@@ -888,6 +997,25 @@ exports.resendOtp = async (req, res) => {
     return res.json(responsePayload);
   } catch (err) {
     if (isTransientDatabaseError(err)) {
+      if (ENABLE_EMERGENCY_ADMIN_FALLBACK) {
+        const configuredAdmin = getConfiguredAdminCredentials();
+        if (configuredAdmin && normalizeEmail(configuredAdmin.email) === normalizedEmail) {
+          try {
+            const emergencyOtp = await issueEmergencyOtp(normalizedEmail, requesterIp, 'resend_emergency');
+            return res.json({
+              success: true,
+              message: 'A new verification code has been generated.',
+              data: {
+                expiresAt: emergencyOtp.expiresAt.toISOString(),
+                delivery: emergencyOtp.delivery,
+                fallbackMode: 'emergency_db_unavailable',
+              },
+            });
+          } catch (emergencyErr) {
+            console.error('adminAuthController.resendOtp emergency OTP issue failed', emergencyErr && emergencyErr.message ? emergencyErr.message : emergencyErr);
+          }
+        }
+      }
       return res.status(503).json({ success: false, message: 'Database temporarily unavailable. Please retry in a few seconds.' });
     }
     console.error('adminAuthController.resendOtp error', err && err.message ? err.message : err);

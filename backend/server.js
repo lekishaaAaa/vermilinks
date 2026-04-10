@@ -465,6 +465,12 @@ if (deviceHttpOrigin && !allowedHttpOrigins.includes(deviceHttpOrigin)) {
 }
 
 const allowAllCors = (process.env.ALLOW_ALL_CORS || '').toString().toLowerCase() === 'true';
+const isTrustedRenderOrigin = (origin) => {
+  if (!origin || typeof origin !== 'string') {
+    return false;
+  }
+  return /^https:\/\/[a-z0-9-]+\.onrender\.com$/i.test(origin.trim());
+};
 const resolveCorsOrigin = (origin, callback) => {
   if (!origin) {
     return callback(null, true);
@@ -472,7 +478,7 @@ const resolveCorsOrigin = (origin, callback) => {
   if (allowAllCors) {
     return callback(null, origin);
   }
-  if (allowedHttpOrigins.includes(origin)) {
+  if (allowedHttpOrigins.includes(origin) || isTrustedRenderOrigin(origin)) {
     return callback(null, origin);
   }
   return callback(null, false);
@@ -493,7 +499,7 @@ const isOriginAllowed = (origin) => {
   if (allowAllCors) {
     return true;
   }
-  return allowedHttpOrigins.includes(origin);
+  return allowedHttpOrigins.includes(origin) || isTrustedRenderOrigin(origin);
 };
 
 app.use((req, res, next) => {

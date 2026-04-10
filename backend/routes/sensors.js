@@ -795,6 +795,8 @@ router.get('/latest', async (req, res) => {
       } catch (fallbackErr) {
         // Ignore fallback resolver failures and return generic server error below.
       }
+
+      return res.status(204).send();
     } else {
       console.error('GET /api/sensors/latest err', error);
     }
