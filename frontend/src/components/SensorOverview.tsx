@@ -19,7 +19,9 @@ type LayerMetrics = {
   layer: 1 | 2 | 3;
   moisture: number | null;
   temperature: number | null;
-  status: 'healthy' | 'watch' | 'unknown';
+  status: 'normal' | 'warning' | 'critical' | 'unknown';
+  moistureBand: 'LOW' | 'NORMAL' | 'HIGH' | 'NO_DATA';
+  temperatureBand: 'LOW' | 'NORMAL' | 'HIGH' | 'NO_DATA';
 };
 
 interface SensorOverviewProps {
@@ -50,9 +52,23 @@ const getCardStatus = (cardKey: CardConfig['key'], value: number | string | null
     return value >= 20 && value <= 30 ? 'normal' : 'alert';
   }
   if (cardKey === 'soil_moisture') {
-    return value >= 400 && value <= 600 ? 'normal' : 'alert';
+    return value >= 30 && value <= 70 ? 'normal' : 'alert';
   }
   return 'neutral';
+};
+
+const classifyMoistureBand = (moisture: number | null): LayerMetrics['moistureBand'] => {
+  if (typeof moisture !== 'number') return 'NO_DATA';
+  if (moisture < 30) return 'LOW';
+  if (moisture > 70) return 'HIGH';
+  return 'NORMAL';
+};
+
+const classifyTemperatureBand = (temperature: number | null): LayerMetrics['temperatureBand'] => {
+  if (typeof temperature !== 'number') return 'NO_DATA';
+  if (temperature < 20) return 'LOW';
+  if (temperature > 35) return 'HIGH';
+  return 'NORMAL';
 };
 
 const readCardValue = (cardKey: CardConfig['key'], sample: SensorData | null | undefined): number | string | null => {
@@ -89,43 +105,59 @@ const readCardValue = (cardKey: CardConfig['key'], sample: SensorData | null | u
   }
 };
 
-const classifyLayerHealth = (moisture: number | null, temperature: number | null): LayerMetrics['status'] => {
-  const hasMoisture = typeof moisture === 'number';
-  const hasTemperature = typeof temperature === 'number';
+const classifyLayerHealth = (
+  moistureBand: LayerMetrics['moistureBand'],
+  temperatureBand: LayerMetrics['temperatureBand'],
+): LayerMetrics['status'] => {
+  const hasMoisture = moistureBand !== 'NO_DATA';
+  const hasTemperature = temperatureBand !== 'NO_DATA';
   if (!hasMoisture && !hasTemperature) {
     return 'unknown';
   }
-
-  const moistureOk = !hasMoisture || (moisture >= 300 && moisture <= 800);
-  const tempOk = !hasTemperature || (temperature >= 18 && temperature <= 32);
-  return moistureOk && tempOk ? 'healthy' : 'watch';
+  if (moistureBand === 'HIGH' || temperatureBand === 'HIGH') {
+    return 'critical';
+  }
+  if (moistureBand === 'LOW' || temperatureBand === 'LOW') {
+    return 'warning';
+  }
+  return 'normal';
 };
 
 const normalizeLayer = (layer: 1 | 2 | 3, telemetry: SensorData | null, lastTelemetry: SensorData | null): LayerMetrics => {
   const readMoisture = (sample: SensorData | null) => {
     if (!sample) return null;
     const key = layer === 1 ? sample.soilMoistureLayer1 : layer === 2 ? sample.soilMoistureLayer2 : sample.soilMoistureLayer3;
-    return typeof key === 'number' ? key : null;
+    if (typeof key === 'number') {
+      return key;
+    }
+    return typeof sample.moisture === 'number' ? sample.moisture : null;
   };
   const readTemperature = (sample: SensorData | null) => {
     if (!sample) return null;
     const key = layer === 1 ? sample.soilTemperatureLayer1 : layer === 2 ? sample.soilTemperatureLayer2 : sample.soilTemperatureLayer3;
-    return typeof key === 'number' ? key : null;
+    if (typeof key === 'number') {
+      return key;
+    }
+    return typeof sample.soilTemperature === 'number' ? sample.soilTemperature : null;
   };
 
   const moisture = readMoisture(telemetry) ?? readMoisture(lastTelemetry);
   const temperature = readTemperature(telemetry) ?? readTemperature(lastTelemetry);
+  const moistureBand = classifyMoistureBand(moisture);
+  const temperatureBand = classifyTemperatureBand(temperature);
   return {
     layer,
     moisture,
     temperature,
-    status: classifyLayerHealth(moisture, temperature),
+    status: classifyLayerHealth(moistureBand, temperatureBand),
+    moistureBand,
+    temperatureBand,
   };
 };
 
 const formatValue = (value: number | string | null, unit: string): string => {
   if (value === null || typeof value === 'undefined') {
-    return '--';
+    return 'No Data';
   }
   if (typeof value === 'string') {
     return value;
@@ -209,22 +241,44 @@ const SensorOverview: React.FC<SensorOverviewProps> = ({ telemetry, lastTelemetr
         </div>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           {layerMetrics.map((layer) => {
-            const badgeClass = layer.status === 'healthy'
+            const badgeClass = layer.status === 'normal'
               ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200'
-              : layer.status === 'watch'
+              : layer.status === 'warning'
                 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-200'
+                : layer.status === 'critical'
+                  ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-200'
                 : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300';
+
+            const layerLabel = layer.layer === 1
+              ? 'Layer 1 (Top)'
+              : layer.layer === 2
+                ? 'Layer 2 (Middle)'
+                : 'Layer 3 (Bottom)';
+
+            const issueSummary = layer.status === 'unknown'
+              ? 'No Data'
+              : layer.status === 'normal'
+                ? 'Normal'
+                : [
+                  layer.moistureBand !== 'NORMAL' && layer.moistureBand !== 'NO_DATA'
+                    ? `Moisture ${layer.moistureBand}`
+                    : null,
+                  layer.temperatureBand !== 'NORMAL' && layer.temperatureBand !== 'NO_DATA'
+                    ? `Temperature ${layer.temperatureBand}`
+                    : null,
+                ].filter(Boolean).join(' • ');
 
             return (
               <div key={`layer-${layer.layer}`} className="rounded-lg border border-gray-100 bg-gray-50/70 p-3 dark:border-gray-700 dark:bg-gray-900/50">
                 <div className="mb-2 flex items-center justify-between">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Layer {layer.layer}</p>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">{layerLabel}</p>
                   <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase ${badgeClass}`}>
                     {layer.status}
                   </span>
                 </div>
                 <p className="text-sm text-gray-700 dark:text-gray-200">Moisture: {formatValue(layer.moisture, '%')}</p>
                 <p className="text-sm text-gray-700 dark:text-gray-200">Temperature: {formatValue(layer.temperature, '°C')}</p>
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{issueSummary || 'No Data'}</p>
               </div>
             );
           })}

@@ -622,13 +622,24 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
       await ensureBackendBase();
       const snapshot = await sensorService.getLatestData(preferredTelemetryDeviceId || undefined);
       const resolvedDeviceId = (snapshot as any)?.device_id || (snapshot as any)?.deviceId || preferredTelemetryDeviceId || 'unknown-device';
+      const snapshotRecord = snapshot as any;
       const reading: SensorData | null = snapshot
         ? normalizeSensorSample({
             deviceId: resolvedDeviceId,
             temperature: snapshot.temperature,
             humidity: snapshot.humidity,
+            ambientTemperature: snapshotRecord?.ambient_temperature ?? snapshotRecord?.ambientTemperature,
+            ambientHumidity: snapshotRecord?.ambient_humidity ?? snapshotRecord?.ambientHumidity,
+            binTemperature: snapshotRecord?.bin_temperature ?? snapshotRecord?.binTemperature,
+            binHumidity: snapshotRecord?.bin_humidity ?? snapshotRecord?.binHumidity,
             moisture: snapshot.soil_moisture,
+            soilMoistureLayer1: snapshotRecord?.soil_moisture_layer1 ?? snapshotRecord?.soilMoistureLayer1,
+            soilMoistureLayer2: snapshotRecord?.soil_moisture_layer2 ?? snapshotRecord?.soilMoistureLayer2,
+            soilMoistureLayer3: snapshotRecord?.soil_moisture_layer3 ?? snapshotRecord?.soilMoistureLayer3,
             soilTemperature: snapshot.soil_temperature ?? (snapshot as any).soilTemperature,
+            soilTemperatureLayer1: snapshotRecord?.soil_temperature_layer1 ?? snapshotRecord?.soilTemperatureLayer1,
+            soilTemperatureLayer2: snapshotRecord?.soil_temperature_layer2 ?? snapshotRecord?.soilTemperatureLayer2,
+            soilTemperatureLayer3: snapshotRecord?.soil_temperature_layer3 ?? snapshotRecord?.soilTemperatureLayer3,
             ph: snapshot.ph,
             ec: snapshot.ec,
             nitrogen: snapshot.nitrogen,
@@ -636,12 +647,15 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
             potassium: snapshot.potassium,
             waterLevel: snapshot.water_level,
             floatSensor: snapshot.float_state,
+            floatStatus: snapshotRecord?.float_status ?? snapshotRecord?.floatStatus,
             batteryLevel: snapshot.battery_level,
             signalStrength: snapshot.signal_strength,
-            actuatorStates: snapshot.actuatorStates ?? snapshot.actuator_states ?? null,
-            timestamp: snapshot.updated_at,
-            isOfflineData: false,
-            deviceOnline: snapshot.deviceOnline ?? false,
+            actuatorStates: snapshotRecord?.actuatorStates ?? snapshotRecord?.actuator_states ?? null,
+            timestamp: snapshotRecord?.timestamp ?? snapshot.updated_at,
+            isOfflineData: Boolean(snapshotRecord?.isOfflineData),
+            deviceOnline: typeof snapshotRecord?.deviceOnline === 'boolean'
+              ? snapshotRecord.deviceOnline
+              : !Boolean(snapshotRecord?.isOfflineData),
           }, resolvedDeviceId)
         : null;
 
