@@ -549,10 +549,6 @@ router.get('/latest', async (req, res) => {
           if (!telemetryFresh) {
             // Continue to DB lookup when in-memory telemetry is stale.
           } else {
-            console.log('GET /api/sensors/latest using mqtt_memory_live fallback', {
-              deviceId: formattedLive.device_id || formattedLive.deviceId || deviceId || null,
-              timestamp: formattedLive.timestamp || null,
-            });
             return res.json({
               ...formattedLive,
               deviceOnline: telemetryFresh,

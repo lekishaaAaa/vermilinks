@@ -15,6 +15,11 @@ const MAX_TRACKED_DEVICES = 500;
 const FLOAT_EVENT_COOLDOWN_MS = 30 * 1000;
 const floatStateTracker = new Map();
 const pumpStateTracker = new Map();
+const LAYER_ALERT_LABELS = {
+  1: 'Layer 1 (Top)',
+  2: 'Layer 2 (Middle)',
+  3: 'Layer 3 (Bottom)',
+};
 
 const getAlertEmailRecipients = () => {
   const raw =
@@ -94,6 +99,22 @@ const toFiniteNumber = (value) => {
   }
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+};
+
+const classifyMoistureBand = (value) => {
+  const numeric = toFiniteNumber(value);
+  if (numeric === null) return null;
+  if (numeric < 30) return 'LOW';
+  if (numeric > 70) return 'HIGH';
+  return 'NORMAL';
+};
+
+const classifyTemperatureBand = (value) => {
+  const numeric = toFiniteNumber(value);
+  if (numeric === null) return null;
+  if (numeric < 20) return 'LOW';
+  if (numeric > 35) return 'HIGH';
+  return 'NORMAL';
 };
 
 const getTimestampMs = (sensor) => {
@@ -391,13 +412,13 @@ const checkThresholds = async (sensorData, ioInstance) => {
 
     validateRange('temperature', 'Temperature', plainSensor.temperature, 15, 35, '°C');
     validateRange('humidity', 'Humidity', plainSensor.humidity, 50, 90, '%');
-    validateRange('moisture', 'Soil Moisture', plainSensor.moisture, 300, 800, '');
+    validateRange('moisture', 'Soil Moisture', plainSensor.moisture, 0, 100, '%');
     validateRange('soilTemperature', 'Soil Temperature', plainSensor.soilTemperature, 18, 32, '°C');
 
     const layerRangeChecks = [
-      { key: 'soilMoistureLayer1', label: 'Soil Moisture L1', min: 300, max: 800, unit: '%' },
-      { key: 'soilMoistureLayer2', label: 'Soil Moisture L2', min: 300, max: 800, unit: '%' },
-      { key: 'soilMoistureLayer3', label: 'Soil Moisture L3', min: 300, max: 800, unit: '%' },
+      { key: 'soilMoistureLayer1', label: 'Soil Moisture L1', min: 0, max: 100, unit: '%' },
+      { key: 'soilMoistureLayer2', label: 'Soil Moisture L2', min: 0, max: 100, unit: '%' },
+      { key: 'soilMoistureLayer3', label: 'Soil Moisture L3', min: 0, max: 100, unit: '%' },
       { key: 'soilTemperatureLayer1', label: 'Soil Temperature L1', min: 18, max: 32, unit: '°C' },
       { key: 'soilTemperatureLayer2', label: 'Soil Temperature L2', min: 18, max: 32, unit: '°C' },
       { key: 'soilTemperatureLayer3', label: 'Soil Temperature L3', min: 18, max: 32, unit: '°C' },
@@ -430,6 +451,62 @@ const checkThresholds = async (sensorData, ioInstance) => {
         },
       });
     }
+
+    const layerReadings = [
+      {
+        index: 1,
+        moisture: toFiniteNumber(plainSensor.soilMoistureLayer1),
+        temperature: toFiniteNumber(plainSensor.soilTemperatureLayer1),
+      },
+      {
+        index: 2,
+        moisture: toFiniteNumber(plainSensor.soilMoistureLayer2),
+        temperature: toFiniteNumber(plainSensor.soilTemperatureLayer2),
+      },
+      {
+        index: 3,
+        moisture: toFiniteNumber(plainSensor.soilMoistureLayer3),
+        temperature: toFiniteNumber(plainSensor.soilTemperatureLayer3),
+      },
+    ];
+
+    layerReadings.forEach((layer) => {
+      const layerLabel = LAYER_ALERT_LABELS[layer.index] || `Layer ${layer.index}`;
+      const moistureBand = classifyMoistureBand(layer.moisture);
+      const temperatureBand = classifyTemperatureBand(layer.temperature);
+
+      if (moistureBand === 'LOW') {
+        pushAlert({
+          type: `layer_${layer.index}_moisture_low`,
+          severity: 'medium',
+          message: `${layerLabel} moisture is too low (${layer.moisture}%).`,
+          threshold: { value: 30, operator: '<' },
+        });
+      } else if (moistureBand === 'HIGH') {
+        pushAlert({
+          type: `layer_${layer.index}_moisture_high`,
+          severity: 'medium',
+          message: `${layerLabel} moisture is too high (${layer.moisture}%).`,
+          threshold: { value: 70, operator: '>' },
+        });
+      }
+
+      if (temperatureBand === 'LOW') {
+        pushAlert({
+          type: `layer_${layer.index}_temperature_low`,
+          severity: 'high',
+          message: `${layerLabel} temperature is too low (${layer.temperature}°C).`,
+          threshold: { value: 20, operator: '<' },
+        });
+      } else if (temperatureBand === 'HIGH') {
+        pushAlert({
+          type: `layer_${layer.index}_temperature_high`,
+          severity: 'high',
+          message: `${layerLabel} temperature is too high (${layer.temperature}°C).`,
+          threshold: { value: 35, operator: '>' },
+        });
+      }
+    });
 
     const temperatureThresholds = thresholds.temperature || {};
     if (typeof plainSensor.temperature === 'number') {
