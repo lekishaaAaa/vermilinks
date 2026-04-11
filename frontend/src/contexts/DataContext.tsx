@@ -260,23 +260,33 @@ const normalizeSensorSample = (sample: any, fallbackDeviceId?: string): SensorDa
   }
   const resolvedDeviceIdRaw = sample.deviceId || sample.device_id || fallbackDeviceId || 'unknown-device';
   const deviceId = resolvedDeviceIdRaw ? resolvedDeviceIdRaw.toString() : 'unknown-device';
-  const floatSensorValue = toNullableNumber(
-    sample.floatSensor
-      ?? sample.float_sensor
-      ?? sample.float_state
-      ?? sample.floatLevel
-      ?? sample.waterLevel
-      ?? sample.water_level
-  );
+  const normalizedDeviceId = deviceId.trim().toLowerCase();
+  const isFloatSourceDevice = normalizedDeviceId === 'esp32a' || normalizedDeviceId === 'unknown-device';
+  const floatSensorValue = isFloatSourceDevice
+    ? toNullableNumber(
+      sample.floatSensor
+        ?? sample.float_sensor
+        ?? sample.float_state
+        ?? sample.floatLevel
+        ?? sample.waterLevel
+        ?? sample.water_level
+    )
+    : null;
   const timestampIso = toIsoString(sample.timestamp || sample.updated_at || sample.createdAt || sample.receivedAt) || new Date().toISOString();
   const sensorSummary = Array.isArray(sample.sensorSummary) ? sample.sensorSummary : undefined;
   const floatStatus = (() => {
+    if (!isFloatSourceDevice) {
+      return null;
+    }
     const candidate = sample.floatStatus ?? sample.float_status ?? null;
     if (typeof candidate === 'string' && candidate.trim()) {
       return candidate.trim().toUpperCase();
     }
     return null;
   })();
+  const normalizedWaterLevel = isFloatSourceDevice
+    ? (toNumber(sample.waterLevel ?? sample.water_level ?? sample.waterlevel) ?? (typeof floatSensorValue === 'number' ? floatSensorValue : undefined))
+    : undefined;
 
   const normalized: SensorData = {
     ...(sample as SensorData),
@@ -300,7 +310,7 @@ const normalizeSensorSample = (sample: any, fallbackDeviceId?: string): SensorDa
     nitrogen: toNumber(sample.nitrogen),
     phosphorus: toNumber(sample.phosphorus),
     potassium: toNumber(sample.potassium),
-    waterLevel: toNumber(sample.waterLevel ?? sample.water_level ?? sample.waterlevel) ?? (typeof floatSensorValue === 'number' ? floatSensorValue : undefined),
+    waterLevel: normalizedWaterLevel,
     floatSensor: floatSensorValue,
     floatStatus,
     floatSensorTimestamp: toIsoString(sample.floatSensorTimestamp ?? sample.float_sensor_timestamp ?? sample.floatTimestamp ?? sample.float_timestamp),
@@ -620,10 +630,17 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
     }
     try {
       await ensureBackendBase();
-      const snapshot = await sensorService.getLatestData(preferredTelemetryDeviceId || undefined);
+      const requestedDeviceId = preferredTelemetryDeviceId || undefined;
+      const shouldHydrateEsp32aFloat = !requestedDeviceId || requestedDeviceId.toString().trim().toLowerCase() !== 'esp32a';
+      const [snapshot, esp32aFloatSnapshot] = await Promise.all([
+        sensorService.getLatestData(requestedDeviceId),
+        shouldHydrateEsp32aFloat
+          ? sensorService.getLatestData('esp32a').catch(() => null)
+          : Promise.resolve(null),
+      ]);
       const resolvedDeviceId = (snapshot as any)?.device_id || (snapshot as any)?.deviceId || preferredTelemetryDeviceId || 'unknown-device';
       const snapshotRecord = snapshot as any;
-      const reading: SensorData | null = snapshot
+      let reading: SensorData | null = snapshot
         ? normalizeSensorSample({
             deviceId: resolvedDeviceId,
             temperature: snapshot.temperature,
@@ -658,6 +675,28 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
               : !Boolean(snapshotRecord?.isOfflineData),
           }, resolvedDeviceId)
         : null;
+
+      if (reading && esp32aFloatSnapshot) {
+        const esp32aRecord = esp32aFloatSnapshot as any;
+        const esp32aReading = normalizeSensorSample({
+          deviceId: esp32aRecord?.device_id || esp32aRecord?.deviceId || 'esp32a',
+          waterLevel: esp32aFloatSnapshot.water_level,
+          floatSensor: esp32aFloatSnapshot.float_state,
+          floatStatus: esp32aRecord?.float_status ?? esp32aRecord?.floatStatus,
+          floatSensorTimestamp: esp32aRecord?.updated_at ?? esp32aRecord?.timestamp,
+          timestamp: esp32aRecord?.timestamp ?? esp32aFloatSnapshot.updated_at,
+        }, 'esp32a');
+
+        if (esp32aReading) {
+          reading = {
+            ...reading,
+            waterLevel: typeof esp32aReading.waterLevel === 'number' ? esp32aReading.waterLevel : reading.waterLevel,
+            floatSensor: esp32aReading.floatSensor ?? reading.floatSensor ?? null,
+            floatStatus: esp32aReading.floatStatus ?? reading.floatStatus ?? null,
+            floatSensorTimestamp: esp32aReading.floatSensorTimestamp ?? reading.floatSensorTimestamp ?? null,
+          };
+        }
+      }
 
       if (reading) {
         const processed = handleTelemetryPayload(reading, { updateLatestList: false });
