@@ -70,7 +70,6 @@ async function resolveCommandTargetAvailability(deviceId) {
   const timestampCandidates = [
     device?.lastHeartbeat,
     device?.lastSeen,
-    actuatorState?.reportedAt,
     actuatorState?.state?.ts,
     snapshot?.timestamp,
     snapshot?.updated_at,

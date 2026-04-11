@@ -102,7 +102,6 @@ const persistControlMode = async (mode) => {
       controlModeUpdatedAt: nowIso,
     };
     stateRow.state = nextState;
-    stateRow.reportedAt = new Date();
     await stateRow.save();
     return nextState;
   }
