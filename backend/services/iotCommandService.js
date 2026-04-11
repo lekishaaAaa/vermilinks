@@ -38,6 +38,19 @@ function buildActuatorKeyWhere(deviceId) {
   return where(fn('lower', col('actuator_key')), deviceId);
 }
 
+function normalizeControlMode(value) {
+  const normalized = (value || '').toString().trim().toLowerCase();
+  if (normalized === 'automatic' || normalized === 'auto') {
+    return 'automatic';
+  }
+  return 'manual';
+}
+
+async function getDeviceControlMode(deviceId) {
+  const stateRow = await ActuatorState.findOne({ where: buildActuatorKeyWhere(deviceId), raw: true }).catch(() => null);
+  return normalizeControlMode(stateRow?.state?.controlMode);
+}
+
 function toTimestampMs(value) {
   if (!value) {
     return NaN;
@@ -154,10 +167,19 @@ function ensureCommandTimeoutSweeper() {
   }
 }
 
-async function createCommand({ deviceId = 'esp32a', desiredState, actor = null, actorMeta = null }) {
+async function createCommand({ deviceId = 'esp32a', desiredState, actor = null, actorMeta = null, allowWhenAutomatic = false }) {
   const normalizedDeviceId = normalizeDeviceId(deviceId) || 'esp32a';
   ensureCommandTimeoutSweeper();
   await failStalePendingCommands();
+
+  const controlMode = await getDeviceControlMode(normalizedDeviceId);
+  if (controlMode === 'automatic' && !allowWhenAutomatic) {
+    return {
+      ok: false,
+      status: 409,
+      message: 'Manual control disabled in Automatic Mode.',
+    };
+  }
 
   const availability = await resolveCommandTargetAvailability(normalizedDeviceId);
   if (!availability.online) {

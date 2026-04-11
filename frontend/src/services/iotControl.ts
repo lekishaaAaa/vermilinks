@@ -1,5 +1,7 @@
 import api from './api';
 
+export type ControlMode = 'automatic' | 'manual';
+
 export interface DeviceStatePayload {
   pump: boolean;
   valve1: boolean;
@@ -11,6 +13,7 @@ export interface DeviceStatePayload {
   source?: string | null;
   ts?: string | null;
   forcePumpOverride?: boolean;
+  controlMode?: ControlMode;
   online?: boolean;
   lastSeen?: string | null;
 }
@@ -19,6 +22,7 @@ export interface LatestPayload {
   telemetry: any | null;
   deviceState: DeviceStatePayload | null;
   pendingCommand: { requestId: string } | null;
+  controlMode?: ControlMode;
   deviceOnline?: boolean;
   lastSeen?: string | null;
   lastHeartbeat?: string | null;
@@ -95,6 +99,11 @@ export async function sendControl(desired: { pump: boolean; valve1: boolean; val
   console.log('Sending actuator command', desired);
   const response = await api.post('/control', desired);
   return response?.data?.data;
+}
+
+export async function setControlMode(mode: ControlMode) {
+  const response = await api.post('/control-mode', { mode });
+  return response?.data?.data as { mode: ControlMode; updatedAt?: string | null; autoResult?: any };
 }
 
 export async function sendActuatorCommand(payload: {

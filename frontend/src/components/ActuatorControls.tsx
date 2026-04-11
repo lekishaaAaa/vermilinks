@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { fetchLatest, sendControl, DeviceStatePayload } from '../services/iotControl';
+import { fetchLatest, sendControl, setControlMode, DeviceStatePayload, ControlMode } from '../services/iotControl';
 
 const initialState = {
   pump: false,
@@ -56,6 +56,17 @@ const isDeviceFresh = (timestamp?: string | null) => {
   return Number.isFinite(parsed) ? (Date.now() - parsed) < DEVICE_FRESHNESS_MS : false;
 };
 
+const normalizeControlMode = (value: unknown): ControlMode | null => {
+  const normalized = (value || '').toString().trim().toLowerCase();
+  if (normalized === 'automatic' || normalized === 'auto') {
+    return 'automatic';
+  }
+  if (normalized === 'manual') {
+    return 'manual';
+  }
+  return null;
+};
+
 const ActuatorControls: React.FC = () => {
   const [deviceState, setDeviceState] = useState<DeviceStatePayload | null>(null);
   const [backendActuatorState, setBackendActuatorState] = useState<ActuatorViewState>(initialState);
@@ -64,7 +75,8 @@ const ActuatorControls: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [online, setOnline] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
-  const [controlMode, setControlMode] = useState<'automatic' | 'manual'>('manual');
+  const [controlMode, setControlModeState] = useState<ControlMode>('manual');
+  const [modePending, setModePending] = useState(false);
   const [forcePumpOverride, setForcePumpOverride] = useState(false);
   const lastCommandAtRef = useRef<Partial<Record<ActuatorKey | typeof OVERRIDE_CONTROL_KEY, number>>>({});
   const pendingActuatorsRef = useRef<PendingActuatorsMap>({});
@@ -166,6 +178,11 @@ const ActuatorControls: React.FC = () => {
       setForcePumpOverride(payload.forcePumpOverride);
     }
 
+    const payloadMode = normalizeControlMode((payload as any)?.controlMode ?? (payload as any)?.control_mode);
+    if (payloadMode) {
+      setControlModeState(payloadMode);
+    }
+
     const normalizedSource = (payload.source || '').toString().toLowerCase();
     const safetyOverrideApplied = normalizedSource === 'safety_override' || normalizedSource === 'safety';
 
@@ -202,6 +219,30 @@ const ActuatorControls: React.FC = () => {
       setErrorMessage(null);
     }
   }, [setPendingOverrideState, updatePendingActuatorsState]);
+
+  const handleControlModeChange = async (nextMode: ControlMode) => {
+    if (modePending || controlMode === nextMode) {
+      return;
+    }
+
+    const previousMode = controlMode;
+    setModePending(true);
+    setControlModeState(nextMode);
+    setErrorMessage(null);
+
+    try {
+      const result = await setControlMode(nextMode);
+      const resolvedMode = normalizeControlMode(result?.mode) || nextMode;
+      setControlModeState(resolvedMode);
+      await loadLatest();
+    } catch (error: any) {
+      setControlModeState(previousMode);
+      setErrorMessage(error?.response?.data?.message || 'Failed to update control mode.');
+      loadLatest().catch(() => null);
+    } finally {
+      setModePending(false);
+    }
+  };
 
   const loadLatest = useCallback(async () => {
     try {
@@ -453,7 +494,10 @@ const ActuatorControls: React.FC = () => {
           <div className="mt-2 inline-flex rounded-full border border-gray-200 bg-gray-50 p-1 dark:border-gray-700 dark:bg-gray-800/70">
             <button
               type="button"
-              onClick={() => setControlMode('automatic')}
+              onClick={() => {
+                handleControlModeChange('automatic').catch(() => null);
+              }}
+              disabled={modePending}
               className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
                 controlMode === 'automatic'
                   ? 'bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900'
@@ -464,7 +508,10 @@ const ActuatorControls: React.FC = () => {
             </button>
             <button
               type="button"
-              onClick={() => setControlMode('manual')}
+              onClick={() => {
+                handleControlModeChange('manual').catch(() => null);
+              }}
+              disabled={modePending}
               className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
                 controlMode === 'manual'
                   ? 'bg-[#c81e36] text-white'
