@@ -261,7 +261,8 @@ const normalizeSensorSample = (sample: any, fallbackDeviceId?: string): SensorDa
   const resolvedDeviceIdRaw = sample.deviceId || sample.device_id || fallbackDeviceId || 'unknown-device';
   const deviceId = resolvedDeviceIdRaw ? resolvedDeviceIdRaw.toString() : 'unknown-device';
   const normalizedDeviceId = deviceId.trim().toLowerCase();
-  const isFloatSourceDevice = normalizedDeviceId === 'esp32a';
+  const explicitFloatSourceDeviceId = (sample.floatSourceDeviceId || sample.float_source_device_id || '').toString().trim().toLowerCase();
+  const isFloatSourceDevice = normalizedDeviceId === 'esp32a' || explicitFloatSourceDeviceId === 'esp32a';
   const floatSensorValue = isFloatSourceDevice
     ? toNullableNumber(
       sample.floatSensor
