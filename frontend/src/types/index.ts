@@ -43,6 +43,7 @@ export interface SensorData {
   waterLevel?: number;
   floatSensor?: number | null;
   floatStatus?: string | null;
+  floatSourceDeviceId?: string | null;
   floatSensorTimestamp?: string | null;
   timestamp?: string | Date;
   status?: 'normal' | 'warning' | 'critical' | string;

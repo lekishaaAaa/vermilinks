@@ -74,6 +74,7 @@ const classifyTemperatureBand = (temperature: number | null): LayerMetrics['temp
 const readCardValue = (cardKey: CardConfig['key'], sample: SensorData | null | undefined): number | string | null => {
   if (!sample) return null;
   const sampleDeviceId = (sample.deviceId || (sample as any).device_id || '').toString().trim().toLowerCase();
+  const floatSourceDeviceId = (sample.floatSourceDeviceId || '').toString().trim().toLowerCase();
   switch (cardKey) {
     case 'external_temp':
       return typeof sample.ambientTemperature === 'number'
@@ -88,17 +89,13 @@ const readCardValue = (cardKey: CardConfig['key'], sample: SensorData | null | u
     case 'soil_moisture':
       return typeof sample.moisture === 'number' ? sample.moisture : null;
     case 'water_level': {
-      // Float/pump hardware is connected to ESP32A only; the telemetry stream can
-      // still be merged with other device snapshots, so allow rendering whenever
-      // explicit float fields are present on the sample.
-      const floatStatusRaw = sample.floatStatus ?? (sample as any).float_status;
-      const raw = sample.floatSensor ?? (sample as any).float_state ?? sample.waterLevel ?? (sample as any).water_level;
-      const hasExplicitFloatData =
-        (typeof floatStatusRaw === 'string' && floatStatusRaw.trim().length > 0) ||
-        (raw !== null && typeof raw !== 'undefined');
-      if (sampleDeviceId && sampleDeviceId !== 'esp32a' && !hasExplicitFloatData) {
+      // Hard-lock water level to ESP32A source only.
+      if (sampleDeviceId !== 'esp32a' && floatSourceDeviceId !== 'esp32a') {
         return null;
       }
+
+      const floatStatusRaw = sample.floatStatus ?? (sample as any).float_status;
+      const raw = sample.floatSensor ?? (sample as any).float_state ?? sample.waterLevel ?? (sample as any).water_level;
 
       if (typeof floatStatusRaw === 'string' && floatStatusRaw.trim()) {
         const normalized = floatStatusRaw.trim().toUpperCase();

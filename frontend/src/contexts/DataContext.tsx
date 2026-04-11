@@ -261,7 +261,7 @@ const normalizeSensorSample = (sample: any, fallbackDeviceId?: string): SensorDa
   const resolvedDeviceIdRaw = sample.deviceId || sample.device_id || fallbackDeviceId || 'unknown-device';
   const deviceId = resolvedDeviceIdRaw ? resolvedDeviceIdRaw.toString() : 'unknown-device';
   const normalizedDeviceId = deviceId.trim().toLowerCase();
-  const isFloatSourceDevice = normalizedDeviceId === 'esp32a' || normalizedDeviceId === 'unknown-device';
+  const isFloatSourceDevice = normalizedDeviceId === 'esp32a';
   const floatSensorValue = isFloatSourceDevice
     ? toNullableNumber(
       sample.floatSensor
@@ -313,6 +313,7 @@ const normalizeSensorSample = (sample: any, fallbackDeviceId?: string): SensorDa
     waterLevel: normalizedWaterLevel,
     floatSensor: floatSensorValue,
     floatStatus,
+    floatSourceDeviceId: isFloatSourceDevice ? 'esp32a' : null,
     floatSensorTimestamp: toIsoString(sample.floatSensorTimestamp ?? sample.float_sensor_timestamp ?? sample.floatTimestamp ?? sample.float_timestamp),
     batteryLevel: toNumber(sample.batteryLevel ?? sample.battery_level ?? sample.battery ?? sample.batt),
     signalStrength: toNumber(sample.signalStrength ?? sample.signal_strength ?? sample.rssi),
@@ -361,6 +362,7 @@ const mergeSensorReadings = (existing: SensorData | null, incoming: SensorData |
     waterLevel: decide('waterLevel') as any,
     floatSensor: decide('floatSensor') as any,
     floatStatus: incoming.floatStatus ?? existing.floatStatus ?? null,
+    floatSourceDeviceId: incoming.floatSourceDeviceId ?? existing.floatSourceDeviceId ?? null,
     batteryLevel: decide('batteryLevel') as any,
     signalStrength: decide('signalStrength') as any,
     actuatorStates: incoming.actuatorStates ?? existing.actuatorStates ?? null,
@@ -693,6 +695,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
             waterLevel: typeof esp32aReading.waterLevel === 'number' ? esp32aReading.waterLevel : reading.waterLevel,
             floatSensor: esp32aReading.floatSensor ?? reading.floatSensor ?? null,
             floatStatus: esp32aReading.floatStatus ?? reading.floatStatus ?? null,
+            floatSourceDeviceId: 'esp32a',
             floatSensorTimestamp: esp32aReading.floatSensorTimestamp ?? reading.floatSensorTimestamp ?? null,
           };
         }

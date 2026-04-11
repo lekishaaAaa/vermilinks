@@ -112,6 +112,7 @@ const SensorSummaryPanel: React.FC<SensorSummaryPanelProps> = ({ className = '',
           waterLevel: effectiveLatest.waterLevel ?? previous.waterLevel,
           floatSensor: effectiveLatest.floatSensor ?? previous.floatSensor,
           floatStatus: effectiveLatest.floatStatus ?? previous.floatStatus,
+          floatSourceDeviceId: effectiveLatest.floatSourceDeviceId ?? previous.floatSourceDeviceId,
           floatSensorTimestamp: effectiveLatest.floatSensorTimestamp ?? previous.floatSensorTimestamp,
         };
       });
