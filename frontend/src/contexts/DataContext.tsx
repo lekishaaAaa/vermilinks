@@ -634,11 +634,12 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
       await ensureBackendBase();
       const requestedDeviceId = preferredTelemetryDeviceId || undefined;
       const shouldHydrateEsp32aFloat = !requestedDeviceId || requestedDeviceId.toString().trim().toLowerCase() !== 'esp32a';
-      const [snapshot, esp32aFloatSnapshot] = await Promise.all([
+      const [snapshot, esp32aFloatSnapshot, latestActuatorStateResponse] = await Promise.all([
         sensorService.getLatestData(requestedDeviceId),
         shouldHydrateEsp32aFloat
           ? sensorService.getLatestData('esp32a').catch(() => null)
           : Promise.resolve(null),
+        api.get('/latest').catch(() => null),
       ]);
       const resolvedDeviceId = (snapshot as any)?.device_id || (snapshot as any)?.deviceId || preferredTelemetryDeviceId || 'unknown-device';
       const snapshotRecord = snapshot as any;
@@ -698,6 +699,44 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
             floatSourceDeviceId: 'esp32a',
             floatSensorTimestamp: esp32aReading.floatSensorTimestamp ?? reading.floatSensorTimestamp ?? null,
           };
+        }
+      }
+
+      const stateEnvelope = latestActuatorStateResponse?.data?.data || latestActuatorStateResponse?.data || null;
+      const actuatorState = stateEnvelope?.deviceState || null;
+      if (actuatorState && typeof actuatorState === 'object') {
+        const rawFloatState = actuatorState.float_state ?? actuatorState.float ?? null;
+        const rawFloatStatus = actuatorState.float_state ?? actuatorState.floatStatus ?? actuatorState.float_status ?? null;
+        const normalizedFloatStatus = typeof rawFloatStatus === 'string' && rawFloatStatus.trim()
+          ? rawFloatStatus.trim().toUpperCase()
+          : null;
+        const normalizedFloatSensor = typeof rawFloatState === 'number'
+          ? rawFloatState
+          : (normalizedFloatStatus === 'LOW'
+            ? 0
+            : normalizedFloatStatus === 'NORMAL'
+              ? 1
+              : normalizedFloatStatus === 'FULL' || normalizedFloatStatus === 'HIGH'
+                ? 2
+                : null);
+
+        if (reading) {
+          reading = {
+            ...reading,
+            waterLevel: typeof normalizedFloatSensor === 'number' ? normalizedFloatSensor : reading.waterLevel,
+            floatSensor: normalizedFloatSensor ?? reading.floatSensor ?? null,
+            floatStatus: normalizedFloatStatus ?? reading.floatStatus ?? null,
+            floatSourceDeviceId: 'esp32a',
+            floatSensorTimestamp: actuatorState.ts ?? reading.floatSensorTimestamp ?? null,
+          };
+        } else if (typeof normalizedFloatSensor === 'number' || normalizedFloatStatus) {
+          reading = normalizeSensorSample({
+            deviceId: 'esp32a',
+            waterLevel: normalizedFloatSensor,
+            floatSensor: normalizedFloatSensor,
+            floatStatus: normalizedFloatStatus,
+            timestamp: actuatorState.ts || new Date().toISOString(),
+          }, 'esp32a');
         }
       }
 
