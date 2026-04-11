@@ -3,6 +3,7 @@ import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { SensorData } from '../types';
 import SensorOverview from './SensorOverview';
+import { sensorService } from '../services/api';
 
 const LIVE_TELEMETRY_MAX_AGE_MS = 60_000;
 
@@ -36,6 +37,42 @@ interface RealtimeTelemetryPanelProps {
 const RealtimeTelemetryPanel: React.FC<RealtimeTelemetryPanelProps> = ({ latest, history, isConnected, onRefresh, refreshing, telemetryDisabled }) => {
   const [cachedLatest, setCachedLatest] = useState<SensorData | null>(null);
   const [lastTelemetry, setLastTelemetry] = useState<SensorData | null>(null);
+  const [esp32aFloatTelemetry, setEsp32aFloatTelemetry] = useState<Partial<SensorData> | null>(null);
+
+  const loadEsp32aFloatTelemetry = async () => {
+    try {
+      const snapshot = await sensorService.getLatestData('esp32a');
+      if (!snapshot) {
+        return;
+      }
+
+      const snapshotRecord = snapshot as any;
+      const rawFloatStatus = snapshotRecord?.float_status ?? snapshotRecord?.floatStatus ?? null;
+      const normalizedFloatStatus = typeof rawFloatStatus === 'string' && rawFloatStatus.trim()
+        ? rawFloatStatus.trim().toUpperCase()
+        : null;
+      const normalizedFloatSensor = typeof snapshot.float_state === 'number'
+        ? snapshot.float_state
+        : (normalizedFloatStatus === 'LOW'
+          ? 0
+          : normalizedFloatStatus === 'NORMAL'
+            ? 1
+            : normalizedFloatStatus === 'FULL' || normalizedFloatStatus === 'HIGH'
+              ? 2
+              : null);
+
+      setEsp32aFloatTelemetry({
+        deviceId: 'esp32a',
+        waterLevel: typeof normalizedFloatSensor === 'number' ? normalizedFloatSensor : undefined,
+        floatSensor: normalizedFloatSensor,
+        floatStatus: normalizedFloatStatus,
+        floatSourceDeviceId: 'esp32a',
+        floatSensorTimestamp: snapshot.updated_at ?? snapshotRecord?.timestamp ?? null,
+      });
+    } catch {
+      // Best-effort overlay only.
+    }
+  };
 
   useEffect(() => {
     if (telemetryDisabled) {
@@ -76,6 +113,18 @@ const RealtimeTelemetryPanel: React.FC<RealtimeTelemetryPanelProps> = ({ latest,
     setLastTelemetry(source);
   }, [history, latest, telemetryDisabled]);
 
+  useEffect(() => {
+    loadEsp32aFloatTelemetry().catch(() => null);
+
+    const intervalId = window.setInterval(() => {
+      loadEsp32aFloatTelemetry().catch(() => null);
+    }, 5000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
   const mergedHistory = useMemo(() => {
     return [...(history || [])]
       .filter(Boolean)
@@ -84,6 +133,31 @@ const RealtimeTelemetryPanel: React.FC<RealtimeTelemetryPanelProps> = ({ latest,
   }, [history]);
 
   const effectiveLatest = cachedLatest ?? latest ?? lastTelemetry ?? (mergedHistory.length ? mergedHistory[mergedHistory.length - 1] : null);
+  const telemetryForOverview = useMemo(() => {
+    if (!esp32aFloatTelemetry) {
+      return effectiveLatest;
+    }
+    if (!effectiveLatest) {
+      return esp32aFloatTelemetry as SensorData;
+    }
+    return {
+      ...effectiveLatest,
+      ...esp32aFloatTelemetry,
+    } as SensorData;
+  }, [effectiveLatest, esp32aFloatTelemetry]);
+
+  const lastTelemetryForOverview = useMemo(() => {
+    if (!esp32aFloatTelemetry) {
+      return lastTelemetry;
+    }
+    if (!lastTelemetry) {
+      return esp32aFloatTelemetry as SensorData;
+    }
+    return {
+      ...lastTelemetry,
+      ...esp32aFloatTelemetry,
+    } as SensorData;
+  }, [esp32aFloatTelemetry, lastTelemetry]);
   const hasTelemetryData = Boolean(effectiveLatest) || mergedHistory.length > 0;
   const showPausedNotice = Boolean(telemetryDisabled) && !hasTelemetryData;
   const latestTimestamp = effectiveLatest?.timestamp || (mergedHistory.length ? mergedHistory[mergedHistory.length - 1].timestamp : null);
@@ -151,7 +225,7 @@ const RealtimeTelemetryPanel: React.FC<RealtimeTelemetryPanelProps> = ({ latest,
           No telemetry received
         </div>
       ) : hasTelemetryData ? (
-        <SensorOverview telemetry={effectiveLatest} lastTelemetry={lastTelemetry} />
+        <SensorOverview telemetry={telemetryForOverview} lastTelemetry={lastTelemetryForOverview} />
       ) : (
         <div className="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-5 text-sm text-gray-700 dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-200">
           No telemetry received
