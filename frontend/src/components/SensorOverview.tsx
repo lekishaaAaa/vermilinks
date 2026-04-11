@@ -187,7 +187,7 @@ const SensorOverview: React.FC<SensorOverviewProps> = ({ telemetry, lastTelemetr
   }, [telemetry, lastTelemetry]);
 
   const compartmentMetrics = useMemo(() => {
-    const readMetric = (key: 'ambientTemperature' | 'ambientHumidity' | 'binTemperature' | 'binHumidity') => {
+    const readMetric = (key: 'ambientTemperature' | 'ambientHumidity') => {
       const current = telemetry && typeof telemetry[key] === 'number' ? (telemetry[key] as number) : null;
       const fallback = lastTelemetry && typeof lastTelemetry[key] === 'number' ? (lastTelemetry[key] as number) : null;
       return current ?? fallback;
@@ -196,8 +196,6 @@ const SensorOverview: React.FC<SensorOverviewProps> = ({ telemetry, lastTelemetr
     return {
       ambientTemperature: readMetric('ambientTemperature'),
       ambientHumidity: readMetric('ambientHumidity'),
-      binTemperature: readMetric('binTemperature'),
-      binHumidity: readMetric('binHumidity'),
     };
   }, [telemetry, lastTelemetry]);
 
@@ -285,16 +283,11 @@ const SensorOverview: React.FC<SensorOverviewProps> = ({ telemetry, lastTelemetr
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3">
         <div className="rounded-lg border border-gray-100 bg-gray-50/70 p-3 dark:border-gray-700 dark:bg-gray-900/50">
           <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Ambient</p>
           <p className="mt-1 text-sm text-gray-700 dark:text-gray-200">Temperature: {formatValue(compartmentMetrics.ambientTemperature, '°C')}</p>
           <p className="text-sm text-gray-700 dark:text-gray-200">Humidity: {formatValue(compartmentMetrics.ambientHumidity, '%')}</p>
-        </div>
-        <div className="rounded-lg border border-gray-100 bg-gray-50/70 p-3 dark:border-gray-700 dark:bg-gray-900/50">
-          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Bin</p>
-          <p className="mt-1 text-sm text-gray-700 dark:text-gray-200">Temperature: {formatValue(compartmentMetrics.binTemperature, '°C')}</p>
-          <p className="text-sm text-gray-700 dark:text-gray-200">Humidity: {formatValue(compartmentMetrics.binHumidity, '%')}</p>
         </div>
       </div>
     </div>

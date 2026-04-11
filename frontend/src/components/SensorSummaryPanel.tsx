@@ -84,21 +84,16 @@ const SensorSummaryPanel: React.FC<SensorSummaryPanelProps> = ({ className = '',
   const effectiveIsPolling = contextIsLoading || isPolling;
 
   const effectiveLastUpdated = useMemo(() => {
-    if (lastFetchAt) {
-      const parsed = Date.parse(lastFetchAt);
-      if (!Number.isNaN(parsed)) {
-        return parsed;
-      }
-    }
-    const latestTimestamp = effectiveLatest?.timestamp;
+    // Show only the timestamp of actual telemetry samples; do not advance on poll cycles.
+    const latestTimestamp = effectiveLatest?.timestamp || lastTelemetry?.timestamp;
     if (latestTimestamp) {
       const parsed = Date.parse(latestTimestamp instanceof Date ? latestTimestamp.toISOString() : latestTimestamp);
       if (!Number.isNaN(parsed)) {
         return parsed;
       }
     }
-    return lastUpdated;
-  }, [effectiveLatest, lastFetchAt, lastUpdated]);
+    return null;
+  }, [effectiveLatest, lastTelemetry]);
 
   const handleRefresh = async () => {
     await refreshTelemetry();
