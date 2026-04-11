@@ -73,6 +73,7 @@ const classifyTemperatureBand = (temperature: number | null): LayerMetrics['temp
 
 const readCardValue = (cardKey: CardConfig['key'], sample: SensorData | null | undefined): number | string | null => {
   if (!sample) return null;
+  const sampleDeviceId = (sample.deviceId || sample.device_id || '').toString().trim().toLowerCase();
   switch (cardKey) {
     case 'external_temp':
       return typeof sample.ambientTemperature === 'number'
@@ -87,8 +88,15 @@ const readCardValue = (cardKey: CardConfig['key'], sample: SensorData | null | u
     case 'soil_moisture':
       return typeof sample.moisture === 'number' ? sample.moisture : null;
     case 'water_level': {
+      // Float/pump hardware is connected to ESP32A only; never infer water level
+      // from other device payloads (e.g., ESP32B compost telemetry).
+      if (sampleDeviceId !== 'esp32a') {
+        return null;
+      }
+
       if (typeof sample.floatStatus === 'string' && sample.floatStatus.trim()) {
         const normalized = sample.floatStatus.trim().toUpperCase();
+        if (normalized === 'UNKNOWN') return null;
         if (normalized === 'NORMAL') return 'SAFE';
         return normalized;
       }
