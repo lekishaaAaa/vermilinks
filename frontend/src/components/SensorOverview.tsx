@@ -73,7 +73,7 @@ const classifyTemperatureBand = (temperature: number | null): LayerMetrics['temp
 
 const readCardValue = (cardKey: CardConfig['key'], sample: SensorData | null | undefined): number | string | null => {
   if (!sample) return null;
-  const sampleDeviceId = (sample.deviceId || sample.device_id || '').toString().trim().toLowerCase();
+  const sampleDeviceId = (sample.deviceId || (sample as any).device_id || '').toString().trim().toLowerCase();
   switch (cardKey) {
     case 'external_temp':
       return typeof sample.ambientTemperature === 'number'
