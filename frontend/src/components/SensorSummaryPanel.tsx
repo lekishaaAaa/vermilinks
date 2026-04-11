@@ -4,6 +4,7 @@ import { useSensorsPolling } from '../hooks/useSensorsPolling';
 import { SensorData } from '../types';
 import { useData } from '../contexts/DataContext';
 import SensorOverview from './SensorOverview';
+import { sensorService } from '../services/api';
 
 interface SensorSummaryPanelProps {
   className?: string;
@@ -70,6 +71,7 @@ const SensorSummaryPanel: React.FC<SensorSummaryPanelProps> = ({ className = '',
     disabled: telemetryDisabled,
   });
   const [lastTelemetry, setLastTelemetry] = useState<SensorData | null>(null);
+  const [esp32aFloatTelemetry, setEsp32aFloatTelemetry] = useState<Partial<SensorData> | null>(null);
 
   const effectiveLatest = contextLatestTelemetry ?? latest;
 
@@ -98,6 +100,43 @@ const SensorSummaryPanel: React.FC<SensorSummaryPanelProps> = ({ className = '',
   const handleRefresh = async () => {
     await refreshTelemetry();
     await refresh();
+    await loadEsp32aFloatTelemetry();
+  };
+
+  const loadEsp32aFloatTelemetry = async () => {
+    try {
+      const snapshot = await sensorService.getLatestData('esp32a');
+      if (!snapshot) {
+        return;
+      }
+
+      const snapshotRecord = snapshot as any;
+      const rawFloatStatus = snapshotRecord?.float_status ?? snapshotRecord?.floatStatus ?? null;
+      const normalizedFloatStatus = typeof rawFloatStatus === 'string' && rawFloatStatus.trim()
+        ? rawFloatStatus.trim().toUpperCase()
+        : null;
+
+      const normalizedFloatSensor = typeof snapshot.float_state === 'number'
+        ? snapshot.float_state
+        : (normalizedFloatStatus === 'LOW'
+          ? 0
+          : normalizedFloatStatus === 'NORMAL'
+            ? 1
+            : normalizedFloatStatus === 'FULL' || normalizedFloatStatus === 'HIGH'
+              ? 2
+              : null);
+
+      setEsp32aFloatTelemetry({
+        deviceId: 'esp32a',
+        waterLevel: typeof normalizedFloatSensor === 'number' ? normalizedFloatSensor : undefined,
+        floatSensor: normalizedFloatSensor,
+        floatStatus: normalizedFloatStatus,
+        floatSourceDeviceId: 'esp32a',
+        floatSensorTimestamp: snapshot.updated_at ?? snapshotRecord?.timestamp ?? null,
+      });
+    } catch {
+      // Best-effort overlay only.
+    }
   };
 
   useEffect(() => {
@@ -118,6 +157,43 @@ const SensorSummaryPanel: React.FC<SensorSummaryPanelProps> = ({ className = '',
       });
     }
   }, [effectiveLatest]);
+
+  useEffect(() => {
+    loadEsp32aFloatTelemetry().catch(() => null);
+    const timerId = window.setInterval(() => {
+      loadEsp32aFloatTelemetry().catch(() => null);
+    }, 5000);
+
+    return () => {
+      window.clearInterval(timerId);
+    };
+  }, []);
+
+  const telemetryForOverview = useMemo(() => {
+    if (!esp32aFloatTelemetry) {
+      return effectiveLatest;
+    }
+    if (!effectiveLatest) {
+      return esp32aFloatTelemetry as SensorData;
+    }
+    return {
+      ...effectiveLatest,
+      ...esp32aFloatTelemetry,
+    } as SensorData;
+  }, [effectiveLatest, esp32aFloatTelemetry]);
+
+  const lastTelemetryForOverview = useMemo(() => {
+    if (!esp32aFloatTelemetry) {
+      return lastTelemetry;
+    }
+    if (!lastTelemetry) {
+      return esp32aFloatTelemetry as SensorData;
+    }
+    return {
+      ...lastTelemetry,
+      ...esp32aFloatTelemetry,
+    } as SensorData;
+  }, [esp32aFloatTelemetry, lastTelemetry]);
 
   const actuatorItems = useMemo(() => {
     if (!actuatorStates || Object.keys(actuatorStates).length === 0) {
@@ -194,7 +270,7 @@ const SensorSummaryPanel: React.FC<SensorSummaryPanelProps> = ({ className = '',
         </div>
       )}
 
-      <SensorOverview telemetry={effectiveLatest} lastTelemetry={lastTelemetry} />
+      <SensorOverview telemetry={telemetryForOverview} lastTelemetry={lastTelemetryForOverview} />
 
       {actuatorItems.length > 0 && (
         <div className="mt-6 rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4 text-sm text-emerald-900 shadow-sm dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-100">
