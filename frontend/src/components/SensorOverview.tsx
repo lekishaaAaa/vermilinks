@@ -35,9 +35,16 @@ const getCardStatus = (cardKey: CardConfig['key'], value: number | string | null
   }
   if (cardKey === 'water_level') {
     if (typeof value === 'string') {
-      return value === 'SAFE' ? 'normal' : 'alert';
+      const normalized = value.toUpperCase();
+      if (normalized === 'LOW') {
+        return 'alert';
+      }
+      if (normalized === 'NORMAL' || normalized === 'HIGH') {
+        return 'normal';
+      }
+      return 'neutral';
     }
-    return value > 0 && value < 2 ? 'normal' : 'alert';
+    return value <= 0 ? 'alert' : 'normal';
   }
   if (typeof value !== 'number') {
     return 'neutral';
@@ -100,15 +107,17 @@ const readCardValue = (cardKey: CardConfig['key'], sample: SensorData | null | u
       if (typeof floatStatusRaw === 'string' && floatStatusRaw.trim()) {
         const normalized = floatStatusRaw.trim().toUpperCase();
         if (normalized === 'UNKNOWN') return null;
-        if (normalized === 'NORMAL') return 'SAFE';
-        return normalized;
+        if (normalized === 'LOW') return 'LOW';
+        if (normalized === 'NORMAL' || normalized === 'SAFE' || normalized === 'STABLE') return 'NORMAL';
+        if (normalized === 'FULL' || normalized === 'HIGH' || normalized === 'UP' || normalized === 'UPWARD') return 'HIGH';
+        return null;
       }
       if (raw === null || typeof raw === 'undefined') return null;
       const numeric = Number(raw);
       if (!Number.isFinite(numeric)) return null;
       if (numeric <= 0) return 'LOW';
       if (numeric >= 2) return 'HIGH';
-      return 'SAFE';
+      return 'NORMAL';
     }
     default:
       return null;
